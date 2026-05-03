@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useForm } from '@formspree/react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Calendar, MapPin, Phone, ArrowRight } from 'lucide-react';
@@ -9,9 +10,35 @@ export default function Booking() {
   const [identity, setIdentity] = useState('');
   const [email, setEmail] = useState('');
   const [objective, setObjective] = useState('');
+  const [state, handleSubmitFormspree] = useForm('xnjwjkld');
 
   const [isBooked, setIsBooked] = useState(false);
   const [countdown, setCountdown] = useState(15);
+
+  useEffect(() => {
+    if (state.succeeded) {
+      setIsBooked(true);
+      
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      const redirectTimer = setTimeout(() => {
+        window.location.href = '/consultation';
+      }, 15000);
+
+      return () => {
+        clearInterval(timer);
+        clearTimeout(redirectTimer);
+      };
+    }
+  }, [state.succeeded]);
 
   // Generate next 10 business days starting from May 4th
   const getDates = () => {
@@ -29,39 +56,22 @@ export default function Booking() {
 
   const availabilityDates = getDates();
 
-  const handleBooking = (e: React.FormEvent) => {
+  const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     const times = ['09:00', '10:30', '13:00', '14:30', '16:00', '17:30'];
     const date = availabilityDates[selectedDateIndex];
     const dateStr = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
     
     const payload = {
-      identity,
+      name: identity,
       email,
       objective,
       slot: `${dateStr} @ ${times[selectedTime]}`,
-      duration: '30 MIN'
+      duration: '30 MIN',
+      _subject: `Strategy Session Request: ${identity}`
     };
 
-    // Logging transmission to contact@mit2fit.com
-    console.log('TRANSMITTING STRATEGY SESSION REQUEST TO contact@mit2fit.com...', payload);
-    
-    setIsBooked(true);
-
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    // Increased to 15 seconds to allow comfortable reading and mental preparation.
-    setTimeout(() => {
-      window.location.href = '/consultation';
-    }, 15000);
+    await handleSubmitFormspree(payload);
   };
 
   return (
@@ -227,9 +237,12 @@ export default function Booking() {
                   
                   <button 
                     type="submit"
-                    className="w-full btn-primary group flex items-center justify-center gap-4 py-5"
+                    disabled={state.submitting}
+                    className="w-full btn-primary group flex items-center justify-center gap-4 py-5 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Confirm Strategic Session <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                    {state.submitting ? 'TRANSMITTING...' : (
+                      <>Confirm Strategic Session <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" /></>
+                    )}
                   </button>
 
                   <p className="text-[8px] font-mono uppercase text-zinc-700 tracking-widest leading-relaxed text-center px-4 mt-6 italic">

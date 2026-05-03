@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useForm } from '@formspree/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronRight, ChevronLeft, CheckCircle2, FileText, ShieldAlert, HeartPulse, Utensils, Send } from 'lucide-react';
 
@@ -6,6 +7,7 @@ type Step = 'info' | 'health' | 'habits' | 'legal' | 'success';
 
 export default function Consultation() {
   const [step, setStep] = useState<Step>('info');
+  const [state, handleSubmitFormspree] = useForm('xnjwjkld');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -26,11 +28,17 @@ export default function Consultation() {
   const nextStep = (target: Step) => setStep(target);
   const prevStep = (target: Step) => setStep(target);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (state.succeeded) {
+      setStep('success');
+    }
+  }, [state.succeeded]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Transmit to contact@mit2fit.com
-    console.log('TRANSMITTING BIO-READINESS INTAKE TO contact@mit2fit.com:', formData);
-    setStep('success');
+    
+    // We send the current formData state to Formspree
+    await handleSubmitFormspree(formData);
   };
 
   const updateField = (field: string, value: any) => {
@@ -77,6 +85,7 @@ export default function Consultation() {
                     <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Full Name</label>
                     <input 
                       type="text" 
+                      name="name"
                       value={formData.name}
                       onChange={(e) => updateField('name', e.target.value)}
                       className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-sm" 
@@ -87,6 +96,7 @@ export default function Consultation() {
                     <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Email Address</label>
                     <input 
                       type="email" 
+                      name="email"
                       value={formData.email}
                       onChange={(e) => updateField('email', e.target.value)}
                       className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-sm"
@@ -98,6 +108,7 @@ export default function Consultation() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Primary Fitness Goal</label>
                   <textarea 
+                    name="goal"
                     value={formData.goal}
                     onChange={(e) => updateField('goal', e.target.value)}
                     className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-sm h-32"
@@ -157,6 +168,7 @@ export default function Consultation() {
                   <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Existing Medical Conditions / Injuries</label>
                   <input 
                     type="text" 
+                    name="medicalConditions"
                     value={formData.medicalConditions}
                     onChange={(e) => updateField('medicalConditions', e.target.value)}
                     className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-sm" 
@@ -199,6 +211,7 @@ export default function Consultation() {
                     <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Average Sleep (Hours)</label>
                     <input 
                       type="number" 
+                      name="sleepHours"
                       value={formData.sleepHours}
                       onChange={(e) => updateField('sleepHours', e.target.value)}
                       className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-sm" 
@@ -207,6 +220,7 @@ export default function Consultation() {
                   <div className="space-y-2">
                     <label className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Dietary Preferences</label>
                     <select 
+                      name="dietType"
                       value={formData.dietType}
                       onChange={(e) => updateField('dietType', e.target.value)}
                       className="w-full bg-black border border-edge p-4 outline-none focus:border-brand transition-colors font-mono text-xs uppercase tracking-widest"
@@ -287,11 +301,11 @@ export default function Consultation() {
                    <ChevronLeft size={16} /> Back
                   </button>
                   <button 
-                    disabled={!formData.waiverAgreed}
+                    disabled={!formData.waiverAgreed || state.submitting}
                     onClick={handleSubmit}
                     className="group flex items-center gap-3 bg-brand text-black px-8 py-4 text-[10px] font-black uppercase tracking-widest hover:bg-white transition-colors flex-1 justify-center disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    Submit Intake to HQ <Send size={16} />
+                    {state.submitting ? 'TRANSMITTING...' : 'Submit Intake to HQ'} <Send size={16} />
                   </button>
                 </div>
               </motion.div>

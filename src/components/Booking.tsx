@@ -10,7 +10,7 @@ export default function Booking() {
   const [identity, setIdentity] = useState('');
   const [email, setEmail] = useState('');
   const [objective, setObjective] = useState('');
-  const [state, handleSubmitFormspree] = useForm('xnjwjkld');
+  const [state, handleSubmitFormspree] = useForm('https://formspree.io/f/xnjwjkld');
 
   const [isBooked, setIsBooked] = useState(false);
   const [countdown, setCountdown] = useState(15);

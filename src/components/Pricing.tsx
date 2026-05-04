@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Check, Users, Monitor, MapPin, Zap } from 'lucide-react';
 import {
+  appendCalendlyParams,
   getConsultCalendlyUrl,
   getTrainingCalendlyUrl,
-  openCalendlyPopup,
 } from '../lib/calendly';
 
 type ScheduleKind = 'consult' | 'training';
@@ -85,7 +85,8 @@ export default function Pricing() {
         ? getConsultCalendlyUrl(isVirtual)
         : getTrainingCalendlyUrl(isVirtual);
     if (url) {
-      await openCalendlyPopup(url, { utm_content: tier.tierId });
+      const trackedUrl = appendCalendlyParams(url, { utm_content: tier.tierId });
+      window.open(trackedUrl, '_blank', 'noopener,noreferrer');
       return;
     }
     navigate({ pathname: '/', hash: 'book' });

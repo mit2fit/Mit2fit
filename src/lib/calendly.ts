@@ -92,6 +92,15 @@ export async function openCalendlyPopup(
   const url = tracking?.utm_content
     ? appendCalendlyParams(baseUrl, { utm_content: tracking.utm_content })
     : baseUrl;
-  await loadCalendlyScript();
-  window.Calendly?.initPopupWidget({ url });
+  try {
+    await loadCalendlyScript();
+    if (window.Calendly?.initPopupWidget) {
+      window.Calendly.initPopupWidget({ url });
+      return;
+    }
+  } catch {
+    // Fall through to a direct link open below.
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
 }

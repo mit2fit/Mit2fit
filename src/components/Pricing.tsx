@@ -78,6 +78,22 @@ const tiers: Tier[] = [
 export default function Pricing() {
   const navigate = useNavigate();
   const [isVirtual, setIsVirtual] = useState(true);
+  const pricingCalendlyUrl =
+    import.meta.env.VITE_CALENDLY_PRICING_URL ||
+    import.meta.env.VITE_CALENDLY_URL ||
+    '';
+
+  const handleTierCta = (tierName: string) => {
+    if (pricingCalendlyUrl) {
+      const bookingUrl = new URL(pricingCalendlyUrl);
+      bookingUrl.searchParams.set('utm_source', 'pricing');
+      bookingUrl.searchParams.set('utm_content', tierName.toLowerCase().replace(/\s+/g, '-'));
+      window.open(bookingUrl.toString(), '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    document.getElementById('book')?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const handleTierSchedule = async (tier: Tier) => {
     const url =
@@ -164,9 +180,13 @@ export default function Pricing() {
               </div>
 
               <button
+<<<<<<< HEAD
                 type="button"
                 onClick={() => void handleTierSchedule(tier)}
                 aria-label={`${tier.cta} for ${tier.name}`}
+=======
+                onClick={() => handleTierCta(tier.name)}
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
                 className={`w-full py-5 text-[11px] font-black uppercase tracking-[0.2em] transition-all group border ${tier.highlight ? 'bg-brand text-black border-brand hover:brightness-110' : 'bg-transparent text-white border-edge hover:border-brand hover:text-brand'}`}
               >
                 {tier.cta}

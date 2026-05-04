@@ -25,13 +25,30 @@ export default function Booking() {
   const [identity, setIdentity] = useState('');
   const [email, setEmail] = useState('');
   const [objective, setObjective] = useState('');
+<<<<<<< HEAD
   const [state, handleSubmitFormspree] = useForm(FORMSPREE_ID);
+=======
+  const [state, handleSubmitFormspree] = useForm(import.meta.env.VITE_FORMSPREE_ID || 'xnjwjkld');
+  const calendlyConsultUrl =
+    import.meta.env.VITE_CALENDLY_CONSULT_URL ||
+    import.meta.env.VITE_CALENDLY_URL ||
+    '';
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
 
-  const [isBooked, setIsBooked] = useState(false);
+  const [isRedirectingToIntake, setIsRedirectingToIntake] = useState(false);
+  const [redirectSource, setRedirectSource] = useState<'calendly' | 'fallback' | null>(null);
+  const [showFallbackForm, setShowFallbackForm] = useState(false);
   const [countdown, setCountdown] = useState(15);
+
+  const startConsultationRedirect = (source: 'calendly' | 'fallback') => {
+    setRedirectSource(source);
+    setCountdown(15);
+    setIsRedirectingToIntake(true);
+  };
 
   useEffect(() => {
     if (state.succeeded) {
+<<<<<<< HEAD
       setIsBooked(true);
 
       const timer = setInterval(() => {
@@ -55,6 +72,38 @@ export default function Booking() {
     }
   }, [state.succeeded]);
 
+=======
+      startConsultationRedirect('fallback');
+    }
+  }, [state.succeeded]);
+
+  useEffect(() => {
+    if (!isRedirectingToIntake) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    const redirectTimer = setTimeout(() => {
+      window.location.href = '/consultation';
+    }, 15000);
+
+    return () => {
+      clearInterval(timer);
+      clearTimeout(redirectTimer);
+    };
+  }, [isRedirectingToIntake]);
+
+  // Generate next 10 business days starting from May 4th
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
   const getDates = () => {
     const dates = [];
     const startDate = new Date('2026-05-04');
@@ -160,6 +209,7 @@ export default function Booking() {
           </div>
 
           <div className="lg:col-span-5 bg-surface p-[1px] border border-edge relative group">
+<<<<<<< HEAD
             <div className="absolute -inset-1 bg-brand/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
 
             <div className="bg-zinc-950 h-full p-6 md:p-12 relative z-10">
@@ -205,6 +255,17 @@ export default function Booking() {
 
               {isBooked ? (
                 <motion.div
+=======
+             {/* Decorative glow */}
+             <div className="absolute -inset-1 bg-brand/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+             
+             <div className="bg-zinc-950 h-full p-6 md:p-12 relative z-10">
+              <h3 className="text-2xl font-black uppercase tracking-tighter mb-4 italic">Request Protocol <span className="text-brand not-italic">Access</span></h3>
+              <p className="text-zinc-500 mb-8 md:mb-10 text-[10px] font-mono uppercase tracking-widest leading-loose">Request a performance audit. We'll analyze your current output and define your optimization pathway.</p>
+              
+              {isRedirectingToIntake ? (
+                <motion.div 
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="space-y-8 py-12 text-center"
@@ -216,6 +277,7 @@ export default function Booking() {
                     Session <span className="text-brand not-italic">Secured.</span>
                   </h3>
                   <div className="space-y-4 max-w-sm mx-auto">
+<<<<<<< HEAD
                     <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 leading-loose">
                       <span className="text-white">
                         {availabilityDates[selectedDateIndex].toLocaleDateString('en-US', {
@@ -228,6 +290,21 @@ export default function Booking() {
                       <br />
                       Protocol deployment scheduled.
                     </p>
+=======
+                    {redirectSource === 'calendly' ? (
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 leading-loose">
+                        <span className="text-white">Calendly confirmation received.</span>
+                        <br />
+                        Preparing your consultation intake sequence.
+                      </p>
+                    ) : (
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 leading-loose">
+                        <span className="text-white">{availabilityDates[selectedDateIndex].toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase()} @ {['09:00', '10:30', '13:00', '14:30', '16:00', '17:30'][selectedTime]}</span>
+                        <br />
+                        Formspree fallback submitted to HQ.
+                      </p>
+                    )}
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
                     <div className="pt-4 border-t border-edge">
                       <p className="text-[11px] font-black uppercase tracking-widest text-brand mb-1">
                         Next: Intake Protocol
@@ -248,8 +325,48 @@ export default function Booking() {
                   </Link>
                 </motion.div>
               ) : (
-                <form className="space-y-6" onSubmit={handleBooking}>
-                  <div className="space-y-4">
+                <div className="space-y-6">
+                  <div className="border border-edge p-6 bg-zinc-900/30 space-y-4">
+                    <p className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest leading-relaxed">
+                      Primary booking runs through Calendly for live scheduling.
+                    </p>
+                    <div className="space-y-3">
+                      <a
+                        href={calendlyConsultUrl || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`w-full btn-primary group flex items-center justify-center gap-4 py-5 ${!calendlyConsultUrl ? 'pointer-events-none opacity-40' : ''}`}
+                      >
+                        Open Calendly Booking <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => startConsultationRedirect('calendly')}
+                        className="w-full border border-brand text-brand py-4 text-[10px] font-black uppercase tracking-widest hover:bg-brand hover:text-black transition-all"
+                      >
+                        I Confirmed My Calendly Booking
+                      </button>
+                    </div>
+                    {!calendlyConsultUrl && (
+                      <p className="text-[8px] font-mono uppercase text-zinc-600 tracking-widest">
+                        Set `VITE_CALENDLY_CONSULT_URL` or `VITE_CALENDLY_URL` to enable live Calendly booking.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="border-t border-edge pt-6">
+                    <button
+                      type="button"
+                      onClick={() => setShowFallbackForm((prev) => !prev)}
+                      className="w-full border border-edge text-zinc-400 py-4 text-[10px] font-black uppercase tracking-widest hover:text-white hover:border-zinc-600 transition-all"
+                    >
+                      {showFallbackForm ? 'Hide' : 'Use'} Email Fallback (Formspree)
+                    </button>
+                  </div>
+
+                  {showFallbackForm && (
+                    <form className="space-y-6" onSubmit={handleBooking}>
+                      <div className="space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <label className="text-[9px] font-mono uppercase text-zinc-600 tracking-widest pl-1">
@@ -338,6 +455,7 @@ export default function Booking() {
                       />
                     </div>
                   </div>
+<<<<<<< HEAD
 
                   <button
                     type="submit"
@@ -353,11 +471,25 @@ export default function Booking() {
                       </>
                     )}
                   </button>
+=======
+                  
+                      <button 
+                        type="submit"
+                        disabled={state.submitting}
+                        className="w-full btn-primary group flex items-center justify-center gap-4 py-5 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {state.submitting ? 'TRANSMITTING...' : (
+                          <>Send Fallback Booking Request <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" /></>
+                        )}
+                      </button>
+>>>>>>> 2f8a7a5 (Prioritize Calendly booking with Formspree fallback and intake redirect flow)
 
-                  <p className="text-[8px] font-mono uppercase text-zinc-700 tracking-widest leading-relaxed text-center px-4 mt-6 italic">
-                    * Direct audio/visual link provided upon identity verification.
-                  </p>
-                </form>
+                      <p className="text-[8px] font-mono uppercase text-zinc-700 tracking-widest leading-relaxed text-center px-4 mt-6 italic">
+                        * Formspree fallback opens an email chain with your requested slot and optimization objective.
+                      </p>
+                    </form>
+                  )}
+                </div>
               )}
             </div>
           </div>

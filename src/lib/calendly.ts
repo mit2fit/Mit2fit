@@ -8,6 +8,7 @@ declare global {
 }
 
 const CALENDLY_WIDGET_SCRIPT = 'https://assets.calendly.com/assets/external/widget.js';
+const DEFAULT_CALENDLY_URL = 'https://calendly.com/mit2health';
 
 let scriptLoadPromise: Promise<void> | null = null;
 
@@ -23,7 +24,7 @@ function env(name: keyof ImportMetaEnv): string | undefined {
 
 /** Single fallback when specific event URLs are not set. */
 export function getCalendlyFallbackUrl(): string | undefined {
-  return env('VITE_CALENDLY_URL');
+  return env('VITE_CALENDLY_URL') ?? DEFAULT_CALENDLY_URL;
 }
 
 export function getConsultCalendlyUrl(isVirtual: boolean): string | undefined {

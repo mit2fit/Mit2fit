@@ -9,11 +9,14 @@ import {
   openCalendlyPopup,
 } from '../lib/calendly';
 
+const FORMSPREE_ID =
+  import.meta.env.VITE_FORMSPREE_ID ?? 'xnjwjkld';
+
 type Step = 'info' | 'health' | 'habits' | 'legal' | 'success';
 
 export default function Consultation() {
   const [step, setStep] = useState<Step>('info');
-  const [state, handleSubmitFormspree] = useForm('xnjwjkld');
+  const [state, handleSubmitFormspree] = useForm(FORMSPREE_ID);
 
   const scheduleUrl = useMemo(
     () =>

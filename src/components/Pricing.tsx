@@ -4,11 +4,13 @@ import { motion } from 'motion/react';
 import { Check, Users, Monitor, MapPin, Zap } from 'lucide-react';
 import {
   appendCalendlyParams,
-  getConsultCalendlyUrl,
-  getTrainingCalendlyUrl,
+  getEliteProtocolPackageCalendlyUrl,
+  getGroupConsultCalendlyUrl,
+  getPerformanceBuildPackageCalendlyUrl,
+  getStandardAuditPaymentCalendlyUrl,
 } from '../lib/calendly';
 
-type ScheduleKind = 'consult' | 'training';
+type ScheduleKind = 'standard-audit-payment' | 'performance-build-package' | 'elite-protocol-package';
 
 type Tier = {
   name: string;
@@ -36,7 +38,7 @@ const tiers: Tier[] = [
     ],
     cta: "Select Session",
     highlight: false,
-    scheduleKind: 'consult',
+    scheduleKind: 'standard-audit-payment',
     tierId: 'standard-audit',
   },
   {
@@ -53,7 +55,7 @@ const tiers: Tier[] = [
     ],
     cta: "Start Protocol",
     highlight: true,
-    scheduleKind: 'training',
+    scheduleKind: 'performance-build-package',
     tierId: 'performance-build',
   },
   {
@@ -70,7 +72,7 @@ const tiers: Tier[] = [
     ],
     cta: "Commit to Excellence",
     highlight: false,
-    scheduleKind: 'training',
+    scheduleKind: 'elite-protocol-package',
     tierId: 'elite-protocol',
   }
 ];
@@ -79,17 +81,35 @@ export default function Pricing() {
   const navigate = useNavigate();
   const [isVirtual, setIsVirtual] = useState(true);
 
+  const getTierUrl = (tier: Tier) => {
+    if (tier.scheduleKind === 'standard-audit-payment') {
+      return getStandardAuditPaymentCalendlyUrl();
+    }
+    if (tier.scheduleKind === 'performance-build-package') {
+      return getPerformanceBuildPackageCalendlyUrl();
+    }
+    return getEliteProtocolPackageCalendlyUrl();
+  };
+
   const handleTierSchedule = async (tier: Tier) => {
-    const url =
-      tier.scheduleKind === 'consult'
-        ? getConsultCalendlyUrl(isVirtual)
-        : getTrainingCalendlyUrl(isVirtual);
+    const url = getTierUrl(tier);
     if (url) {
       const trackedUrl = appendCalendlyParams(url, { utm_content: tier.tierId });
       window.open(trackedUrl, '_blank', 'noopener,noreferrer');
       return;
     }
     navigate({ pathname: '/', hash: 'book' });
+  };
+
+  const handleGroupQuote = () => {
+    const url = getGroupConsultCalendlyUrl();
+    if (url) {
+      window.open(
+        appendCalendlyParams(url, { utm_content: 'group-consult-request' }),
+        '_blank',
+        'noopener,noreferrer'
+      );
+    }
   };
 
   return (
@@ -229,7 +249,11 @@ export default function Pricing() {
             <p className="text-zinc-500 max-w-md leading-relaxed mb-8">
               Transform your unit. We offer specialized group rates for teams of 3+ looking to synchronize their performance cycles and build collective momentum.
             </p>
-            <button className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-white hover:text-brand transition-colors">
+            <button
+              type="button"
+              onClick={handleGroupQuote}
+              className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-white hover:text-brand transition-colors"
+            >
               Request Group Quote <Zap size={14} className="text-brand" />
             </button>
           </div>

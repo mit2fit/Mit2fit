@@ -9,6 +9,15 @@ declare global {
 
 const CALENDLY_WIDGET_SCRIPT = 'https://assets.calendly.com/assets/external/widget.js';
 const DEFAULT_CALENDLY_URL = 'https://calendly.com/mit2health';
+const DEFAULT_INITIAL_CONSULT_URL = 'https://calendly.com/mit2health/30min';
+const DEFAULT_GROUP_CONSULT_URL = 'https://calendly.com/mit2health/group-consult-request';
+const DEFAULT_STANDARD_SESSION_URL = 'https://calendly.com/mit2health/standard-session';
+const DEFAULT_STANDARD_AUDIT_PAYMENT_URL =
+  'https://calendly.com/mit2health/payments/af21bacd-84f3-44fb-9b46-10d7aecb2745';
+const DEFAULT_PERFORMANCE_BUILD_PACKAGE_URL =
+  'https://calendly.com/mit2health/packages/246bf2ec-a421-432e-b516-b49039b4c218';
+const DEFAULT_ELITE_PROTOCOL_PACKAGE_URL =
+  'https://calendly.com/mit2health/packages/0985ffb1-2cb0-452c-9385-add879f03266';
 
 let scriptLoadPromise: Promise<void> | null = null;
 
@@ -28,7 +37,7 @@ export function getCalendlyFallbackUrl(): string | undefined {
 }
 
 export function getConsultCalendlyUrl(isVirtual: boolean): string | undefined {
-  const fallback = env('VITE_CALENDLY_CONSULT_URL') ?? getCalendlyFallbackUrl();
+  const fallback = env('VITE_CALENDLY_CONSULT_URL') ?? DEFAULT_INITIAL_CONSULT_URL;
   if (isVirtual) {
     return env('VITE_CALENDLY_CONSULT_VIRTUAL') ?? fallback;
   }
@@ -36,11 +45,39 @@ export function getConsultCalendlyUrl(isVirtual: boolean): string | undefined {
 }
 
 export function getTrainingCalendlyUrl(isVirtual: boolean): string | undefined {
-  const fallback = env('VITE_CALENDLY_TRAINING_URL') ?? getCalendlyFallbackUrl();
+  const fallback = env('VITE_CALENDLY_TRAINING_URL') ?? DEFAULT_STANDARD_SESSION_URL;
   if (isVirtual) {
     return env('VITE_CALENDLY_TRAINING_VIRTUAL') ?? fallback;
   }
   return env('VITE_CALENDLY_TRAINING_INPERSON') ?? fallback;
+}
+
+export function getStandardSessionCalendlyUrl(isVirtual: boolean): string | undefined {
+  const fallback =
+    env('VITE_CALENDLY_STANDARD_SESSION_URL') ?? getTrainingCalendlyUrl(isVirtual);
+  if (isVirtual) {
+    return env('VITE_CALENDLY_STANDARD_SESSION_VIRTUAL') ?? fallback;
+  }
+  return env('VITE_CALENDLY_STANDARD_SESSION_INPERSON') ?? fallback;
+}
+
+export function getStandardAuditPaymentCalendlyUrl(): string | undefined {
+  return env('VITE_CALENDLY_STANDARD_AUDIT_PAYMENT_URL') ?? DEFAULT_STANDARD_AUDIT_PAYMENT_URL;
+}
+
+export function getGroupConsultCalendlyUrl(): string | undefined {
+  return env('VITE_CALENDLY_GROUP_CONSULT_URL') ?? DEFAULT_GROUP_CONSULT_URL;
+}
+
+export function getPerformanceBuildPackageCalendlyUrl(): string | undefined {
+  return (
+    env('VITE_CALENDLY_PERFORMANCE_BUILD_PACKAGE_URL') ??
+    DEFAULT_PERFORMANCE_BUILD_PACKAGE_URL
+  );
+}
+
+export function getEliteProtocolPackageCalendlyUrl(): string | undefined {
+  return env('VITE_CALENDLY_ELITE_PROTOCOL_PACKAGE_URL') ?? DEFAULT_ELITE_PROTOCOL_PACKAGE_URL;
 }
 
 export function appendCalendlyParams(

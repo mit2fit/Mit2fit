@@ -7,6 +7,7 @@ import Consultation from './pages/Consultation';
 import BlogList from './pages/BlogList';
 import BlogDetails from './pages/BlogDetails';
 import Dashboard from './pages/Dashboard';
+import ServiceDetails from './pages/ServiceDetails';
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/tools" element={<Tools />} />
             <Route path="/consultation" element={<Consultation />} />
+            <Route path="/services/:id" element={<ServiceDetails />} />
             <Route path="/blog" element={<BlogList />} />
             <Route path="/blog/:id" element={<BlogDetails />} />
             <Route path="/dashboard" element={<Dashboard />} />

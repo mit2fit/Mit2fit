@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Instagram, Twitter, Linkedin, ArrowUp } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 
 export default function Footer() {
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -9,12 +10,8 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex flex-col md:flex-row justify-between items-start mb-12 md:mb-20 gap-16">
           <div className="max-w-md">
-            <Link to="/" className="flex flex-col mb-8">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-brand rounded-sm flex items-center justify-center font-black text-black text-xl italic text-center leading-none">M</div>
-                <span className="text-xl font-black tracking-tighter uppercase font-display text-white">MIT2FIT</span>
-              </div>
-              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-brand font-bold mt-1">You can move the mountains</span>
+            <Link to="/" className="inline-flex mb-8" aria-label="MIT2FIT home">
+              <BrandLogo taglineTone="brand" />
             </Link>
             <p className="text-zinc-500 text-lg leading-relaxed mb-10">
               Pushing the boundaries of human potential through biological data and elite training protocols. Optimized for life.

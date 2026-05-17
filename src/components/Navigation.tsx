@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import BrandLogo from './BrandLogo';
 
 export default function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -41,12 +42,8 @@ export default function Navigation() {
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'glass-nav py-4' : 'bg-transparent py-8'}`}>
       <div className="max-w-7xl mx-auto px-6 flex justify-between items-center text-ink">
-        <Link to="/" className="flex flex-col">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-brand rounded-sm flex items-center justify-center font-black text-black text-xl italic leading-none">M</div>
-            <span className="text-xl font-black tracking-tighter uppercase font-display">MIT2FIT</span>
-          </div>
-          <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-zinc-500 font-bold mt-1">You can move the mountains</span>
+        <Link to="/" className="flex flex-col" aria-label="MIT2FIT home">
+          <BrandLogo />
         </Link>
 
         {/* Desktop Nav */}

@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-brand: #ea580c; /* orange-600 */
+  --color-ink: #f4f4f5; /* zinc-100 */
+  --color-paper: #09090b; /* zinc-950 */
+  --color-surface: #18181b; /* zinc-900 */
+  --color-edge: #27272a; /* zinc-800 */
+  
+  --animate-slam-in: slam-in 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slam-in {
+  0% { transform: scale(1.1) translateY(20px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@layer base {
+  html, body {
+    @apply bg-paper text-ink font-sans selection:bg-brand selection:text-white max-w-full overflow-x-hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tighter font-black uppercase break-words;
+  }
+}
+
+.glass-nav {
+  @apply bg-paper/80 backdrop-blur-md border-b border-edge;
+}
+
+.btn-primary {
+  @apply bg-brand text-white font-display uppercase tracking-widest px-6 py-3 transition-all hover:bg-white hover:text-black active:scale-95 text-xs font-black;
+}
+
+.btn-secondary {
+  @apply border border-edge text-ink font-display uppercase tracking-widest px-6 py-3 transition-all hover:bg-white hover:text-black text-xs font-black;
+}
+
+.section-label {
+  @apply font-mono text-[10px] uppercase tracking-[0.3em] text-brand mb-4 inline-block;
+}
+
+.markdown-body h1 { @apply text-5xl mb-8 mt-12 text-white; }
+.markdown-body h2 { @apply text-xs font-black uppercase tracking-widest text-zinc-500 mb-6; }
+.markdown-body p { @apply text-zinc-400 text-lg leading-relaxed mb-6; }
+.markdown-body ul { @apply list-disc list-inside mb-6 text-zinc-400; }

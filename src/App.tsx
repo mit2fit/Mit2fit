@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navigation from './components/Navigation';
 import Footer from './components/Footer';
 import Home from './pages/Home';
@@ -9,7 +9,6 @@ import BlogDetails from './pages/BlogDetails';
 import Dashboard from './pages/Dashboard';
 import ExerciseTracker from './pages/ExerciseTracker';
 import { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
 
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
@@ -38,11 +37,15 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/tracker" element={<ExerciseTracker />} />
+            <Route path="/workout" element={<Navigate to="/tracker" replace />} />
+            <Route path="/exercise-tracker" element={<Navigate to="/tracker" replace />} />
             <Route path="/tools" element={<Tools />} />
             <Route path="/consultation" element={<Consultation />} />
             <Route path="/blog" element={<BlogList />} />
             <Route path="/blog/:id" element={<BlogDetails />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            {/* Catch-all fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
         <Footer />
@@ -50,3 +53,4 @@ export default function App() {
     </Router>
   );
 }
+

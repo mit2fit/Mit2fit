@@ -2,12 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mit2Fit:You can move the Mountains</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Mit2Fit: You can move the Mountains</title>
+    <meta name="description" content="High-performance fitness coaching and science-backed training for peak athletic performance." />
+    <meta property="og:title" content="Mit2Fit: You can move the Mountains" />
+    <meta property="og:description" content="High-performance fitness coaching and science-backed training for peak athletic performance." />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#09090b" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // Restore path if redirected from static 404.html
+      (function() {
+        var redirect = sessionStorage.getItem('mit2fit_redirect_path');
+        if (redirect) {
+          sessionStorage.removeItem('mit2fit_redirect_path');
+          if (redirect !== '/' && redirect !== window.location.pathname) {
+            window.history.replaceState(null, '', redirect);
+          }
+        }
+      })();
+    </script>
   </head>
-  <body>
+  <body class="bg-paper text-ink antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
 

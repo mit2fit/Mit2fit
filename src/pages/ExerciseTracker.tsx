@@ -289,19 +289,54 @@ function exportCSV(workouts: CompletedWorkout[]) {
   URL.revokeObjectURL(url);
 }
 
+const ACTIVE_SESSION_STORAGE_KEY = 'mit2fit_active_session_v2';
+
+interface StoredActiveSession {
+  activeExercises: ActiveExercise[];
+  sessionTitle: string;
+  activeTemplateId: string;
+  elapsedSeconds: number;
+  hasStartedWorkout: boolean;
+  unit: 'lbs' | 'kg';
+  savedAt: number;
+}
+
+function loadSavedActiveSession(): StoredActiveSession | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (raw) {
+      const parsed: StoredActiveSession = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.activeExercises) && parsed.activeExercises.length > 0) {
+        // Keep active session valid if within last 24 hours
+        if (Date.now() - (parsed.savedAt || 0) < 24 * 60 * 60 * 1000) {
+          return parsed;
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load active session from localStorage', e);
+  }
+  return null;
+}
+
 export default function ExerciseTracker() {
+  const initialSession = useMemo(() => loadSavedActiveSession(), []);
+
   const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
-  const [unit, setUnit] = useState<'lbs' | 'kg'>('lbs');
-  const [sessionTitle, setSessionTitle] = useState('Upper Day A (Hypertrophy & Strength)');
-  const [activeTemplateId, setActiveTemplateId] = useState<string>('upper-day-a');
+  const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
+  const [sessionTitle, setSessionTitle] = useState(initialSession?.sessionTitle || 'Upper Day A (Hypertrophy & Strength)');
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(initialSession?.activeTemplateId || 'upper-day-a');
   
   // Stopwatch State: NEVER auto-starts, user initiates via "Start Workout"
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(initialSession?.elapsedSeconds || 0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [hasStartedWorkout, setHasStartedWorkout] = useState(false);
+  const [hasStartedWorkout, setHasStartedWorkout] = useState(initialSession?.hasStartedWorkout || false);
 
   // Active exercises in workout session
   const [activeExercises, setActiveExercises] = useState<ActiveExercise[]>(() => {
+    if (initialSession?.activeExercises && initialSession.activeExercises.length > 0) {
+      return initialSession.activeExercises;
+    }
     return buildTemplateExercises('upper-day-a');
   });
 
@@ -362,6 +397,24 @@ export default function ExerciseTracker() {
   useEffect(() => {
     localStorage.setItem('mit2fit_exercise_logs_v4', JSON.stringify(history));
   }, [history]);
+
+  // Auto-persist active workout session so reloading or closing/reopening browser preserves in-progress sets
+  useEffect(() => {
+    try {
+      const sessionData: StoredActiveSession = {
+        activeExercises,
+        sessionTitle,
+        activeTemplateId,
+        elapsedSeconds,
+        hasStartedWorkout,
+        unit,
+        savedAt: Date.now()
+      };
+      localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(sessionData));
+    } catch (e) {
+      console.error('Failed to sync active session to localStorage', e);
+    }
+  }, [activeExercises, sessionTitle, activeTemplateId, elapsedSeconds, hasStartedWorkout, unit]);
 
   // Workout Duration Stopwatch
   useEffect(() => {
@@ -769,6 +822,17 @@ export default function ExerciseTracker() {
     setHistory(prev => [workoutRecord, ...prev]);
     setCompletedModalData(workoutRecord);
     setIsTimerRunning(false);
+    setHasStartedWorkout(false);
+    setElapsedSeconds(0);
+    setActiveExercises(prev => prev.map(ex => ({
+      ...ex,
+      sets: ex.sets.map(s => ({ ...s, completed: false }))
+    })));
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Dispatchers: Send via WhatsApp, Email, or Clipboard
@@ -878,6 +942,11 @@ export default function ExerciseTracker() {
           ...ex,
           sets: ex.sets.map(s => ({ ...s, completed: false }))
         })));
+        try {
+          localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+        } catch (e) {
+          console.error(e);
+        }
         setAlertNotice('Current session reset.');
         setTimeout(() => setAlertNotice(null), 3000);
         setConfirmModal(null);

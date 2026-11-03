@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calculator, 
   Droplets, 
@@ -17,35 +17,149 @@ import {
   CheckCircle2, 
   AlertTriangle,
   Layers,
-  ChevronRight
+  ChevronRight,
+  HardDrive,
+  Share2,
+  Download,
+  Upload,
+  History,
+  Calendar,
+  TrendingUp,
+  TrendingDown,
+  Copy,
+  Check,
+  Mail,
+  MessageCircle,
+  FileSpreadsheet,
+  Trash2,
+  Save,
+  RefreshCw,
+  X,
+  Clock,
+  Plus,
+  ShieldCheck,
+  Key
 } from 'lucide-react';
+import { 
+  BiometricProfile, 
+  BiometricSnapshot, 
+  loadStoredProfile, 
+  saveStoredProfile, 
+  loadStoredBiometricHistory, 
+  saveStoredBiometricHistory, 
+  loadStoredProtocolKey, 
+  saveStoredProtocolKey,
+  generateProtocolKey,
+  exportBiometricsCSV, 
+  formatBiometricsTextReport,
+  PROFILE_STORAGE_KEY,
+  HISTORY_STORAGE_KEY
+} from '../utils/fitnessStorage';
 
-type ToolType = 'DASHBOARD' | 'WHR' | 'BMI' | 'BODYFAT' | 'CALORIES' | 'MACROS' | 'WATER';
+type ToolType = 'DASHBOARD' | 'HISTORY' | 'WHR' | 'BMI' | 'BODYFAT' | 'CALORIES' | 'MACROS' | 'WATER';
 
 export default function Tools() {
   const [activeTool, setActiveTool] = useState<ToolType>('DASHBOARD');
-  const [unitSystem, setUnitSystem] = useState<'metric' | 'imperial'>('metric');
-  const [nutritionGoal, setNutritionGoal] = useState<'cut' | 'maintain' | 'bulk'>('maintain');
   
-  // Starting Point / Baseline Profile Entry (stored in metric for calculation fidelity)
-  const [weightKg, setWeightKg] = useState(76);
-  const [heightCm, setHeightCm] = useState(178);
-  const [age, setAge] = useState(28);
-  const [gender, setGender] = useState<'male' | 'female'>('male');
-  const [activity, setActivity] = useState(1.55); // Moderately active default
-  const [waistCm, setWaistCm] = useState(82); // ~32.3 inches
-  const [hipCm, setHipCm] = useState(98);   // ~38.6 inches
+  // Load persistent profile state or URL parameters
+  const [profile, setProfile] = useState<BiometricProfile>(() => {
+    const stored = loadStoredProfile();
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('w')) {
+        const w = parseFloat(params.get('w') || '');
+        if (!isNaN(w) && w >= 30 && w <= 250) stored.weightKg = w;
+      }
+      if (params.has('h')) {
+        const h = parseFloat(params.get('h') || '');
+        if (!isNaN(h) && h >= 100 && h <= 250) stored.heightCm = h;
+      }
+      if (params.has('a')) {
+        const a = parseInt(params.get('a') || '');
+        if (!isNaN(a) && a >= 10 && a <= 100) stored.age = a;
+      }
+      if (params.has('g')) {
+        const g = params.get('g');
+        if (g === 'male' || g === 'female') stored.gender = g;
+      }
+      if (params.has('waist')) {
+        const waist = parseFloat(params.get('waist') || '');
+        if (!isNaN(waist) && waist >= 40 && waist <= 200) stored.waistCm = waist;
+      }
+      if (params.has('hip')) {
+        const hip = parseFloat(params.get('hip') || '');
+        if (!isNaN(hip) && hip >= 50 && hip <= 250) stored.hipCm = hip;
+      }
+      if (params.has('key')) {
+        const k = params.get('key');
+        if (k && k.length >= 4) stored.protocolKey = k.toUpperCase();
+      }
+    } catch (e) {
+      console.error('URL param parsing error', e);
+    }
+    return stored;
+  });
+
+  // History timeline state from localStorage
+  const [history, setHistory] = useState<BiometricSnapshot[]>(loadStoredBiometricHistory);
+
+  // Portal & Modal States
+  const [isDataPortalOpen, setIsDataPortalOpen] = useState(false);
+  const [alertNotice, setAlertNotice] = useState<string | null>(null);
+  const [isCheckinModalOpen, setIsCheckinModalOpen] = useState(false);
+  const [checkinNote, setCheckinNote] = useState('');
+  
+  // In-app confirmation modal (eliminates window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-persist profile state to localStorage whenever modified
+  useEffect(() => {
+    saveStoredProfile(profile);
+
+    // Synchronize to mit2fit_benchmarks for Dashboard interoperability
+    try {
+      const existingBenchRaw = localStorage.getItem('mit2fit_benchmarks');
+      const existingBench = existingBenchRaw ? JSON.parse(existingBenchRaw) : {};
+      const heightInches = Math.round(profile.heightCm * 0.393701);
+      const weightLbs = Math.round(profile.weightKg * 2.20462);
+      const lifestyle = profile.activity >= 1.7 ? 'athlete' : profile.activity >= 1.4 ? 'active' : 'sedentary';
+      localStorage.setItem('mit2fit_benchmarks', JSON.stringify({
+        ...existingBench,
+        age: profile.age,
+        height: heightInches,
+        bodyWeight: weightLbs,
+        lifestyle,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error('Failed to sync benchmarks', e);
+    }
+  }, [profile]);
+
+  // Auto-persist history state to localStorage
+  useEffect(() => {
+    saveStoredBiometricHistory(history);
+  }, [history]);
 
   // Conversion Helpers
   const kgToLbs = (kg: number) => Math.round(kg * 2.20462);
-  const lbsToKg = (lbs: number) => lbs / 2.20462;
+  const lbsToKg = (lbs: number) => Math.round((lbs / 2.20462) * 10) / 10;
   const cmToIn = (cm: number) => (cm * 0.393701).toFixed(1);
-  const inToCm = (inches: number) => inches / 0.393701;
+  const inToCm = (inches: number) => Math.round((inches / 0.393701) * 10) / 10;
 
   // 1. BMI Calculation
   const calculateBMIValue = () => {
-    const heightInMeters = heightCm / 100;
-    return weightKg / (heightInMeters * heightInMeters);
+    const heightInMeters = profile.heightCm / 100;
+    return profile.weightKg / (heightInMeters * heightInMeters);
   };
 
   const calculateBMI = () => {
@@ -62,8 +176,8 @@ export default function Tools() {
   // 2. Body Fat % Calculation (Deurenberg Formula)
   const calculateBodyFatValue = () => {
     const bmi = calculateBMIValue();
-    const genderFactor = gender === 'male' ? 1 : 0;
-    const bodyFat = (1.20 * bmi) + (0.23 * age) - (10.8 * genderFactor) - 5.4;
+    const genderFactor = profile.gender === 'male' ? 1 : 0;
+    const bodyFat = (1.20 * bmi) + (0.23 * profile.age) - (10.8 * genderFactor) - 5.4;
     return Math.max(3, bodyFat);
   };
 
@@ -72,7 +186,7 @@ export default function Tools() {
   };
 
   const getBodyFatCategory = (bf: number) => {
-    if (gender === 'male') {
+    if (profile.gender === 'male') {
       if (bf < 6) return { label: 'Essential Fat', color: 'text-sky-400', badgeBg: 'bg-sky-400/10 border-sky-400/30' };
       if (bf < 14) return { label: 'Athletic', color: 'text-brand', badgeBg: 'bg-brand/10 border-brand/30' };
       if (bf < 18) return { label: 'Fitness', color: 'text-brand opacity-90', badgeBg: 'bg-brand/10 border-brand/30' };
@@ -89,8 +203,8 @@ export default function Tools() {
 
   // 3. Waist-to-Hip Ratio (WHR) Calculation (World Health Organization Standards)
   const calculateWHRValue = () => {
-    if (hipCm <= 0) return 0.85;
-    return waistCm / hipCm;
+    if (profile.hipCm <= 0) return 0.85;
+    return profile.waistCm / profile.hipCm;
   };
 
   const calculateWHR = () => {
@@ -99,7 +213,7 @@ export default function Tools() {
 
   const getWHRAnalysis = () => {
     const whr = calculateWHRValue();
-    const isMale = gender === 'male';
+    const isMale = profile.gender === 'male';
 
     let riskLevel: 'low' | 'moderate' | 'high' = 'low';
     let riskLabel = 'Low Metabolic Risk';
@@ -154,19 +268,19 @@ export default function Tools() {
 
   // 4. BMR and TDEE Calculations
   const calculateBMR = () => {
-    let bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age);
-    bmr = gender === 'male' ? bmr + 5 : bmr - 161;
+    let bmr = (10 * profile.weightKg) + (6.25 * profile.heightCm) - (5 * profile.age);
+    bmr = profile.gender === 'male' ? bmr + 5 : bmr - 161;
     return Math.round(bmr);
   };
 
   const calculateTDEE = () => {
-    return Math.round(calculateBMR() * activity);
+    return Math.round(calculateBMR() * profile.activity);
   };
 
   // 5. Water Hydration Calculation
   const calculateWater = () => {
-    const liters = weightKg * 0.033;
-    return unitSystem === 'metric' ? liters.toFixed(1) : (liters * 33.814).toFixed(0);
+    const liters = profile.weightKg * 0.033;
+    return profile.unitSystem === 'metric' ? liters.toFixed(1) : (liters * 33.814).toFixed(0);
   };
 
   // 6. Macro Calculation
@@ -176,7 +290,7 @@ export default function Tools() {
       cut: { p: 0.35, f: 0.25, c: 0.40, calAdj: -500 },
       maintain: { p: 0.30, f: 0.30, c: 0.40, calAdj: 0 },
       bulk: { p: 0.25, f: 0.25, c: 0.50, calAdj: 300 }
-    }[nutritionGoal];
+    }[profile.nutritionGoal];
 
     const targetCalories = Math.max(1200, tdee + ratios.calAdj);
     
@@ -188,12 +302,12 @@ export default function Tools() {
     };
   };
 
-  // 7. Multi-Factor Health & Fitness Profile Analysis (Cross-referencing BMI, WHR, Body Fat, and Activity)
+  // 7. Multi-Factor Health & Fitness Profile Analysis
   const getConsolidatedProfileAnalysis = () => {
     const bmi = calculateBMIValue();
     const bf = calculateBodyFatValue();
     const whrData = getWHRAnalysis();
-    const isMale = gender === 'male';
+    const isMale = profile.gender === 'male';
 
     let archetype = 'Balanced Conditioning';
     let summary = '';
@@ -206,13 +320,11 @@ export default function Tools() {
     const isHighWHR = whrData.riskLevel === 'high';
 
     if (bmi >= 25 && isAthleticBF && isLowWHR) {
-      // High BMI due to muscle mass, not adiposity
       archetype = 'High Muscular Density (Athletic Overload)';
       summary = `Scale weight indicates a high BMI (${bmi.toFixed(1)}), but your favorable Waist-to-Hip ratio (${whrData.whr}) and low body fat (${bf.toFixed(1)}%) demonstrate substantial muscular development rather than visceral or central adiposity. Standard BMI charts falsely categorize this build as overweight.`;
       recommendation = 'Maintain heavy compound resistance training with progressive overload. Fuel with maintenance or lean surplus macros to support dense myofibrillar hypertrophy.';
       priority = 'hypertrophy';
     } else if (bmi < 25 && isHighWHR) {
-      // Normal weight obesity / Central Adiposity
       archetype = 'Metabolic Caution (Normal Weight Central Adiposity)';
       summary = `While overall BMI (${bmi.toFixed(1)}) falls within standard ranges, your elevated Waist-to-Hip ratio (${whrData.whr}) indicates visceral fat deposition around core abdominal organs. This pattern is clinically correlated with insulin resistance and elevated cardiovascular strain despite normal scale weight.`;
       recommendation = 'Prioritize progressive resistance training 3-4 days/week to build metabolically active muscle, pair with daily 8k-10k step threshold and moderate carbohydrate timing.';
@@ -241,10 +353,194 @@ export default function Tools() {
   const macroData = calculateMacros();
   const whrData = getWHRAnalysis();
 
+  // Log current biometric check-in snapshot to timeline
+  const handleLogSnapshot = (customNote?: string) => {
+    const whr = Number(calculateWHR());
+    const bmi = Number(calculateBMI());
+    const bodyFat = Number(calculateBodyFat());
+    const tdee = calculateTDEE();
+    const targetCalories = macroData.calories;
+
+    const snapshotWeightFormatted = profile.unitSystem === 'metric' 
+      ? `${profile.weightKg}kg` 
+      : `${kgToLbs(profile.weightKg)}lbs`;
+
+    const newSnapshot: BiometricSnapshot = {
+      id: `snap-${Date.now()}`,
+      date: new Date().toISOString(),
+      weightKg: profile.weightKg,
+      heightCm: profile.heightCm,
+      waistCm: profile.waistCm,
+      hipCm: profile.hipCm,
+      whr,
+      bmi,
+      bodyFat,
+      tdee,
+      targetCalories,
+      goal: profile.nutritionGoal,
+      notes: customNote?.trim() || `Check-in: ${profile.nutritionGoal.toUpperCase()} phase (${snapshotWeightFormatted}, WHR ${whr})`
+    };
+
+    const updated = [newSnapshot, ...history];
+    setHistory(updated);
+    saveStoredBiometricHistory(updated);
+    setIsCheckinModalOpen(false);
+    setCheckinNote('');
+    setAlertNotice('Biometric snapshot logged to your progress timeline!');
+    setTimeout(() => setAlertNotice(null), 3500);
+  };
+
+  // Delete an individual snapshot (fixes issue if accidentally added)
+  const handleDeleteSnapshot = (id: string) => {
+    const updated = history.filter(item => item.id !== id);
+    setHistory(updated);
+    saveStoredBiometricHistory(updated);
+    setAlertNotice('Snapshot removed from timeline.');
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Clear all history logs
+  const handleClearAllHistory = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Clear Biometric History?',
+      message: 'This will erase all logged check-ins from your local timeline. Your baseline profile values will remain intact. This action cannot be undone.',
+      confirmText: 'Clear All Check-ins',
+      isDanger: true,
+      onConfirm: () => {
+        setHistory([]);
+        saveStoredBiometricHistory([]);
+        setConfirmModal(null);
+        setAlertNotice('All check-in history cleared.');
+        setTimeout(() => setAlertNotice(null), 3000);
+      }
+    });
+  };
+
+  // WhatsApp share
+  const handleSendWhatsApp = (text: string) => {
+    const encoded = encodeURIComponent(text);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
+  };
+
+  // Email share
+  const handleSendEmail = (subject: string, body: string) => {
+    const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+
+  // Copy to clipboard
+  const handleCopyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setAlertNotice(`${label} copied to clipboard!`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Copy shareable link
+  const handleCopyShareLink = () => {
+    try {
+      const url = new URL(window.location.origin + '/tools');
+      url.searchParams.set('w', profile.weightKg.toString());
+      url.searchParams.set('h', profile.heightCm.toString());
+      url.searchParams.set('a', profile.age.toString());
+      url.searchParams.set('g', profile.gender);
+      url.searchParams.set('waist', profile.waistCm.toString());
+      url.searchParams.set('hip', profile.hipCm.toString());
+      url.searchParams.set('key', profile.protocolKey || 'MIT-FIT-782');
+      navigator.clipboard.writeText(url.toString());
+      setAlertNotice('Share link with your current metrics copied to clipboard!');
+      setTimeout(() => setAlertNotice(null), 3500);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Export JSON backup
+  const handleExportBackup = () => {
+    const backupData = {
+      profile,
+      history,
+      exportedAt: new Date().toISOString(),
+      app: 'MIT2FIT-OPTIMIZATION-LAB'
+    };
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mit2fit-biometrics-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setAlertNotice('Backup JSON exported successfully.');
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Import JSON backup
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const raw = event.target?.result as string;
+        const parsed = JSON.parse(raw);
+        if (parsed.profile && typeof parsed.profile.weightKg === 'number') {
+          setProfile(parsed.profile);
+          saveStoredProfile(parsed.profile);
+        }
+        if (Array.isArray(parsed.history)) {
+          setHistory(parsed.history);
+          saveStoredBiometricHistory(parsed.history);
+        }
+        setAlertNotice('Biometric backup restored successfully!');
+        setTimeout(() => setAlertNotice(null), 3500);
+      } catch (err) {
+        setAlertNotice('Failed to import backup file. Invalid JSON format.');
+        setTimeout(() => setAlertNotice(null), 4000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Regenerate Protocol Key
+  const handleRegenerateKey = () => {
+    const newKey = generateProtocolKey();
+    const updated = { ...profile, protocolKey: newKey };
+    setProfile(updated);
+    saveStoredProtocolKey(newKey);
+    setAlertNotice(`Protocol Key updated to ${newKey}`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
   return (
     <main className="pt-28 pb-16 md:pt-36 md:pb-32 bg-paper text-ink min-h-screen">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         
+        {/* Floating Toast Alert */}
+        <AnimatePresence>
+          {alertNotice && (
+            <motion.div
+              initial={{ opacity: 0, y: -20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-stone-900 border border-brand/50 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-mono tracking-wider backdrop-blur-md"
+            >
+              <CheckCircle2 className="w-4 h-4 text-brand shrink-0" />
+              <span>{alertNotice}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Hidden File Input for JSON Backup Import */}
+        <input 
+          type="file"
+          ref={fileInputRef}
+          onChange={handleImportBackup}
+          accept=".json"
+          className="hidden"
+        />
+
         {/* Header */}
         <header className="mb-10 md:mb-14 border-b border-edge pb-8 md:pb-12">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
@@ -254,34 +550,58 @@ export default function Tools() {
                 <span className="text-zinc-500 text-xs font-black uppercase tracking-[0.35em]">
                   Mit2Fit Optimization Lab
                 </span>
+                <span className="text-zinc-700 hidden sm:inline">•</span>
+                <span className="text-[10px] font-mono text-brand font-bold uppercase tracking-widest hidden sm:inline">
+                  Key: {profile.protocolKey || 'MIT-FIT-782'}
+                </span>
               </div>
               <h1 className="text-3xl sm:text-6xl md:text-8xl font-black tracking-tighter uppercase">
                 Performance <span className="text-brand">Analytics.</span>
               </h1>
               <p className="text-base sm:text-lg text-zinc-400 max-w-2xl mt-4 leading-relaxed font-sans">
-                Unified biometric intelligence. Enter your baseline metrics once to generate a consolidated 
-                health dashboard, waist-to-hip ratio analysis, and personalized metabolic targets.
+                Unified biometric intelligence. Enter your baseline metrics once—everything automatically 
+                persists, logs progress over time, and shares seamlessly without starting fresh.
               </p>
             </div>
             
-            {/* Unit Toggle */}
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-mono uppercase text-zinc-500 font-bold tracking-widest hidden sm:inline">
-                Units:
-              </span>
+            {/* Header Action Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Log Snapshot Button */}
+              <button
+                type="button"
+                onClick={() => setIsCheckinModalOpen(true)}
+                className="flex items-center gap-2 px-5 py-3 bg-brand/10 hover:bg-brand/20 border border-brand/40 text-brand text-[10px] font-black uppercase tracking-widest transition-all"
+                title="Save current biometrics as a timestamped snapshot"
+              >
+                <Plus size={14} />
+                <span>Log Check-in</span>
+              </button>
+
+              {/* Save & Share Data Portal Button */}
+              <button
+                type="button"
+                onClick={() => setIsDataPortalOpen(true)}
+                className="flex items-center gap-2 px-5 py-3 bg-surface hover:bg-zinc-800 border border-edge text-zinc-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                title="Open Device Storage & Export / Share Portal"
+              >
+                <HardDrive size={14} className="text-brand" />
+                <span>Save & Share</span>
+              </button>
+
+              {/* Unit Toggle */}
               <div className="flex bg-surface p-1 border border-edge">
                 <button 
-                  onClick={() => setUnitSystem('metric')}
-                  className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                    unitSystem === 'metric' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
+                  onClick={() => setProfile({ ...profile, unitSystem: 'metric' })}
+                  className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                    profile.unitSystem === 'metric' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   Metric (kg/cm)
                 </button>
                 <button 
-                  onClick={() => setUnitSystem('imperial')}
-                  className={`px-5 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                    unitSystem === 'imperial' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
+                  onClick={() => setProfile({ ...profile, unitSystem: 'imperial' })}
+                  className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                    profile.unitSystem === 'imperial' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   Imperial (lbs/in)
@@ -298,38 +618,48 @@ export default function Tools() {
           <div className="p-6 md:p-8 border-b border-edge bg-black/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-widest font-black">
-                <User size={14} /> Unified Starting Point Entry
+                <User size={14} /> Unified Starting Point Entry (Auto-Saved)
               </div>
               <h2 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white mt-1">
                 Your Baseline Biometric Profile
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Adjusting values below updates the entire dashboard and individual calculator diagnostics in real time.
+                Every slider adjustment is automatically saved to your device. You'll never start from scratch.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Gender:</span>
-              <div className="flex border border-edge bg-paper p-1">
-                <button
-                  type="button"
-                  onClick={() => setGender('male')}
-                  className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
-                    gender === 'male' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
-                  }`}
-                >
-                  Male
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGender('female')}
-                  className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
-                    gender === 'female' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
-                  }`}
-                >
-                  Female
-                </button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Gender:</span>
+                <div className="flex border border-edge bg-paper p-1">
+                  <button
+                    type="button"
+                    onClick={() => setProfile({ ...profile, gender: 'male' })}
+                    className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
+                      profile.gender === 'male' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    Male
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfile({ ...profile, gender: 'female' })}
+                    className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
+                      profile.gender === 'female' ? 'bg-brand text-black' : 'text-zinc-500 hover:text-white'
+                    }`}
+                  >
+                    Female
+                  </button>
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => handleLogSnapshot()}
+                className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 bg-brand/10 hover:bg-brand/20 border border-brand/40 text-brand text-[10px] font-mono uppercase font-bold tracking-wider"
+              >
+                <Clock size={12} /> Log Snapshot
+              </button>
             </div>
           </div>
 
@@ -340,23 +670,26 @@ export default function Tools() {
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Weight</span>
                 <span className="text-brand font-bold text-sm">
-                  {unitSystem === 'metric' ? `${weightKg} kg` : `${kgToLbs(weightKg)} lbs`}
+                  {profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}
                 </span>
               </div>
               <input 
                 type="range" 
-                min={unitSystem === 'metric' ? 40 : 90} 
-                max={unitSystem === 'metric' ? 160 : 350} 
-                value={unitSystem === 'metric' ? weightKg : kgToLbs(weightKg)} 
+                min={profile.unitSystem === 'metric' ? 40 : 90} 
+                max={profile.unitSystem === 'metric' ? 160 : 350} 
+                value={profile.unitSystem === 'metric' ? profile.weightKg : kgToLbs(profile.weightKg)} 
                 onChange={(e) => {
                   const val = Number(e.target.value);
-                  setWeightKg(unitSystem === 'metric' ? val : lbsToKg(val));
+                  setProfile({ 
+                    ...profile, 
+                    weightKg: profile.unitSystem === 'metric' ? val : lbsToKg(val) 
+                  });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{unitSystem === 'metric' ? '40kg' : '90lbs'}</span>
-                <span>{unitSystem === 'metric' ? '160kg' : '350lbs'}</span>
+                <span>{profile.unitSystem === 'metric' ? '40kg' : '90lbs'}</span>
+                <span>{profile.unitSystem === 'metric' ? '160kg' : '350lbs'}</span>
               </div>
             </div>
 
@@ -365,73 +698,82 @@ export default function Tools() {
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Height</span>
                 <span className="text-brand font-bold text-sm">
-                  {unitSystem === 'metric' ? `${heightCm} cm` : `${cmToIn(heightCm)} in`}
+                  {profile.unitSystem === 'metric' ? `${profile.heightCm} cm` : `${cmToIn(profile.heightCm)} in`}
                 </span>
               </div>
               <input 
                 type="range" 
-                min={unitSystem === 'metric' ? 140 : 55} 
-                max={unitSystem === 'metric' ? 220 : 86} 
-                value={unitSystem === 'metric' ? heightCm : Number(cmToIn(heightCm))} 
+                min={profile.unitSystem === 'metric' ? 130 : 51} 
+                max={profile.unitSystem === 'metric' ? 220 : 86} 
+                value={profile.unitSystem === 'metric' ? profile.heightCm : Number(cmToIn(profile.heightCm))} 
                 onChange={(e) => {
                   const val = Number(e.target.value);
-                  setHeightCm(unitSystem === 'metric' ? val : inToCm(val));
+                  setProfile({ 
+                    ...profile, 
+                    heightCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                  });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{unitSystem === 'metric' ? '140cm' : '55in'}</span>
-                <span>{unitSystem === 'metric' ? '220cm' : '86in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '130cm' : '51in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '220cm' : '86in'}</span>
               </div>
             </div>
 
             {/* Waist Circumference */}
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
-                <span className="text-zinc-500 font-bold">Waist (Narrowest / Navel)</span>
+                <span className="text-zinc-500 font-bold">Waist (Narrowest)</span>
                 <span className="text-brand font-bold text-sm">
-                  {unitSystem === 'metric' ? `${waistCm} cm` : `${cmToIn(waistCm)} in`}
+                  {profile.unitSystem === 'metric' ? `${profile.waistCm} cm` : `${cmToIn(profile.waistCm)} in`}
                 </span>
               </div>
               <input 
                 type="range" 
-                min={unitSystem === 'metric' ? 50 : 20} 
-                max={unitSystem === 'metric' ? 140 : 55} 
-                value={unitSystem === 'metric' ? waistCm : Number(cmToIn(waistCm))} 
+                min={profile.unitSystem === 'metric' ? 50 : 20} 
+                max={profile.unitSystem === 'metric' ? 150 : 60} 
+                value={profile.unitSystem === 'metric' ? profile.waistCm : Number(cmToIn(profile.waistCm))} 
                 onChange={(e) => {
                   const val = Number(e.target.value);
-                  setWaistCm(unitSystem === 'metric' ? val : inToCm(val));
+                  setProfile({ 
+                    ...profile, 
+                    waistCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                  });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{unitSystem === 'metric' ? '50cm' : '20in'}</span>
-                <span>{unitSystem === 'metric' ? '140cm' : '55in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '50cm' : '20in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '150cm' : '60in'}</span>
               </div>
             </div>
 
             {/* Hip Circumference */}
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
-                <span className="text-zinc-500 font-bold">Hips (Widest Point)</span>
+                <span className="text-zinc-500 font-bold">Hip (Widest)</span>
                 <span className="text-brand font-bold text-sm">
-                  {unitSystem === 'metric' ? `${hipCm} cm` : `${cmToIn(hipCm)} in`}
+                  {profile.unitSystem === 'metric' ? `${profile.hipCm} cm` : `${cmToIn(profile.hipCm)} in`}
                 </span>
               </div>
               <input 
                 type="range" 
-                min={unitSystem === 'metric' ? 60 : 24} 
-                max={unitSystem === 'metric' ? 160 : 63} 
-                value={unitSystem === 'metric' ? hipCm : Number(cmToIn(hipCm))} 
+                min={profile.unitSystem === 'metric' ? 60 : 24} 
+                max={profile.unitSystem === 'metric' ? 160 : 64} 
+                value={profile.unitSystem === 'metric' ? profile.hipCm : Number(cmToIn(profile.hipCm))} 
                 onChange={(e) => {
                   const val = Number(e.target.value);
-                  setHipCm(unitSystem === 'metric' ? val : inToCm(val));
+                  setProfile({ 
+                    ...profile, 
+                    hipCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                  });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{unitSystem === 'metric' ? '60cm' : '24in'}</span>
-                <span>{unitSystem === 'metric' ? '160cm' : '63in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '60cm' : '24in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '160cm' : '64in'}</span>
               </div>
             </div>
 
@@ -439,14 +781,14 @@ export default function Tools() {
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Age</span>
-                <span className="text-brand font-bold text-sm">{age} yrs</span>
+                <span className="text-brand font-bold text-sm">{profile.age} yrs</span>
               </div>
               <input 
                 type="range" 
                 min="16" 
                 max="85" 
-                value={age} 
-                onChange={(e) => setAge(Number(e.target.value))}
+                value={profile.age} 
+                onChange={(e) => setProfile({ ...profile, age: Number(e.target.value) })}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
@@ -459,11 +801,11 @@ export default function Tools() {
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Activity Factor</span>
-                <span className="text-brand font-bold text-sm">x{activity}</span>
+                <span className="text-brand font-bold text-sm">x{profile.activity}</span>
               </div>
               <select 
-                value={activity} 
-                onChange={(e) => setActivity(Number(e.target.value))}
+                value={profile.activity} 
+                onChange={(e) => setProfile({ ...profile, activity: Number(e.target.value) })}
                 className="w-full bg-black border border-edge p-2.5 text-[10px] font-mono text-zinc-300 uppercase outline-none focus:border-brand"
               >
                 <option value="1.2">Sedentary (Desk Work)</option>
@@ -479,16 +821,16 @@ export default function Tools() {
             <div className="space-y-2 bg-paper/60 p-4 border border-edge lg:col-span-2">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Target Nutrition Phase</span>
-                <span className="text-brand font-bold text-sm uppercase">{nutritionGoal}</span>
+                <span className="text-brand font-bold text-sm uppercase">{profile.nutritionGoal}</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {(['cut', 'maintain', 'bulk'] as const).map((g) => (
                   <button 
                     key={g}
                     type="button"
-                    onClick={() => setNutritionGoal(g)}
+                    onClick={() => setProfile({ ...profile, nutritionGoal: g })}
                     className={`py-2 px-3 border text-[10px] font-black uppercase tracking-wider transition-all ${
-                      nutritionGoal === g 
+                      profile.nutritionGoal === g 
                         ? 'border-brand text-brand bg-brand/10' 
                         : 'border-edge text-zinc-500 hover:text-white bg-black/40'
                     }`}
@@ -504,7 +846,7 @@ export default function Tools() {
         </section>
 
         {/* ========================================================================= */}
-        {/* NAVIGATION: Tab Selector (Consolidated Dashboard + Individual Tools) */}
+        {/* NAVIGATION: Tab Selector (Consolidated Dashboard, History & Calculators) */}
         {/* ========================================================================= */}
         <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-edge pb-4">
           <button
@@ -516,6 +858,17 @@ export default function Tools() {
             }`}
           >
             <Layers size={16} /> Consolidated Dashboard
+          </button>
+
+          <button
+            onClick={() => setActiveTool('HISTORY')}
+            className={`px-5 py-3 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all ${
+              activeTool === 'HISTORY'
+                ? 'bg-brand text-black shadow-lg shadow-brand/20'
+                : 'bg-surface text-zinc-400 hover:text-white border border-edge'
+            }`}
+          >
+            <History size={16} /> Progress Timeline ({history.length})
           </button>
 
           <span className="text-zinc-700 mx-2 hidden sm:inline">|</span>
@@ -593,7 +946,7 @@ export default function Tools() {
                   {getBMICategory(Number(calculateBMI())).label}
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  {unitSystem === 'metric' ? `${weightKg}kg / ${heightCm}cm` : `${kgToLbs(weightKg)}lbs / ${cmToIn(heightCm)}in`}
+                  {profile.unitSystem === 'metric' ? `${profile.weightKg}kg / ${profile.heightCm}cm` : `${kgToLbs(profile.weightKg)}lbs / ${cmToIn(profile.heightCm)}in`}
                 </div>
               </div>
 
@@ -603,57 +956,57 @@ export default function Tools() {
                 className="bg-surface border border-edge p-5 hover:border-brand/60 transition-all cursor-pointer group"
               >
                 <div className="flex items-center justify-between text-zinc-500 mb-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">Body Fat Est.</span>
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">Body Fat</span>
                   <Calculator size={14} className="text-brand group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="text-3xl font-black tracking-tight text-white mb-2">
-                  {calculateBodyFat()}<span className="text-base text-brand ml-0.5">%</span>
+                  {calculateBodyFat()}<span className="text-lg text-brand">%</span>
                 </div>
                 <div className={`inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border ${getBodyFatCategory(Number(calculateBodyFat())).badgeBg} ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
                   {getBodyFatCategory(Number(calculateBodyFat())).label}
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  Age {age} • {gender.toUpperCase()}
+                  Deurenberg Formula
                 </div>
               </div>
 
-              {/* TDEE / Maintenance Tile */}
+              {/* TDEE Calories Tile */}
               <div 
                 onClick={() => setActiveTool('CALORIES')}
                 className="bg-surface border border-edge p-5 hover:border-brand/60 transition-all cursor-pointer group"
               >
                 <div className="flex items-center justify-between text-zinc-500 mb-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">TDEE / Cal</span>
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">TDEE / Burn</span>
                   <Flame size={14} className="text-brand group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="text-3xl font-black tracking-tight text-white mb-2">
                   {calculateTDEE()}
                 </div>
                 <div className="inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border border-zinc-700 bg-zinc-800 text-zinc-300">
-                  BMR: {calculateBMR()} cal
+                  BMR {calculateBMR()}
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  Activity Factor x{activity}
+                  x{profile.activity} Activity Factor
                 </div>
               </div>
 
-              {/* Target Calories & Goal Tile */}
+              {/* Nutrition Target Calories Tile */}
               <div 
                 onClick={() => setActiveTool('MACROS')}
                 className="bg-surface border border-edge p-5 hover:border-brand/60 transition-all cursor-pointer group"
               >
                 <div className="flex items-center justify-between text-zinc-500 mb-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">Daily Macro Cal</span>
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">Calorie Target</span>
                   <PieChart size={14} className="text-brand group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="text-3xl font-black tracking-tight text-brand mb-2">
                   {macroData.calories}
                 </div>
                 <div className="inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border border-brand/30 bg-brand/10 text-brand">
-                  {nutritionGoal.toUpperCase()} PHASE
+                  {profile.nutritionGoal.toUpperCase()} PHASE
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  P:{macroData.protein}g • F:{macroData.fats}g • C:{macroData.carbs}g
+                  {macroData.protein}P / {macroData.fats}F / {macroData.carbs}C
                 </div>
               </div>
 
@@ -667,33 +1020,31 @@ export default function Tools() {
                   <Droplets size={14} className="text-brand group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="text-3xl font-black tracking-tight text-white mb-2">
-                  {calculateWater()}<span className="text-sm text-zinc-400 font-mono ml-1">{unitSystem === 'metric' ? 'L' : 'oz'}</span>
+                  {calculateWater()}<span className="text-sm text-zinc-400 font-mono ml-1">{profile.unitSystem === 'metric' ? 'L' : 'oz'}</span>
                 </div>
-                <div className="inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border border-sky-500/30 bg-sky-500/10 text-sky-400">
-                  DAILY INTAKE
+                <div className="inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border border-sky-400/30 bg-sky-400/10 text-sky-400">
+                  DAILY GOAL
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  Total Mass Indexed
+                  Cellular Hydration Baseline
                 </div>
               </div>
 
             </div>
 
-            {/* ========================================================================= */}
-            {/* INTEGRATED HEALTH & FITNESS PROFILE RISK ANALYSIS CARD */}
-            {/* ========================================================================= */}
-            <div className="bg-surface border border-edge overflow-hidden">
-              <div className="p-6 md:p-8 border-b border-edge bg-black/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Consolidated Deep-Dive Synthesis Panel */}
+            <div className="bg-surface border border-edge relative overflow-hidden">
+              <div className="p-6 md:p-8 border-b border-edge bg-black/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-brand/10 border border-brand/40 flex items-center justify-center text-brand">
+                  <div className="w-10 h-10 border border-brand/30 bg-brand/5 flex items-center justify-center text-brand">
                     <Sparkles size={20} />
                   </div>
                   <div>
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-brand font-black block">
-                      Multi-Factor Biometric Synthesis
+                    <span className="text-[10px] font-mono text-brand font-bold uppercase tracking-widest block">
+                      Holistic Diagnostic Synthesis
                     </span>
                     <h3 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white">
-                      Consolidated Health & Fitness Risk Analysis
+                      Cross-Indexed Physiological Evaluation
                     </h3>
                   </div>
                 </div>
@@ -712,7 +1063,7 @@ export default function Tools() {
                 <div className="lg:col-span-7 space-y-6">
                   <div>
                     <h4 className="text-xs font-mono uppercase tracking-widest text-zinc-500 font-bold mb-2">
-                      Cross-Indexed Physiological Evaluation
+                      Clinical & Metabolic Profile Summary
                     </h4>
                     <p className="text-sm md:text-base text-zinc-300 leading-relaxed font-sans">
                       {profileAnalysis.summary}
@@ -739,8 +1090,8 @@ export default function Tools() {
                         <div className="bg-brand h-full" style={{ width: `${Math.min(100, Math.max(10, (calculateWHRValue() - 0.6) * 160))}%` }} />
                       </div>
                       <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                        <span>Low Risk (&lt;{gender === 'male' ? '0.90' : '0.80'})</span>
-                        <span>High Risk (&ge;{gender === 'male' ? '1.00' : '0.85'})</span>
+                        <span>Low Risk (&lt;{profile.gender === 'male' ? '0.90' : '0.80'})</span>
+                        <span>High Risk (&ge;{profile.gender === 'male' ? '1.00' : '0.85'})</span>
                       </div>
                     </div>
 
@@ -753,8 +1104,8 @@ export default function Tools() {
                         <div className="bg-brand h-full" style={{ width: `${Math.min(100, Math.max(10, (calculateBodyFatValue() / 40) * 100))}%` }} />
                       </div>
                       <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                        <span>Athletic (&lt;{gender === 'male' ? '14%' : '21%'})</span>
-                        <span>Elevated (&gt;{gender === 'male' ? '25%' : '32%'})</span>
+                        <span>Athletic (&lt;{profile.gender === 'male' ? '14%' : '21%'})</span>
+                        <span>Elevated (&gt;{profile.gender === 'male' ? '25%' : '32%'})</span>
                       </div>
                     </div>
                   </div>
@@ -772,7 +1123,7 @@ export default function Tools() {
                       </div>
                     </div>
                     <span className="px-2.5 py-1 border border-brand/30 bg-brand/10 text-brand text-[10px] font-mono uppercase tracking-wider font-bold">
-                      {nutritionGoal.toUpperCase()}
+                      {profile.nutritionGoal.toUpperCase()}
                     </span>
                   </div>
 
@@ -800,13 +1151,13 @@ export default function Tools() {
                       <div className="bg-sky-400 h-full" style={{ width: '40%' }} title="Carbs 40%" />
                     </div>
                     <div className="flex justify-between text-[9px] font-mono text-zinc-500">
-                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-brand inline-block rounded-full" /> Pro</span>
-                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 inline-block rounded-full" /> Fat</span>
-                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-sky-400 inline-block rounded-full" /> Carb</span>
+                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-brand inline-block rounded-full" /> Pro 35%</span>
+                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-amber-400 inline-block rounded-full" /> Fat 25%</span>
+                      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-sky-400 inline-block rounded-full" /> Carb 40%</span>
                     </div>
                   </div>
 
-                  {/* Consultation Link */}
+                  {/* Consultation Link (Fixed & Verified) */}
                   <Link 
                     to="/consultation"
                     className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest border border-brand text-brand hover:bg-brand hover:text-black py-4 transition-all font-mono"
@@ -818,436 +1169,856 @@ export default function Tools() {
               </div>
             </div>
 
-            {/* Quick Link to Exercise Tracker */}
-            <div className="bg-surface border border-edge p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="h-12 w-12 bg-brand/10 border border-brand/30 flex items-center justify-center text-brand">
-                  <Dumbbell size={22} />
+            {/* Quick Link to Exercise Tracker & Progress Timeline */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-surface border border-edge p-6 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-brand/10 border border-brand/30 flex items-center justify-center text-brand">
+                    <Dumbbell size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-black uppercase tracking-tight text-white">
+                      Apply in Exercise Tracker
+                    </h4>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Log progressive overload workouts, sync active routines, and auto-adjust targets.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-base font-black uppercase tracking-tight text-white">
-                    Apply Calculated Metrics In Exercise Tracker
-                  </h4>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Manage active routines, log custom exercises, view animated biomechanics, and apply 1-tap progressive overload.
-                  </p>
-                </div>
+
+                <Link
+                  to="/tracker"
+                  className="px-5 py-3 bg-white text-black hover:bg-brand transition-all text-xs font-black uppercase tracking-widest flex items-center gap-1 shrink-0"
+                >
+                  Tracker <ArrowRight size={14} />
+                </Link>
               </div>
 
-              <Link
-                to="/tracker"
-                className="px-6 py-3 bg-white text-black hover:bg-brand transition-all text-xs font-black uppercase tracking-widest flex items-center gap-2 shrink-0"
-              >
-                Open Workout Tracker <ArrowRight size={14} />
-              </Link>
+              <div className="bg-surface border border-edge p-6 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 bg-zinc-800 border border-edge flex items-center justify-center text-brand">
+                    <History size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-black uppercase tracking-tight text-white">
+                      Track Progress Over Time
+                    </h4>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      {history.length} logged check-in snapshot(s). Review weight, WHR, and body fat trends.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTool('HISTORY')}
+                  className="px-5 py-3 bg-brand/10 text-brand border border-brand/30 hover:bg-brand hover:text-black transition-all text-xs font-black uppercase tracking-widest flex items-center gap-1 shrink-0"
+                >
+                  View Timeline <ArrowRight size={14} />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
 
         {/* ========================================================================= */}
-        {/* VIEW 2: INDIVIDUAL CALCULATOR DEEP DIVES */}
+        {/* VIEW 2: PROGRESS TIMELINE (HISTORY TRACKING OVER TIME) */}
         {/* ========================================================================= */}
-        {activeTool !== 'DASHBOARD' && (
-          <div className="grid lg:grid-cols-12 gap-8">
-            {/* Sidebar quick switch */}
-            <div className="lg:col-span-3 space-y-1">
-              <button
-                onClick={() => setActiveTool('DASHBOARD')}
-                className="w-full p-4 flex items-center gap-3 text-xs font-black uppercase tracking-wider bg-surface border border-edge text-brand hover:bg-brand hover:text-black transition-all mb-4"
-              >
-                <Layers size={16} /> ← Return To Dashboard
-              </button>
-
-              {[
-                { id: 'WHR', icon: <Scale size={16} />, label: 'Waist-to-Hip Ratio' },
-                { id: 'BMI', icon: <User size={16} />, label: 'Body Mass Index' },
-                { id: 'BODYFAT', icon: <Calculator size={16} />, label: 'Body Fat %' },
-                { id: 'CALORIES', icon: <Flame size={16} />, label: 'Metabolism / TDEE' },
-                { id: 'MACROS', icon: <PieChart size={16} />, label: 'Macronutrients' },
-                { id: 'WATER', icon: <Droplets size={16} />, label: 'Hydration Target' },
-              ].map((tool) => (
-                <button
-                  key={tool.id}
-                  onClick={() => setActiveTool(tool.id as ToolType)}
-                  className={`w-full p-4 flex items-center justify-between text-xs font-black uppercase tracking-wider transition-all border ${
-                    activeTool === tool.id 
-                      ? 'bg-brand text-black border-brand' 
-                      : 'bg-surface text-zinc-400 hover:text-white border-edge'
-                  }`}
-                >
-                  <span className="flex items-center gap-3">
-                    {tool.icon} {tool.label}
-                  </span>
-                  <ChevronRight size={14} />
-                </button>
-              ))}
-
-              <Link
-                to="/tracker"
-                className="w-full p-4 mt-6 flex flex-col gap-1 bg-brand/10 border border-brand/40 text-brand hover:bg-brand hover:text-black transition-all group block"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                    <Dumbbell size={14} /> Workout Tracker
-                  </span>
-                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+        {activeTool === 'HISTORY' && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-8"
+          >
+            {/* Timeline Action Header */}
+            <div className="bg-surface border border-edge p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-widest font-black">
+                  <History size={14} /> Biometric Progression Timeline
                 </div>
-                <span className="text-[9px] font-mono uppercase text-zinc-400 group-hover:text-black">
-                  Active routines, sets & history auto-fill →
-                </span>
-              </Link>
+                <h3 className="text-2xl font-black uppercase tracking-tight text-white mt-1">
+                  Historical Check-in Records
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Logged biometric snapshots tracked over time. Analyze how weight, waist circumference, and WHR change across weeks.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCheckinModalOpen(true)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-brand text-black font-black text-xs uppercase tracking-wider hover:brightness-110 transition shadow-lg shadow-brand/20"
+                >
+                  <Plus size={14} />
+                  <span>Log New Check-in</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => exportBiometricsCSV(history, profile.unitSystem)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-900 border border-edge text-zinc-300 hover:text-white hover:border-brand/40 text-xs font-bold uppercase tracking-wider transition"
+                >
+                  <FileSpreadsheet size={14} className="text-cyan-400" />
+                  <span>Export CSV</span>
+                </button>
+
+                {history.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllHistory}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-zinc-900 border border-edge hover:border-red-500/40 text-red-400 text-xs font-bold uppercase tracking-wider transition"
+                    title="Erase all timeline logs"
+                  >
+                    <Trash2 size={14} />
+                    <span>Clear All</span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Individual Tool Details Card */}
-            <div className="lg:col-span-9 bg-surface border border-edge p-6 md:p-12">
-              <motion.div
-                key={activeTool + unitSystem}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="grid md:grid-cols-2 gap-10 md:gap-14 items-center"
-              >
-                {/* Left Controls & Context */}
-                <div className="space-y-6">
-                  <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-widest font-bold">
-                    <Calculator size={14} /> Deep-Dive Configuration
-                  </div>
+            {/* History Items List */}
+            {history.length === 0 ? (
+              <div className="bg-surface border border-edge p-12 text-center space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-zinc-800 border border-edge flex items-center justify-center mx-auto text-zinc-500">
+                  <History size={24} />
+                </div>
+                <h4 className="text-lg font-black uppercase tracking-tight text-white">No Check-in Snapshots Yet</h4>
+                <p className="text-xs text-zinc-400 max-w-md mx-auto">
+                  Click "Log New Check-in" above to record your current weight, waist, hip, and body composition as your first timeline entry.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleLogSnapshot('Initial baseline check-in')}
+                  className="px-6 py-3 bg-brand text-black text-xs font-black uppercase tracking-widest"
+                >
+                  Record First Snapshot
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {history.map((item, idx) => {
+                  const prevItem = history[idx + 1]; // Previous chronological entry
+                  const weightDelta = prevItem ? Math.round((item.weightKg - prevItem.weightKg) * 10) / 10 : null;
+                  const whrDelta = prevItem ? Math.round((item.whr - prevItem.whr) * 100) / 100 : null;
+                  const bfDelta = prevItem ? Math.round((item.bodyFat - prevItem.bodyFat) * 10) / 10 : null;
 
-                  {/* WHR SPECIFIC VIEW */}
-                  {activeTool === 'WHR' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Waist-To-Hip Ratio (WHR)
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          WHR is recognized by the World Health Organization as a superior indicator of visceral adiposity 
-                          and cardiovascular risk compared to standard BMI, identifying abdominal fat vs peripheral fat distribution.
-                        </p>
-                      </div>
+                  const dateDisplay = new Date(item.date).toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  });
 
-                      <div className="space-y-4 bg-paper p-4 border border-edge">
-                        <div className="flex justify-between text-[10px] font-mono uppercase">
-                          <span className="text-zinc-500 font-bold">Waist: {unitSystem === 'metric' ? `${waistCm}cm` : `${cmToIn(waistCm)}in`}</span>
-                          <span className="text-zinc-500 font-bold">Hips: {unitSystem === 'metric' ? `${hipCm}cm` : `${cmToIn(hipCm)}in`}</span>
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-surface border border-edge hover:border-zinc-700 transition-all p-5 md:p-6 rounded-none space-y-4"
+                    >
+                      {/* Top Bar: Date, Badge, Delete */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-edge/60 pb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-2 h-2 rounded-full bg-brand" />
+                          <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
+                            {dateDisplay}
+                          </span>
+                          <span className="text-[10px] font-mono text-zinc-500">
+                            #{history.length - idx}
+                          </span>
+                          <span className="px-2 py-0.5 border border-brand/30 bg-brand/10 text-brand text-[9px] font-mono uppercase font-bold">
+                            {item.goal.toUpperCase()} PHASE
+                          </span>
                         </div>
 
-                        <div className="space-y-2">
-                          <label className="text-[9px] font-mono uppercase text-zinc-500">Waist Circumference</label>
-                          <input 
-                            type="range" 
-                            min={unitSystem === 'metric' ? 50 : 20} 
-                            max={unitSystem === 'metric' ? 140 : 55} 
-                            value={unitSystem === 'metric' ? waistCm : Number(cmToIn(waistCm))} 
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setWaistCm(unitSystem === 'metric' ? val : inToCm(val));
-                            }}
-                            className="w-full accent-brand" 
-                          />
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-[9px] font-mono uppercase text-zinc-500">Hip Circumference</label>
-                          <input 
-                            type="range" 
-                            min={unitSystem === 'metric' ? 60 : 24} 
-                            max={unitSystem === 'metric' ? 160 : 63} 
-                            value={unitSystem === 'metric' ? hipCm : Number(cmToIn(hipCm))} 
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setHipCm(unitSystem === 'metric' ? val : inToCm(val));
-                            }}
-                            className="w-full accent-brand" 
-                          />
-                        </div>
-                      </div>
-
-                      <div className="p-3 bg-black/40 border border-edge text-[10px] font-mono text-zinc-400 space-y-1">
-                        <div>• WHO Normal/Low: Men &lt; 0.90 | Women &lt; 0.80</div>
-                        <div>• WHO Moderate: Men 0.90-0.99 | Women 0.80-0.84</div>
-                        <div>• WHO High Risk: Men &ge; 1.00 | Women &ge; 0.85</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* BMI SPECIFIC VIEW */}
-                  {activeTool === 'BMI' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Body Mass Index (BMI)
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          A baseline ratio of mass to height. While useful for general epidemiological baselines, 
-                          athletes should cross-reference with WHR and Body Fat to avoid muscle mass false-positives.
-                        </p>
-                      </div>
-
-                      <div className="space-y-4 bg-paper p-4 border border-edge">
-                        <div className="flex justify-between text-[10px] font-mono uppercase text-zinc-500">
-                          <span>Weight: {unitSystem === 'metric' ? `${weightKg}kg` : `${kgToLbs(weightKg)}lbs`}</span>
-                          <span>Height: {unitSystem === 'metric' ? `${heightCm}cm` : `${cmToIn(heightCm)}in`}</span>
-                        </div>
-                        <input 
-                          type="range" 
-                          min={unitSystem === 'metric' ? 40 : 90} 
-                          max={unitSystem === 'metric' ? 150 : 330} 
-                          value={unitSystem === 'metric' ? weightKg : kgToLbs(weightKg)} 
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setWeightKg(unitSystem === 'metric' ? val : lbsToKg(val));
-                          }}
-                          className="w-full accent-brand" 
-                        />
-                        <input 
-                          type="range" 
-                          min={unitSystem === 'metric' ? 140 : 55} 
-                          max={unitSystem === 'metric' ? 220 : 86} 
-                          value={unitSystem === 'metric' ? heightCm : Number(cmToIn(heightCm))} 
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setHeightCm(unitSystem === 'metric' ? val : inToCm(val));
-                          }}
-                          className="w-full accent-brand" 
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* BODY FAT SPECIFIC VIEW */}
-                  {activeTool === 'BODYFAT' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Body Fat Estimation
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          Calculated via the Deurenberg formula factoring in sex-specific fat distribution, age, and height-to-weight proportions.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-4">
-                        <button 
-                          onClick={() => setGender('male')}
-                          className={`flex-1 p-3 border text-[10px] font-black uppercase tracking-widest transition-all ${
-                            gender === 'male' ? 'border-brand text-brand bg-brand/5' : 'border-edge text-zinc-600'
-                          }`}
-                        >
-                          MALE
-                        </button>
-                        <button 
-                          onClick={() => setGender('female')}
-                          className={`flex-1 p-3 border text-[10px] font-black uppercase tracking-widest transition-all ${
-                            gender === 'female' ? 'border-brand text-brand bg-brand/5' : 'border-edge text-zinc-600'
-                          }`}
-                        >
-                          FEMALE
-                        </button>
-                      </div>
-
-                      <div className="space-y-4 bg-paper p-4 border border-edge">
-                        <div className="flex justify-between text-[10px] font-mono uppercase text-zinc-500">
-                          <span>Age: {age} yrs</span>
-                          <span>Weight: {unitSystem === 'metric' ? `${weightKg}kg` : `${kgToLbs(weightKg)}lbs`}</span>
-                        </div>
-                        <input 
-                          type="range" min="15" max="80" value={age} 
-                          onChange={(e) => setAge(Number(e.target.value))}
-                          className="w-full accent-brand" 
-                        />
-                        <input 
-                          type="range" 
-                          min={unitSystem === 'metric' ? 40 : 90} 
-                          max={unitSystem === 'metric' ? 150 : 330} 
-                          value={unitSystem === 'metric' ? weightKg : kgToLbs(weightKg)} 
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setWeightKg(unitSystem === 'metric' ? val : lbsToKg(val));
-                          }}
-                          className="w-full accent-brand" 
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* CALORIES / TDEE SPECIFIC VIEW */}
-                  {activeTool === 'CALORIES' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Metabolic Expenditure
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          Mifflin-St Jeor equation calculating Basal Metabolic Rate (BMR) scaled by physical activity coefficient.
-                        </p>
-                      </div>
-
-                      <div className="space-y-4 bg-paper p-4 border border-edge">
-                        <div className="flex justify-between text-[10px] font-mono uppercase text-zinc-500">
-                          <span>Activity Factor: x{activity}</span>
-                        </div>
-                        <select 
-                          value={activity} 
-                          onChange={(e) => setActivity(Number(e.target.value))}
-                          className="w-full bg-black border border-edge p-3 text-[10px] font-mono text-zinc-300 uppercase outline-none focus:border-brand"
-                        >
-                          <option value="1.2">Sedentary (Desk work)</option>
-                          <option value="1.375">Lightly Active (1-3 days/wk)</option>
-                          <option value="1.55">Moderately Active (3-5 days/wk)</option>
-                          <option value="1.725">Very Active (6-7 days/wk)</option>
-                          <option value="1.9">Extreme Athlete (2x training/day)</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* MACROS SPECIFIC VIEW */}
-                  {activeTool === 'MACROS' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Macronutrient Allocation
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          High-protein partitioned macronutrient ratios tailored for muscle retention and metabolic efficiency.
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {(['cut', 'maintain', 'bulk'] as const).map((g) => (
-                          <button 
-                            key={g}
-                            onClick={() => setNutritionGoal(g)}
-                            className={`flex-1 p-3 border text-[10px] font-black uppercase tracking-widest transition-all ${
-                              nutritionGoal === g ? 'border-brand text-brand bg-brand/10' : 'border-edge text-zinc-600'
-                            }`}
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSnapshot(item.id)}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded transition"
+                            title="Delete this snapshot"
                           >
-                            {g}
+                            <Trash2 size={14} />
                           </button>
-                        ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
 
-                  {/* WATER SPECIFIC VIEW */}
-                  {activeTool === 'WATER' && (
-                    <div className="space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-black uppercase tracking-tight text-white mb-2">
-                          Hydration Index
-                        </h3>
-                        <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                          Baseline water intake scaled to intracellular hydration demands of lean mass.
-                        </p>
-                      </div>
-                      <div className="p-4 bg-paper border border-edge text-xs font-mono text-zinc-400">
-                        Total Body Weight: {unitSystem === 'metric' ? `${weightKg} kg` : `${kgToLbs(weightKg)} lbs`}
-                      </div>
-                    </div>
-                  )}
+                      {/* Metrics Breakdown Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {/* Weight */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Weight</span>
+                          <div className="text-lg font-black text-white mt-0.5">
+                            {profile.unitSystem === 'metric' 
+                              ? `${item.weightKg} kg` 
+                              : `${kgToLbs(item.weightKg)} lbs`}
+                          </div>
+                          {weightDelta !== null && (
+                            <span className={`text-[10px] font-mono font-bold flex items-center gap-0.5 mt-0.5 ${
+                              weightDelta <= 0 ? 'text-brand' : 'text-amber-400'
+                            }`}>
+                              {weightDelta > 0 ? `+${profile.unitSystem === 'metric' ? weightDelta : Math.round(weightDelta * 2.20462)}` : `${profile.unitSystem === 'metric' ? weightDelta : Math.round(weightDelta * 2.20462)}`}
+                              {profile.unitSystem === 'metric' ? 'kg' : 'lbs'}
+                            </span>
+                          )}
+                        </div>
 
-                  <div className="pt-4 border-t border-edge flex items-center gap-3 text-zinc-600">
-                    <Info size={16} />
-                    <p className="text-[9px] uppercase tracking-widest font-mono">
-                      All variables synchronize automatically with the Consolidated Dashboard.
-                    </p>
+                        {/* Waist */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Waist</span>
+                          <div className="text-lg font-black text-white mt-0.5">
+                            {profile.unitSystem === 'metric' 
+                              ? `${item.waistCm} cm` 
+                              : `${cmToIn(item.waistCm)} in`}
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-500">Circumference</span>
+                        </div>
+
+                        {/* Hip */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Hip</span>
+                          <div className="text-lg font-black text-white mt-0.5">
+                            {profile.unitSystem === 'metric' 
+                              ? `${item.hipCm} cm` 
+                              : `${cmToIn(item.hipCm)} in`}
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-500">Circumference</span>
+                        </div>
+
+                        {/* WHR */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Waist-to-Hip</span>
+                          <div className="text-lg font-black text-brand mt-0.5">
+                            {item.whr}
+                          </div>
+                          {whrDelta !== null && (
+                            <span className={`text-[10px] font-mono font-bold flex items-center gap-0.5 mt-0.5 ${
+                              whrDelta <= 0 ? 'text-brand' : 'text-amber-400'
+                            }`}>
+                              {whrDelta > 0 ? `+${whrDelta}` : `${whrDelta}`} WHR
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Body Fat % */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Body Fat</span>
+                          <div className="text-lg font-black text-white mt-0.5">
+                            {item.bodyFat}%
+                          </div>
+                          {bfDelta !== null && (
+                            <span className={`text-[10px] font-mono font-bold flex items-center gap-0.5 mt-0.5 ${
+                              bfDelta <= 0 ? 'text-brand' : 'text-amber-400'
+                            }`}>
+                              {bfDelta > 0 ? `+${bfDelta}%` : `${bfDelta}%`}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Calories */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Target / TDEE</span>
+                          <div className="text-lg font-black text-zinc-200 mt-0.5">
+                            {item.targetCalories}
+                          </div>
+                          <span className="text-[9px] font-mono text-zinc-500">{item.tdee} TDEE</span>
+                        </div>
+                      </div>
+
+                      {/* Notes / Context */}
+                      {item.notes && (
+                        <div className="text-xs text-zinc-400 font-mono bg-paper/60 p-3 border border-edge/60 flex items-start gap-2">
+                          <span className="text-brand font-bold">•</span>
+                          <span className="italic">{item.notes}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: INDIVIDUAL CALCULATOR DEEP DIVES */}
+        {/* ========================================================================= */}
+        {activeTool !== 'DASHBOARD' && activeTool !== 'HISTORY' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Diagnostic Theory Context */}
+            <div className="lg:col-span-7 bg-surface border border-edge p-6 md:p-10 space-y-6">
+              
+              {activeTool === 'WHR' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <Scale size={16} /> Central Adiposity Diagnostic
                   </div>
-                </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Waist-To-Hip Ratio (WHR) Standard
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    According to the World Health Organization (WHO), the waist-to-hip ratio is a clinical indicator 
+                    of intra-abdominal visceral adipose tissue. Central visceral fat around core organs is significantly 
+                    more metabolically active and pathological than peripheral subcutaneous fat stored in the hips and thighs.
+                  </p>
 
-                {/* Right Result Display Box */}
-                <div className="bg-black border border-edge p-8 md:p-12 text-center relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-brand/5 -skew-x-[20deg] translate-x-1/2 -translate-y-1/2 group-hover:bg-brand/10 transition-colors" />
-
-                  {activeTool === 'WHR' && (
-                    <>
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Waist-To-Hip Ratio</h3>
-                      <div className="text-6xl sm:text-8xl md:text-9xl font-black tracking-tighter mb-4 text-white">
-                        {calculateWHR()}
+                  <div className="p-4 bg-black/40 border border-edge space-y-3">
+                    <div className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                      WHO Risk Classifications:
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-xs font-mono text-zinc-400">
+                      <div>
+                        <strong className="text-brand block">Men:</strong>
+                        <div>&lt; 0.90 : Low Risk</div>
+                        <div>0.90 - 0.99 : Moderate Risk</div>
+                        <div>&ge; 1.00 : High Risk</div>
                       </div>
-                      <div className={`text-xl font-black uppercase tracking-tighter italic mb-2 ${whrData.riskColor}`}>
-                        {whrData.riskLabel}
-                      </div>
-                      <div className="text-xs font-mono text-zinc-400 uppercase tracking-widest">
-                        Fat Distribution: {whrData.distribution}
-                      </div>
-                    </>
-                  )}
-
-                  {activeTool === 'BMI' && (
-                    <>
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Your BMI Estimate</h3>
-                      <div className="text-6xl sm:text-8xl md:text-9xl font-black tracking-tighter mb-4">{calculateBMI()}</div>
-                      <div className={`text-xl font-black uppercase tracking-tighter italic ${getBMICategory(Number(calculateBMI())).color}`}>
-                        {getBMICategory(Number(calculateBMI())).label}
-                      </div>
-                    </>
-                  )}
-
-                  {activeTool === 'BODYFAT' && (
-                    <>
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Estimated Body Fat</h3>
-                      <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter mb-4 leading-none">{calculateBodyFat()}<span className="text-4xl text-brand shrink-0">%</span></div>
-                      <div className={`text-xl font-black uppercase tracking-tighter italic ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
-                        {getBodyFatCategory(Number(calculateBodyFat())).label}
-                      </div>
-                    </>
-                  )}
-
-                  {activeTool === 'CALORIES' && (
-                    <>
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Estimated TDEE</h3>
-                      <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter mb-4 leading-none uppercase">{calculateTDEE()}</div>
-                      <div className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest italic">Calories / Day for Maintenance</div>
-                    </>
-                  )}
-
-                  {activeTool === 'MACROS' && (
-                    <div className="space-y-6">
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Daily Targets</h3>
-                      <div className="text-5xl md:text-7xl font-black tracking-tighter mb-6 italic text-brand leading-none">
-                        {macroData.calories} <span className="text-xl text-white not-italic opacity-40">CAL/DAY</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-paper p-3 border border-edge">
-                          <div className="text-xl font-black tracking-tighter text-white">{macroData.protein}g</div>
-                          <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Protein</div>
-                        </div>
-                        <div className="bg-paper p-3 border border-edge">
-                          <div className="text-xl font-black tracking-tighter text-white">{macroData.fats}g</div>
-                          <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Fats</div>
-                        </div>
-                        <div className="bg-paper p-3 border border-edge">
-                          <div className="text-xl font-black tracking-tighter text-white">{macroData.carbs}g</div>
-                          <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Carbs</div>
-                        </div>
+                      <div>
+                        <strong className="text-brand block">Women:</strong>
+                        <div>&lt; 0.80 : Low Risk</div>
+                        <div>0.80 - 0.84 : Moderate Risk</div>
+                        <div>&ge; 0.85 : High Risk</div>
                       </div>
                     </div>
-                  )}
+                  </div>
 
-                  {activeTool === 'WATER' && (
-                    <>
-                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em] mb-4">Hydration Target</h3>
-                      <div className="text-6xl sm:text-8xl md:text-9xl font-black tracking-tighter mb-4">{calculateWater()}</div>
-                      <div className="text-xl font-black uppercase tracking-tighter italic text-brand">
-                        {unitSystem === 'metric' ? 'Liters / Day' : 'Fl Oz / Day'}
+                  <div className="p-4 bg-paper border border-edge">
+                    <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 font-bold mb-1">
+                      Current Classification
+                    </div>
+                    <div className="text-lg font-black text-white uppercase">
+                      {whrData.riskLabel}
+                    </div>
+                    <div className="text-xs text-zinc-400 mt-1">
+                      Body Distribution: <strong className="text-brand">{whrData.distribution}</strong>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {activeTool === 'BMI' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <User size={16} /> Anthropometric Baseline
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Body Mass Index (BMI) Diagnostic
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    BMI correlates total body mass to height. While valuable for broad epidemiological screening, 
+                    BMI cannot differentiate between skeletal muscle density and adipose tissue. At Mit2Fit, 
+                    we cross-reference your BMI with your Waist-to-Hip ratio to prevent misdiagnosing muscular athletes.
+                  </p>
+
+                  <div className="p-4 bg-paper border border-edge space-y-2">
+                    <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 font-bold">
+                      World Health Ranges
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
+                      <div className="bg-black/50 p-2 border border-edge">
+                        <div className="text-sky-400 font-bold">&lt; 18.5</div>
+                        <div className="text-[10px] text-zinc-500">Underweight</div>
                       </div>
-                    </>
-                  )}
+                      <div className="bg-black/50 p-2 border border-edge">
+                        <div className="text-brand font-bold">18.5 - 24.9</div>
+                        <div className="text-[10px] text-zinc-500">Optimal</div>
+                      </div>
+                      <div className="bg-black/50 p-2 border border-edge">
+                        <div className="text-amber-400 font-bold">25.0 - 29.9</div>
+                        <div className="text-[10px] text-zinc-500">Overweight</div>
+                      </div>
+                      <div className="bg-black/50 p-2 border border-edge">
+                        <div className="text-rose-500 font-bold">&ge; 30.0</div>
+                        <div className="text-[10px] text-zinc-500">Obese</div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
-                  <Link 
-                    to="/consultation"
-                    className="mt-10 w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest border border-edge py-4 hover:border-brand hover:text-brand transition-all font-mono"
-                  >
-                    Optimize via Consultation <ArrowRight size={14} />
-                  </Link>
-                </div>
-              </motion.div>
+              {activeTool === 'BODYFAT' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <Calculator size={16} /> Adipose Tissue Estimation
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Deurenberg Body Composition Formula
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    Utilizing age, sex, and calculated BMI, the Deurenberg formula models the relative percentage 
+                    of adipose tissue against lean biological structures. Essential fat is biologically required for 
+                    endocrine and neurological function.
+                  </p>
+
+                  <div className="p-4 bg-paper border border-edge text-xs font-mono text-zinc-400 space-y-1">
+                    <div>• Male Essential Fat: 2% – 5% | Athletic Target: 6% – 13%</div>
+                    <div>• Female Essential Fat: 10% – 13% | Athletic Target: 14% – 20%</div>
+                  </div>
+                </>
+              )}
+
+              {activeTool === 'CALORIES' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <Flame size={16} /> Energetic Expenditure
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Mifflin-St Jeor TDEE Model
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    Basal Metabolic Rate (BMR) represents the caloric energy required for vital autonomic functions 
+                    at complete physical rest. Multiplied by your activity coefficient, Total Daily Energy Expenditure (TDEE) 
+                    establishes your metabolic equilibrium point.
+                  </p>
+                </>
+              )}
+
+              {activeTool === 'MACROS' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <PieChart size={16} /> Substrate Partitioning
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Macronutrient Energy Density
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    Protein (4 kcal/g) provides essential amino acids for myofibrillar repair and preserves lean mass. 
+                    Carbohydrates (4 kcal/g) fuel high-intensity glycolytic output during progressive overload. 
+                    Fats (9 kcal/g) support hormonal synthesis and fat-soluble vitamin absorption.
+                  </p>
+                </>
+              )}
+
+              {activeTool === 'WATER' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <Droplets size={16} /> Intracellular Hydration
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    Volumetric Fluid Balance
+                  </h3>
+                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                    Even a 2% drop in baseline hydration impairs muscular torque production and central nervous system 
+                    rate coding. Maintaining 33ml per kilogram of body weight ensures optimal blood plasma volume and cellular osmolarity.
+                  </p>
+                </>
+              )}
+
+              <div className="pt-4 border-t border-edge flex items-center justify-between text-xs text-zinc-500 font-mono">
+                <span>Calculations updated in real time from baseline profile</span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTool('DASHBOARD')}
+                  className="text-brand hover:underline font-bold"
+                >
+                  Return to Dashboard &rarr;
+                </button>
+              </div>
+
+            </div>
+
+            {/* Output Display Card */}
+            <div className="lg:col-span-5 bg-black border border-edge p-6 md:p-10 relative overflow-hidden">
+              <div className="space-y-6">
+                
+                {activeTool === 'WHR' && (
+                  <>
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Calculated Waist-to-Hip Ratio
+                    </h3>
+                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none text-white">
+                      {calculateWHR()}
+                    </div>
+                    <div className={`text-xl font-black uppercase tracking-tight italic ${whrData.riskColor}`}>
+                      {whrData.riskLabel}
+                    </div>
+                    <div className="text-xs font-mono text-zinc-400">
+                      Waist: {profile.unitSystem === 'metric' ? `${profile.waistCm}cm` : `${cmToIn(profile.waistCm)}in`} | 
+                      Hip: {profile.unitSystem === 'metric' ? `${profile.hipCm}cm` : `${cmToIn(profile.hipCm)}in`}
+                    </div>
+                  </>
+                )}
+
+                {activeTool === 'BMI' && (
+                  <>
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Body Mass Index
+                    </h3>
+                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none text-white">
+                      {calculateBMI()}
+                    </div>
+                    <div className={`text-xl font-black uppercase tracking-tight italic ${getBMICategory(Number(calculateBMI())).color}`}>
+                      {getBMICategory(Number(calculateBMI())).label}
+                    </div>
+                  </>
+                )}
+
+                {activeTool === 'BODYFAT' && (
+                  <>
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Estimated Body Fat
+                    </h3>
+                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none text-white">
+                      {calculateBodyFat()}<span className="text-4xl text-brand shrink-0">%</span>
+                    </div>
+                    <div className={`text-xl font-black uppercase tracking-tight italic ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
+                      {getBodyFatCategory(Number(calculateBodyFat())).label}
+                    </div>
+                  </>
+                )}
+
+                {activeTool === 'CALORIES' && (
+                  <>
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Estimated TDEE
+                    </h3>
+                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none uppercase text-white">
+                      {calculateTDEE()}
+                    </div>
+                    <div className="text-zinc-500 font-mono text-[10px] uppercase tracking-widest italic">
+                      Calories / Day for Maintenance
+                    </div>
+                  </>
+                )}
+
+                {activeTool === 'MACROS' && (
+                  <div className="space-y-6">
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Daily Targets ({profile.nutritionGoal.toUpperCase()})
+                    </h3>
+                    <div className="text-5xl md:text-7xl font-black tracking-tighter italic text-brand leading-none">
+                      {macroData.calories} <span className="text-xl text-white not-italic opacity-40">CAL/DAY</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-paper p-3 border border-edge">
+                        <div className="text-xl font-black tracking-tighter text-white">{macroData.protein}g</div>
+                        <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Protein</div>
+                      </div>
+                      <div className="bg-paper p-3 border border-edge">
+                        <div className="text-xl font-black tracking-tighter text-white">{macroData.fats}g</div>
+                        <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Fats</div>
+                      </div>
+                      <div className="bg-paper p-3 border border-edge">
+                        <div className="text-xl font-black tracking-tighter text-white">{macroData.carbs}g</div>
+                        <div className="text-[9px] font-mono uppercase text-zinc-500 tracking-widest">Carbs</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTool === 'WATER' && (
+                  <>
+                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                      Hydration Target
+                    </h3>
+                    <div className="text-6xl sm:text-8xl md:text-9xl font-black tracking-tighter text-white">
+                      {calculateWater()}
+                    </div>
+                    <div className="text-xl font-black uppercase tracking-tight italic text-brand">
+                      {profile.unitSystem === 'metric' ? 'Liters / Day' : 'Fl Oz / Day'}
+                    </div>
+                  </>
+                )}
+
+                {/* Consultation Link (Smooth route navigation) */}
+                <Link 
+                  to="/consultation"
+                  className="mt-8 w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest border border-edge py-4 hover:border-brand hover:text-brand transition-all font-mono"
+                >
+                  Optimize via Consultation <ArrowRight size={14} />
+                </Link>
+
+              </div>
             </div>
           </div>
         )}
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: LOG CHECK-IN SNAPSHOT MODAL */}
+      {/* ========================================================================= */}
+      {isCheckinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Log Biometric Snapshot</h3>
+                  <p className="text-xs text-stone-400">Save current metrics to your timeline</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCheckinModalOpen(false)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 space-y-3 text-xs">
+              <div className="text-stone-400 uppercase tracking-wider text-[10px] font-bold">Snapshot Summary:</div>
+              <div className="grid grid-cols-2 gap-2 font-mono">
+                <div>Weight: <strong className="text-white">{profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}</strong></div>
+                <div>WHR: <strong className="text-brand">{calculateWHR()}</strong></div>
+                <div>Waist: <strong className="text-white">{profile.unitSystem === 'metric' ? `${profile.waistCm} cm` : `${cmToIn(profile.waistCm)} in`}</strong></div>
+                <div>Body Fat: <strong className="text-brand">{calculateBodyFat()}%</strong></div>
+                <div>Calories: <strong className="text-white">{macroData.calories} kcal</strong></div>
+                <div>Phase: <strong className="text-amber-400 uppercase">{profile.nutritionGoal}</strong></div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-stone-400 text-xs font-bold uppercase tracking-wider mb-2">
+                Check-in Notes (Optional)
+              </label>
+              <textarea
+                value={checkinNote}
+                onChange={(e) => setCheckinNote(e.target.value)}
+                placeholder="e.g. Week 4 fat loss check-in, feeling energized, waist down 1cm..."
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs text-white placeholder-stone-600 focus:outline-none focus:border-brand h-20 resize-none font-mono"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCheckinModalOpen(false)}
+                className="flex-1 py-3 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLogSnapshot(checkinNote)}
+                className="flex-1 py-3 bg-brand hover:brightness-110 text-black rounded-xl text-xs font-black uppercase tracking-wider transition"
+              >
+                Save to Timeline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: DEVICE STORAGE & EXPORT / SHARE PORTAL (MATCHING TRACKER) */}
+      {/* ========================================================================= */}
+      {isDataPortalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center text-brand">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Device Storage & Share Portal</h3>
+                  <p className="text-xs text-stone-400">Zero-login, 100% private local storage</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDataPortalOpen(false)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Protocol Access Key Card */}
+            <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-white uppercase tracking-wider text-[11px]">
+                  <Key className="w-4 h-4 text-brand" />
+                  <span>Protocol Access Key</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRegenerateKey}
+                  className="text-[10px] font-mono text-zinc-400 hover:text-white flex items-center gap-1"
+                  title="Generate a new key"
+                >
+                  <RefreshCw size={11} /> Regenerate
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-black border border-stone-800 px-3 py-2 font-mono text-brand font-bold text-sm tracking-widest text-center rounded-xl">
+                  {profile.protocolKey || 'MIT-FIT-782'}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(profile.protocolKey || 'MIT-FIT-782', 'Protocol Key')}
+                  className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                >
+                  <Copy size={13} /> Copy
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-stone-500 pt-1 border-t border-stone-800/80">
+                <span>Storage Key: <strong className="font-mono text-stone-400">{PROFILE_STORAGE_KEY}</strong></span>
+                <span>Logged Check-ins: <strong className="font-mono text-brand">{history.length}</strong></span>
+              </div>
+            </div>
+
+            {/* Send & Share Options */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-stone-400">
+                Send & Share Options:
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  onClick={() => {
+                    const text = formatBiometricsTextReport(profile, history[0], profile.unitSystem);
+                    handleSendWhatsApp(text);
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-emerald-950/40 border border-stone-800 hover:border-emerald-500/40 rounded-xl transition text-stone-200"
+                >
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
+                  <span>Send via WhatsApp</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const text = formatBiometricsTextReport(profile, history[0], profile.unitSystem);
+                    handleSendEmail(`MIT2FIT Biometric Performance Report`, text);
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-amber-950/40 border border-stone-800 hover:border-amber-500/40 rounded-xl transition text-stone-200"
+                >
+                  <Mail className="w-4 h-4 text-amber-400" />
+                  <span>Email to Coach / Self</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCopyShareLink();
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-brand/10 border border-stone-800 hover:border-brand/40 rounded-xl transition text-stone-200"
+                >
+                  <Share2 className="w-4 h-4 text-brand" />
+                  <span>Copy Share Link</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const text = formatBiometricsTextReport(profile, history[0], profile.unitSystem);
+                    handleCopyText(text, 'Biometric report');
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-stone-800 border border-stone-800 rounded-xl transition text-stone-200"
+                >
+                  <Copy className="w-4 h-4 text-zinc-300" />
+                  <span>Copy Summary</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    exportBiometricsCSV(history, profile.unitSystem);
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-cyan-950/40 border border-stone-800 hover:border-cyan-500/40 rounded-xl transition text-stone-200"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
+                  <span>Export CSV (Excel)</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleExportBackup();
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-stone-800 border border-stone-800 rounded-xl transition text-stone-200"
+                >
+                  <Download className="w-4 h-4 text-brand" />
+                  <span>Backup File (JSON)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Restore from File & Danger Zone */}
+            <div className="pt-3 border-t border-stone-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-stone-500">Need to move profile & history to another device?</span>
+                <button
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setIsDataPortalOpen(false);
+                  }}
+                  className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 underline"
+                >
+                  Import Backup File
+                </button>
+              </div>
+
+              {history.length > 0 && (
+                <div className="flex items-center justify-between pt-2 border-t border-stone-800/60">
+                  <span className="text-xs text-stone-500">Accidentally logged data or want a fresh start?</span>
+                  <button
+                    onClick={() => {
+                      setIsDataPortalOpen(false);
+                      handleClearAllHistory();
+                    }}
+                    className="text-xs font-semibold text-red-400 hover:text-red-300 flex items-center gap-1 hover:underline"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear All Check-ins
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: IN-APP CONFIRMATION MODAL (SANDBOX-SAFE, NO WINDOW.CONFIRM)     */}
+      {/* ========================================================================= */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                confirmModal.isDanger ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-brand/10 text-brand border border-brand/20'
+              }`}>
+                {confirmModal.isDanger ? <AlertTriangle className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+              </div>
+              <h3 className="text-base font-bold text-white">{confirmModal.title}</h3>
+            </div>
+
+            <p className="text-xs text-stone-400 leading-relaxed font-sans">
+              {confirmModal.message}
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl border border-stone-800 text-stone-400 hover:text-white text-xs font-bold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  confirmModal.isDanger 
+                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20' 
+                    : 'bg-brand text-black hover:brightness-110'
+                }`}
+              >
+                {confirmModal.confirmText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }

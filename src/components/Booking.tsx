@@ -80,8 +80,9 @@ export default function Booking() {
         <div className="grid lg:grid-cols-12 gap-12">
           <div className="lg:col-span-7">
             <span className="text-zinc-500 text-xs font-black uppercase tracking-[0.3em] mb-6 block">Consultation / Booking</span>
-            <h2 className="text-3xl sm:text-6xl md:text-[8rem] mb-8 md:mb-12 leading-none font-black uppercase tracking-tighter break-words">
-              Start Your <br /><span className="text-brand">Evolution.</span>
+            <h2 className="text-3xl sm:text-5xl md:text-7xl mb-8 md:mb-12 leading-tight font-black uppercase tracking-tighter break-normal">
+              <span className="block whitespace-nowrap">Start Your</span>
+              <span className="block whitespace-nowrap text-brand">Evolution.</span>
             </h2>
             
             <div className="grid md:grid-cols-2 gap-12 mt-12 md:mt-16 border-t border-edge pt-8 md:pt-12">

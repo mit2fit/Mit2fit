@@ -20,10 +20,10 @@ export default function Hero() {
             <span className="text-brand font-mono text-xs font-bold uppercase tracking-[0.4em] mb-8 block">
               Performance & Longevity
             </span>
-            <h1 className="text-4xl sm:text-6xl md:text-8xl lg:text-[10rem] leading-[0.85] mb-10 tracking-tighter break-words">
-              Effective <br /> 
-              <span className="text-brand">Performance</span> <br /> 
-              Coaching.
+            <h1 className="text-3xl sm:text-5xl md:text-7xl lg:text-[4.75rem] xl:text-[6rem] leading-[0.95] sm:leading-[0.9] mb-8 md:mb-10 tracking-tight font-black uppercase break-normal">
+              <span className="block whitespace-nowrap">Effective</span>
+              <span className="block whitespace-nowrap text-brand">Performance</span>
+              <span className="block whitespace-nowrap">Coaching.</span>
             </h1>
             <p className="text-zinc-500 max-w-lg text-lg md:text-xl leading-relaxed mb-12 font-sans">
               No shortcuts. No fluff. Just grounded, science-backed protocols designed for high-performing individuals who value efficiency, results, and long-term health.

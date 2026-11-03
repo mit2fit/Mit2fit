@@ -35,7 +35,10 @@ export default function Services() {
         <div className="flex flex-col lg:flex-row justify-between items-end mb-12 md:mb-24 gap-8">
           <div className="max-w-3xl">
             <span className="text-zinc-500 text-xs font-black uppercase tracking-widest mb-6 block">Core Services / Methodology</span>
-            <h2 className="text-3xl sm:text-5xl md:text-8xl mb-8 break-words leading-none">Grounded <br /> <span className="text-brand italic underline decoration-edge underline-offset-8">Performance</span></h2>
+            <h2 className="text-3xl sm:text-5xl md:text-7xl mb-8 leading-tight font-black uppercase tracking-tight break-normal">
+              <span className="block whitespace-nowrap">Grounded</span>
+              <span className="block whitespace-nowrap text-brand italic underline decoration-edge underline-offset-8">Performance</span>
+            </h2>
             <p className="text-xl text-zinc-500 leading-relaxed font-sans">We prioritize functional longevity and measurable progress over generic fitness fads.</p>
           </div>
         </div>

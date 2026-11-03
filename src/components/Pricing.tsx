@@ -58,7 +58,7 @@ export default function Pricing() {
         <div className="flex flex-col lg:flex-row justify-between items-start mb-12 md:mb-24 gap-8">
           <div className="max-w-2xl">
             <span className="text-zinc-600 text-[10px] font-mono uppercase tracking-[0.3em] mb-4 block underline decoration-brand underline-offset-4">Performance Investment</span>
-            <h2 className="text-3xl sm:text-5xl md:text-7xl font-black mb-8 uppercase tracking-tighter leading-none italic break-words">
+            <h2 className="text-3xl sm:text-5xl md:text-7xl font-black mb-8 uppercase tracking-tighter leading-none italic break-normal">
               Scale Your <span className="text-brand not-italic">Output.</span>
             </h2>
             <p className="text-xl text-zinc-500 leading-relaxed font-sans max-w-xl">

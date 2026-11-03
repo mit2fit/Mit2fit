@@ -22,7 +22,7 @@ export default function About() {
 
         <div>
           <span className="text-brand font-mono text-xs font-bold uppercase tracking-widest mb-6 block">Our Story / Real Results</span>
-          <h2 className="text-3xl sm:text-5xl md:text-8xl mb-10 tracking-tighter uppercase font-black italic text-ink break-words">
+          <h2 className="text-3xl sm:text-5xl md:text-7xl mb-10 tracking-tighter uppercase font-black italic text-ink break-normal">
             The <span className="text-brand not-italic">Mit2Fit</span> <br /> Purpose.
           </h2>
           <div className="space-y-6 text-xl text-zinc-500 leading-relaxed font-sans">

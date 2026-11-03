@@ -452,12 +452,12 @@ export default function Tools() {
                   </>
                 )}
 
-                <button 
-                   onClick={() => document.getElementById('book')?.scrollIntoView({ behavior: 'smooth' })}
+                <Link 
+                   to="/consultation"
                    className="mt-12 w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest border border-edge py-4 hover:border-brand hover:text-brand transition-all font-mono"
                 >
                   Optimize via Consultation <ArrowRight size={14} />
-                </button>
+                </Link>
               </div>
             </motion.div>
           </div>

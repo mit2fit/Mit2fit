@@ -1083,6 +1083,24 @@ export const EXERCISE_DATABASE: ExerciseDefinition[] = [
 ];
 
 // Preset split routine templates for 1-click loading
+export interface RoutineExerciseConfig {
+  exerciseId: string;
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number;
+  equipment?: string;
+}
+
+export interface RoutineTemplate {
+  id: string;
+  name: string;
+  split: SplitCategory;
+  description: string;
+  exerciseIds: string[];
+  exerciseConfigs?: RoutineExerciseConfig[];
+  isCustom?: boolean;
+}
+
 export interface WorkoutTemplate {
   id: string;
   name: string;

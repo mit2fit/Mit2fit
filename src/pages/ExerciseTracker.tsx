@@ -34,7 +34,14 @@ import {
   FileSpreadsheet,
   HardDrive,
   Send,
-  HelpCircle
+  HelpCircle,
+  Edit3,
+  Save,
+  ArrowUp,
+  ArrowDown,
+  Sparkles,
+  RefreshCw,
+  FolderPlus
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -46,7 +53,9 @@ import {
   SplitCategory,
   MuscleSubCategory,
   ExerciseDefinition,
-  WorkoutTemplate
+  WorkoutTemplate,
+  RoutineTemplate,
+  RoutineExerciseConfig
 } from '../data/exerciseLibrary';
 
 interface WorkoutSet {
@@ -103,36 +112,121 @@ function getWeekNumber(d: Date): number {
   return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-// Helper to construct template exercises with synchronized sets
-function buildTemplateExercises(templateId: string): ActiveExercise[] {
-  const template = WORKOUT_TEMPLATES.find(t => t.id === templateId) || WORKOUT_TEMPLATES[0];
-  return template.exerciseIds.map((exId, idx) => {
-    const def = EXERCISE_DATABASE.find(e => e.id === exId) || EXERCISE_DATABASE[0];
-    const targetSets = def.defaultTarget?.targetSets || 3;
-    const targetReps = def.defaultTarget?.targetReps || 10;
-    const defaultWeight = def.defaultTarget?.defaultWeight || 45;
+// Routine template & exercise configuration interfaces
+export interface PreviousExercisePerformance {
+  workoutDate: string;
+  workoutTitle: string;
+  targetSets: number;
+  targetReps: number;
+  sets: { weight: number; reps: number; completed: boolean; type: string }[];
+  lastWeight: number;
+  maxWeight: number;
+  avgReps: number;
+  summary: string;
+}
 
-    const sets: WorkoutSet[] = Array.from({ length: targetSets }).map((_, sIdx) => ({
-      id: `s-${templateId}-${idx}-${sIdx + 1}`,
-      setNumber: sIdx + 1,
-      weight: defaultWeight,
-      reps: targetReps,
-      completed: false, // Ready to log
-      type: 'Working'
-    }));
+// Find user's most recent completed session for an exercise from history
+export function getPreviousExercisePerformance(
+  exerciseId: string,
+  exerciseName: string,
+  historyList: CompletedWorkout[]
+): PreviousExercisePerformance | null {
+  for (const workout of historyList) {
+    const foundEx = workout.exercises.find(
+      e => e.id === exerciseId || e.name.toLowerCase() === exerciseName.toLowerCase()
+    );
+    if (foundEx && foundEx.sets && foundEx.sets.length > 0) {
+      const completedSets = foundEx.sets.filter(s => s.completed);
+      if (completedSets.length > 0) {
+        const maxWeight = Math.max(...completedSets.map(s => s.weight));
+        const lastWeight = completedSets[completedSets.length - 1].weight;
+        const avgReps = Math.round(completedSets.reduce((sum, s) => sum + s.reps, 0) / completedSets.length);
+        return {
+          workoutDate: workout.date,
+          workoutTitle: workout.title,
+          targetSets: foundEx.targetSets || completedSets.length,
+          targetReps: foundEx.targetReps || completedSets[0].reps,
+          sets: completedSets,
+          lastWeight,
+          maxWeight,
+          avgReps,
+          summary: completedSets.map(s => `${s.weight}×${s.reps}`).join(', ')
+        };
+      }
+    }
+  }
+  return null;
+}
+
+// Factory for default routines
+export function getDefaultRoutines(): RoutineTemplate[] {
+  return WORKOUT_TEMPLATES.map(tpl => ({
+    id: tpl.id,
+    name: tpl.name,
+    split: tpl.split,
+    description: tpl.description,
+    exerciseIds: tpl.exerciseIds,
+    isCustom: false,
+    exerciseConfigs: tpl.exerciseIds.map(exId => {
+      const def = EXERCISE_DATABASE.find(e => e.id === exId);
+      return {
+        exerciseId: exId,
+        targetSets: def?.defaultTarget?.targetSets || 3,
+        targetReps: def?.defaultTarget?.targetReps || 10,
+        targetWeight: def?.defaultTarget?.defaultWeight || 45,
+        equipment: def?.defaultEquipment || 'Barbell'
+      };
+    })
+  }));
+}
+
+// History-aware routine constructor: automatically pre-populates previous set weights and reps
+export function buildRoutineExercises(
+  routine: RoutineTemplate,
+  historyList: CompletedWorkout[]
+): ActiveExercise[] {
+  return routine.exerciseIds.map((exId, idx) => {
+    const def = EXERCISE_DATABASE.find(e => e.id === exId) || EXERCISE_DATABASE[0];
+    const prevPerf = getPreviousExercisePerformance(exId, def.name, historyList);
+    const cfg = routine.exerciseConfigs?.find(c => c.exerciseId === exId);
+
+    // If history exists, auto-adjust to user's proven working weights & reps!
+    const targetSets = prevPerf ? prevPerf.targetSets : (cfg?.targetSets || def.defaultTarget?.targetSets || 3);
+    const targetReps = prevPerf ? prevPerf.targetReps : (cfg?.targetReps || def.defaultTarget?.targetReps || 10);
+    const targetWeight = prevPerf ? prevPerf.maxWeight : (cfg?.targetWeight || def.defaultTarget?.defaultWeight || 45);
+    const equipment = cfg?.equipment || def.defaultEquipment;
+
+    const sets: WorkoutSet[] = Array.from({ length: targetSets }).map((_, sIdx) => {
+      const prevSet = prevPerf?.sets[sIdx];
+      return {
+        id: `s-${routine.id}-${idx}-${sIdx + 1}-${Date.now()}`,
+        setNumber: sIdx + 1,
+        weight: prevSet ? prevSet.weight : targetWeight,
+        reps: prevSet ? prevSet.reps : targetReps,
+        completed: false, // Ready to log
+        type: (prevSet?.type as WorkoutSet['type']) || 'Working'
+      };
+    });
 
     return {
-      instanceId: `inst-${templateId}-${idx}-${Date.now()}`,
+      instanceId: `inst-${routine.id}-${idx}-${Date.now()}-${idx}`,
       exercise: def,
-      equipment: def.defaultEquipment,
+      equipment,
       targetSets,
       targetReps,
-      targetWeight: defaultWeight,
+      targetWeight,
       minReps: def.defaultTarget?.minReps || 8,
       maxReps: def.defaultTarget?.maxReps || 12,
       sets
     };
   });
+}
+
+// Backward compatibility helper
+function buildTemplateExercises(templateId: string, historyList: CompletedWorkout[] = []): ActiveExercise[] {
+  const defaultRoutines = getDefaultRoutines();
+  const routine = defaultRoutines.find(r => r.id === templateId) || defaultRoutines[0];
+  return buildRoutineExercises(routine, historyList);
 }
 
 // Seed history so weekly progression is immediately demonstrable
@@ -319,8 +413,50 @@ function loadSavedActiveSession(): StoredActiveSession | null {
   return null;
 }
 
+function loadInitialHistory(): CompletedWorkout[] {
+  const saved = localStorage.getItem('mit2fit_exercise_logs_v4');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {
+      console.error('Failed to parse history', e);
+    }
+  }
+  return SEED_HISTORY;
+}
+
+function loadInitialRoutines(): RoutineTemplate[] {
+  const saved = localStorage.getItem('mit2fit_workout_routines_v3');
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {
+      console.error('Failed to parse saved routines', e);
+    }
+  }
+  return getDefaultRoutines();
+}
+
 export default function ExerciseTracker() {
   const initialSession = useMemo(() => loadSavedActiveSession(), []);
+
+  // Workout History from localStorage (loaded first so routines auto-adjust to it)
+  const [history, setHistory] = useState<CompletedWorkout[]>(loadInitialHistory);
+
+  // Sync history to localStorage
+  useEffect(() => {
+    localStorage.setItem('mit2fit_exercise_logs_v4', JSON.stringify(history));
+  }, [history]);
+
+  // Routines state (preset + custom routines)
+  const [routines, setRoutines] = useState<RoutineTemplate[]>(loadInitialRoutines);
+
+  // Sync routines to localStorage
+  useEffect(() => {
+    localStorage.setItem('mit2fit_workout_routines_v3', JSON.stringify(routines));
+  }, [routines]);
 
   const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
@@ -337,8 +473,31 @@ export default function ExerciseTracker() {
     if (initialSession?.activeExercises && initialSession.activeExercises.length > 0) {
       return initialSession.activeExercises;
     }
-    return buildTemplateExercises('upper-day-a');
+    const initialRoutines = loadInitialRoutines();
+    const initialHist = loadInitialHistory();
+    const routine = initialRoutines.find(r => r.id === (initialSession?.activeTemplateId || 'upper-day-a')) || initialRoutines[0];
+    return buildRoutineExercises(routine, initialHist);
   });
+
+  // Routine Creator / Editor Modal State
+  const [routineModal, setRoutineModal] = useState<{
+    isOpen: boolean;
+    mode: 'create' | 'edit' | 'save_active';
+    routineId?: string;
+    name: string;
+    split: SplitCategory;
+    description: string;
+    exerciseConfigs: {
+      exerciseId: string;
+      targetSets: number;
+      targetReps: number;
+      targetWeight: number;
+      equipment: string;
+    }[];
+    isPickerOpen: boolean;
+    pickerSearch: string;
+    pickerSplit: string;
+  } | null>(null);
 
   // Rest Timer State
   const [restSecondsLeft, setRestSecondsLeft] = useState<number | null>(null);
@@ -379,24 +538,6 @@ export default function ExerciseTracker() {
   const [customTargetSets, setCustomTargetSets] = useState<number>(3);
   const [customTargetReps, setCustomTargetReps] = useState<number>(10);
   const [customStartingWeight, setCustomStartingWeight] = useState<number>(35);
-
-  // Workout History from localStorage
-  const [history, setHistory] = useState<CompletedWorkout[]>(() => {
-    const saved = localStorage.getItem('mit2fit_exercise_logs_v4');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Failed to parse history', e);
-      }
-    }
-    return SEED_HISTORY;
-  });
-
-  // Sync history to localStorage
-  useEffect(() => {
-    localStorage.setItem('mit2fit_exercise_logs_v4', JSON.stringify(history));
-  }, [history]);
 
   // Auto-persist active workout session so reloading or closing/reopening browser preserves in-progress sets
   useEffect(() => {
@@ -507,16 +648,294 @@ export default function ExerciseTracker() {
 
   const totalTargetSets = activeExercises.reduce((sum, ex) => sum + ex.targetSets, 0);
 
-  // 1-Click Load Routine Template
-  const handleLoadTemplate = (templateId: string) => {
-    const template = WORKOUT_TEMPLATES.find(t => t.id === templateId);
-    if (!template) return;
-    setActiveTemplateId(templateId);
-    setSessionTitle(template.name);
-    setActiveExercises(buildTemplateExercises(templateId));
+  // 1-Click Load Routine with Automatic History Auto-Adjustment
+  const handleLoadRoutine = (routineId: string) => {
+    const routine = routines.find(r => r.id === routineId) || routines[0];
+    if (!routine) return;
+    setActiveTemplateId(routine.id);
+    setSessionTitle(routine.name);
+    setActiveExercises(buildRoutineExercises(routine, history));
     setElapsedSeconds(0);
     setIsTimerRunning(false);
     setHasStartedWorkout(false);
+    setAlertNotice(`Loaded "${routine.name}" with history auto-loaded!`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  const handleLoadTemplate = handleLoadRoutine;
+
+  // Open Routine Creator Modal (from scratch)
+  const handleOpenCreateRoutine = () => {
+    setRoutineModal({
+      isOpen: true,
+      mode: 'create',
+      name: '',
+      split: 'Upper Body',
+      description: '',
+      exerciseConfigs: [],
+      isPickerOpen: false,
+      pickerSearch: '',
+      pickerSplit: 'All'
+    });
+  };
+
+  // Open Routine Editor Modal (modify existing routine)
+  const handleOpenEditRoutine = (routine: RoutineTemplate) => {
+    const configs = routine.exerciseIds.map(exId => {
+      const existingCfg = routine.exerciseConfigs?.find(c => c.exerciseId === exId);
+      const def = EXERCISE_DATABASE.find(e => e.id === exId);
+      const prevPerf = getPreviousExercisePerformance(exId, def?.name || '', history);
+      return {
+        exerciseId: exId,
+        targetSets: existingCfg?.targetSets || prevPerf?.targetSets || def?.defaultTarget?.targetSets || 3,
+        targetReps: existingCfg?.targetReps || prevPerf?.targetReps || def?.defaultTarget?.targetReps || 10,
+        targetWeight: existingCfg?.targetWeight || prevPerf?.maxWeight || def?.defaultTarget?.defaultWeight || 45,
+        equipment: existingCfg?.equipment || def?.defaultEquipment || 'Barbell'
+      };
+    });
+
+    setRoutineModal({
+      isOpen: true,
+      mode: 'edit',
+      routineId: routine.id,
+      name: routine.name,
+      split: routine.split,
+      description: routine.description,
+      exerciseConfigs: configs,
+      isPickerOpen: false,
+      pickerSearch: '',
+      pickerSplit: 'All'
+    });
+  };
+
+  // Open Routine Modal pre-populated with currently active workout
+  const handleOpenSaveActiveAsRoutine = () => {
+    const configs = activeExercises.map(ae => ({
+      exerciseId: ae.exercise.id,
+      targetSets: ae.targetSets,
+      targetReps: ae.targetReps,
+      targetWeight: ae.targetWeight,
+      equipment: ae.equipment
+    }));
+
+    setRoutineModal({
+      isOpen: true,
+      mode: 'save_active',
+      name: sessionTitle.includes('Custom') ? sessionTitle : `${sessionTitle} (Custom)`,
+      split: activeExercises[0]?.exercise.split || 'Upper Body',
+      description: `Custom routine with ${activeExercises.length} exercises`,
+      exerciseConfigs: configs,
+      isPickerOpen: false,
+      pickerSearch: '',
+      pickerSplit: 'All'
+    });
+  };
+
+  // 1-Tap Quick Update: Save current active modifications directly back to the active routine
+  const handleQuickUpdateActiveRoutine = () => {
+    const currentRoutine = routines.find(r => r.id === activeTemplateId);
+    if (!currentRoutine) {
+      handleOpenSaveActiveAsRoutine();
+      return;
+    }
+    const updatedConfigs = activeExercises.map(ae => ({
+      exerciseId: ae.exercise.id,
+      targetSets: ae.targetSets,
+      targetReps: ae.targetReps,
+      targetWeight: ae.targetWeight,
+      equipment: ae.equipment
+    }));
+    const updatedRoutine: RoutineTemplate = {
+      ...currentRoutine,
+      exerciseIds: activeExercises.map(ae => ae.exercise.id),
+      exerciseConfigs: updatedConfigs,
+      description: `${activeExercises.map(e => e.exercise.name).slice(0, 4).join(', ')}${activeExercises.length > 4 ? '...' : ''}`
+    };
+    setRoutines(prev => prev.map(r => r.id === currentRoutine.id ? updatedRoutine : r));
+    setAlertNotice(`Saved changes to "${currentRoutine.name}" routine!`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Save or Update Routine from Modal
+  const handleSaveRoutineModal = () => {
+    if (!routineModal) return;
+    const trimmedName = routineModal.name.trim();
+    if (!trimmedName) {
+      setAlertNotice('Please provide a name for this routine.');
+      setTimeout(() => setAlertNotice(null), 3000);
+      return;
+    }
+    if (routineModal.exerciseConfigs.length === 0) {
+      setAlertNotice('Please add at least 1 exercise to this routine.');
+      setTimeout(() => setAlertNotice(null), 3000);
+      return;
+    }
+
+    if (routineModal.mode === 'create' || routineModal.mode === 'save_active') {
+      const newId = `routine-${Date.now()}`;
+      const newRoutine: RoutineTemplate = {
+        id: newId,
+        name: trimmedName,
+        split: routineModal.split,
+        description: routineModal.description || `${routineModal.exerciseConfigs.length} exercises (${routineModal.split})`,
+        exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
+        exerciseConfigs: routineModal.exerciseConfigs,
+        isCustom: true
+      };
+      setRoutines(prev => [...prev, newRoutine]);
+      setActiveTemplateId(newId);
+      setSessionTitle(trimmedName);
+      if (routineModal.mode === 'create') {
+        setActiveExercises(buildRoutineExercises(newRoutine, history));
+      }
+      setAlertNotice(`Routine "${trimmedName}" created and loaded!`);
+    } else if (routineModal.mode === 'edit' && routineModal.routineId) {
+      const updatedRoutine: RoutineTemplate = {
+        id: routineModal.routineId,
+        name: trimmedName,
+        split: routineModal.split,
+        description: routineModal.description,
+        exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
+        exerciseConfigs: routineModal.exerciseConfigs,
+        isCustom: true
+      };
+      setRoutines(prev => prev.map(r => r.id === routineModal.routineId ? updatedRoutine : r));
+      if (activeTemplateId === routineModal.routineId) {
+        setSessionTitle(trimmedName);
+      }
+      setAlertNotice(`Routine "${trimmedName}" updated!`);
+    }
+
+    setTimeout(() => setAlertNotice(null), 3000);
+    setRoutineModal(null);
+  };
+
+  // Delete Routine
+  const handleDeleteRoutine = (routineId: string) => {
+    const toDelete = routines.find(r => r.id === routineId);
+    if (!toDelete) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: `Delete Routine "${toDelete.name}"?`,
+      message: 'Are you sure you want to delete this routine? Past logged workouts will remain safely intact in your history.',
+      confirmText: 'Delete Routine',
+      isDanger: true,
+      onConfirm: () => {
+        setRoutines(prev => {
+          const filtered = prev.filter(r => r.id !== routineId);
+          if (filtered.length === 0) return getDefaultRoutines();
+          return filtered;
+        });
+        if (activeTemplateId === routineId) {
+          const remaining = routines.filter(r => r.id !== routineId);
+          const next = remaining[0] || getDefaultRoutines()[0];
+          setActiveTemplateId(next.id);
+          setSessionTitle(next.name);
+          setActiveExercises(buildRoutineExercises(next, history));
+        }
+        setConfirmModal(null);
+        setAlertNotice(`Routine "${toDelete.name}" deleted.`);
+        setTimeout(() => setAlertNotice(null), 3000);
+      }
+    });
+  };
+
+  // Restore factory preset routines
+  const handleRestoreDefaultRoutines = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset to Factory Routines?',
+      message: 'This will restore the 4 default MIT2FIT split templates. Your workout history will remain unaffected.',
+      confirmText: 'Restore Defaults',
+      isDanger: false,
+      onConfirm: () => {
+        const defaults = getDefaultRoutines();
+        setRoutines(defaults);
+        handleLoadRoutine(defaults[0].id);
+        setConfirmModal(null);
+        setAlertNotice('Default routines restored.');
+        setTimeout(() => setAlertNotice(null), 3000);
+      }
+    });
+  };
+
+  // ==============================================================
+  // FRICTION-REDUCING OVERLOAD & HISTORY ADJUSTMENT HELPERS
+  // ==============================================================
+  // 1-Tap Overload Weight (+5 lbs / +2.5 kg) across all uncompleted sets
+  const applyOverloadWeightToExercise = (exIdx: number, delta: number) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const ex = next[exIdx];
+      const newTarget = Math.max(0, ex.targetWeight + delta);
+      next[exIdx] = {
+        ...ex,
+        targetWeight: newTarget,
+        sets: ex.sets.map(s => s.completed ? s : { ...s, weight: Math.max(0, s.weight + delta) })
+      };
+      return next;
+    });
+    setAlertNotice(`${delta > 0 ? `+${delta}` : delta} ${unit} overload applied to pending sets!`);
+    setTimeout(() => setAlertNotice(null), 2500);
+  };
+
+  // 1-Tap Overload Reps (+1 rep) across all uncompleted sets
+  const applyOverloadRepsToExercise = (exIdx: number, delta: number) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const ex = next[exIdx];
+      const newTarget = Math.max(1, ex.targetReps + delta);
+      next[exIdx] = {
+        ...ex,
+        targetReps: newTarget,
+        sets: ex.sets.map(s => s.completed ? s : { ...s, reps: Math.max(1, s.reps + delta) })
+      };
+      return next;
+    });
+    setAlertNotice(`${delta > 0 ? `+${delta}` : delta} rep overload applied to pending sets!`);
+    setTimeout(() => setAlertNotice(null), 2500);
+  };
+
+  // Reset/Match sets to exact numbers from user's last session
+  const matchPreviousSessionForExercise = (exIdx: number) => {
+    const ex = activeExercises[exIdx];
+    const prevPerf = getPreviousExercisePerformance(ex.exercise.id, ex.exercise.name, history);
+    if (!prevPerf) return;
+    setActiveExercises(prev => {
+      const next = [...prev];
+      next[exIdx] = {
+        ...ex,
+        targetWeight: prevPerf.maxWeight,
+        targetReps: prevPerf.targetReps,
+        sets: ex.sets.map((s, sIdx) => {
+          const prevSet = prevPerf.sets[sIdx];
+          return {
+            ...s,
+            weight: prevSet ? prevSet.weight : prevPerf.maxWeight,
+            reps: prevSet ? prevSet.reps : prevPerf.targetReps
+          };
+        })
+      };
+      return next;
+    });
+    setAlertNotice(`Restored ${ex.exercise.name} sets to last session (${prevPerf.summary})`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // 1-Tap apply previous set's weight & reps to this specific set
+  const applyPreviousSetToCurrent = (exIdx: number, sIdx: number, prevSet: { weight: number; reps: number }) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      next[exIdx].sets[sIdx] = {
+        ...next[exIdx].sets[sIdx],
+        weight: prevSet.weight,
+        reps: prevSet.reps
+      };
+      return next;
+    });
+    setAlertNotice(`Set ${sIdx + 1} set to ${prevSet.weight} ${unit} × ${prevSet.reps} reps`);
+    setTimeout(() => setAlertNotice(null), 2000);
   };
 
   // ==============================================================
@@ -704,12 +1123,13 @@ export default function ExerciseTracker() {
   };
 
   const addExerciseToWorkout = (exercise: ExerciseDefinition, equipment: string) => {
-    const targetSets = exercise.defaultTarget?.targetSets || 3;
-    const targetReps = exercise.defaultTarget?.targetReps || 10;
-    const defaultWeight = exercise.defaultTarget?.defaultWeight || 45;
+    const prevPerf = getPreviousExercisePerformance(exercise.id, exercise.name, history);
+    const targetSets = prevPerf ? prevPerf.targetSets : (exercise.defaultTarget?.targetSets || 3);
+    const targetReps = prevPerf ? prevPerf.targetReps : (exercise.defaultTarget?.targetReps || 10);
+    const defaultWeight = prevPerf ? prevPerf.maxWeight : (exercise.defaultTarget?.defaultWeight || 45);
 
     const newActive: ActiveExercise = {
-      instanceId: `inst-${Date.now()}`,
+      instanceId: `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       exercise,
       equipment,
       targetSets,
@@ -717,17 +1137,24 @@ export default function ExerciseTracker() {
       targetWeight: defaultWeight,
       minReps: exercise.defaultTarget?.minReps || 8,
       maxReps: exercise.defaultTarget?.maxReps || 12,
-      sets: Array.from({ length: targetSets }).map((_, sIdx) => ({
-        id: `s-${Date.now()}-${sIdx + 1}`,
-        setNumber: sIdx + 1,
-        weight: defaultWeight,
-        reps: targetReps,
-        completed: false,
-        type: 'Working'
-      }))
+      sets: Array.from({ length: targetSets }).map((_, sIdx) => {
+        const prevSet = prevPerf?.sets[sIdx];
+        return {
+          id: `s-${Date.now()}-${sIdx + 1}`,
+          setNumber: sIdx + 1,
+          weight: prevSet ? prevSet.weight : defaultWeight,
+          reps: prevSet ? prevSet.reps : targetReps,
+          completed: false,
+          type: (prevSet?.type as WorkoutSet['type']) || 'Working'
+        };
+      })
     };
     setActiveExercises(prev => [...prev, newActive]);
     setIsAddModalOpen(false);
+    if (prevPerf) {
+      setAlertNotice(`Added ${exercise.name} with previous session (${prevPerf.maxWeight} ${unit} × ${prevPerf.targetReps}) auto-loaded!`);
+      setTimeout(() => setAlertNotice(null), 3500);
+    }
   };
 
   // Progression advice engine
@@ -1151,41 +1578,117 @@ export default function ExerciseTracker() {
         {/* ============================================================== */}
         {activeTab === 'workout' && (
           <div className="space-y-6">
-            {/* Split Presets Switcher Bar */}
+            {/* Split Presets & Custom Routines Switcher Bar */}
             <div className="bg-stone-900/50 p-4 rounded-2xl border border-stone-800 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <BookmarkCheck className="w-4 h-4 text-amber-500" />
                   <span className="text-xs font-bold uppercase tracking-wider text-stone-300">
-                    Load Routine Split:
+                    Active Routines & Splits:
+                  </span>
+                  <span className="text-[10px] bg-stone-800 text-stone-400 px-2 py-0.5 rounded-full font-mono">
+                    {routines.length} saved
                   </span>
                 </div>
-                <span className="text-[11px] text-stone-500">
-                  Select a routine to auto-populate exercises with target sets & reps
-                </span>
+                
+                {/* Routine Controls: Add New Routine, Save Current as Routine, Reset */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleOpenCreateRoutine}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition"
+                    title="Create a brand new routine from scratch"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Routine</span>
+                  </button>
+
+                  <button
+                    onClick={handleOpenSaveActiveAsRoutine}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 rounded-xl text-xs font-medium transition"
+                    title="Save current workout exercises as a new routine"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Save Current as Routine</span>
+                  </button>
+
+                  <button
+                    onClick={handleQuickUpdateActiveRoutine}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 rounded-xl text-xs font-medium transition"
+                    title="Save current sets and exercises into active routine"
+                  >
+                    <Save className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden md:inline">Save to Active</span>
+                  </button>
+
+                  <button
+                    onClick={handleRestoreDefaultRoutines}
+                    className="p-1.5 rounded-lg text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition text-[11px]"
+                    title="Restore default MIT2FIT routines"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                {WORKOUT_TEMPLATES.map(tpl => {
+              {/* Routine Cards Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {routines.map(tpl => {
                   const isActive = activeTemplateId === tpl.id;
                   return (
-                    <button
+                    <div
                       key={tpl.id}
-                      onClick={() => handleLoadTemplate(tpl.id)}
-                      className={`text-left p-2.5 rounded-xl border text-xs transition flex flex-col justify-between gap-1 ${
+                      className={`relative group p-3 rounded-xl border text-xs transition flex flex-col justify-between gap-2 ${
                         isActive 
                           ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm' 
                           : 'bg-stone-950/60 border-stone-800 text-stone-400 hover:text-white hover:border-stone-700'
                       }`}
                     >
-                      <div className="font-bold flex items-center justify-between">
-                        <span>{tpl.name}</span>
-                        {isActive && <Check className="w-3.5 h-3.5 text-amber-400" />}
+                      <button
+                        onClick={() => handleLoadRoutine(tpl.id)}
+                        className="text-left w-full flex-grow flex flex-col justify-between gap-1 pr-14"
+                      >
+                        <div className="font-bold flex items-center justify-between gap-1">
+                          <span className="truncate">{tpl.name}</span>
+                          {isActive && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-stone-500">
+                          <span>{tpl.exerciseIds.length} Exercises</span>
+                          <span>•</span>
+                          <span className="text-stone-400">{tpl.split}</span>
+                          {tpl.isCustom && (
+                            <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded font-semibold">
+                              Custom
+                            </span>
+                          )}
+                        </div>
+                      </button>
+
+                      {/* Card Edit & Delete Actions */}
+                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditRoutine(tpl);
+                          }}
+                          className="p-1 rounded bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition"
+                          title="Modify and save routine"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                        </button>
+                        {tpl.isCustom && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteRoutine(tpl.id);
+                            }}
+                            className="p-1 rounded bg-stone-900/80 hover:bg-red-950/80 text-stone-500 hover:text-red-400 border border-stone-800 transition"
+                            title="Delete custom routine"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
-                      <div className="text-[11px] text-stone-500 truncate">
-                        {tpl.exerciseIds.length} Exercises ({tpl.split})
-                      </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -1193,16 +1696,37 @@ export default function ExerciseTracker() {
 
             {/* Workout Controls Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-stone-900/40 p-4 rounded-2xl border border-stone-800">
-              <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-amber-500" />
-                  {sessionTitle}
-                </h2>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  Adjust target sets, reps, or weight in each card header to instantly update all sets. Check off sets to log volume.
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-amber-500" />
+                    {sessionTitle}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      const current = routines.find(r => r.id === activeTemplateId);
+                      if (current) handleOpenEditRoutine(current);
+                      else handleOpenSaveActiveAsRoutine();
+                    }}
+                    className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-amber-400 border border-stone-700 transition"
+                    title="Modify this routine"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <p className="text-xs text-stone-400">
+                  Target weights & reps automatically adjust from your past history. Tap + / - to adjust without retyping.
                 </p>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleQuickUpdateActiveRoutine}
+                  className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-stone-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                  title="Save current sets and exercises into active routine"
+                >
+                  <Save className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Save Routine Changes</span>
+                </button>
                 {(hasStartedWorkout || totalCompletedSets > 0 || elapsedSeconds > 0) && (
                   <button
                     onClick={handleResetActiveRoutine}
@@ -1254,6 +1778,7 @@ export default function ExerciseTracker() {
                   const completedWorkingCount = activeEx.sets.filter(s => s.completed && s.type === 'Working').length;
                   const targetHitCount = activeEx.sets.filter(s => s.completed && s.type === 'Working' && s.reps >= activeEx.targetReps).length;
                   const repsUnit = activeEx.exercise.defaultTarget?.repsUnit || 'reps';
+                  const prevPerf = getPreviousExercisePerformance(activeEx.exercise.id, activeEx.exercise.name, history);
 
                   return (
                     <div 
@@ -1262,7 +1787,7 @@ export default function ExerciseTracker() {
                     >
                       {/* Exercise Header & Reactive Setup Controls */}
                       <div className="p-4 sm:p-5 border-b border-stone-800/80 bg-stone-900/90 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                        <div className="space-y-1">
+                        <div className="space-y-1.5 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-bold text-white tracking-tight">
                               {activeEx.exercise.name}
@@ -1286,6 +1811,52 @@ export default function ExerciseTracker() {
                               Window: {activeEx.minReps}–{activeEx.maxReps} {repsUnit}
                             </span>
                           </div>
+
+                          {/* Friction-Eliminating History Summary & 1-Tap Overload Bumps */}
+                          {prevPerf ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 pt-2 border-t border-stone-800/60">
+                              <div className="flex items-center gap-1.5 text-xs text-stone-300 bg-stone-950/80 px-2 py-1 rounded-lg border border-stone-800">
+                                <History className="w-3.5 h-3.5 text-amber-400" />
+                                <span className="text-[11px] text-stone-400">Last Session:</span>
+                                <span className="font-mono font-bold text-amber-300">{prevPerf.summary} {unit}</span>
+                                <span className="text-[10px] text-stone-500">({new Date(prevPerf.workoutDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => applyOverloadWeightToExercise(exIdx, unit === 'lbs' ? 5 : 2.5)}
+                                  className="px-2 py-1 rounded-lg bg-emerald-950/70 border border-emerald-500/40 hover:bg-emerald-900/80 text-emerald-300 text-[11px] font-bold font-mono transition flex items-center gap-1 shadow-sm"
+                                  title="Add 5 lbs (or 2.5 kg) across all uncompleted sets"
+                                >
+                                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                                  +{unit === 'lbs' ? '5' : '2.5'} {unit} All
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => applyOverloadRepsToExercise(exIdx, 1)}
+                                  className="px-2 py-1 rounded-lg bg-cyan-950/70 border border-cyan-500/40 hover:bg-cyan-900/80 text-cyan-300 text-[11px] font-bold font-mono transition flex items-center gap-1 shadow-sm"
+                                  title="Add 1 rep across all uncompleted sets"
+                                >
+                                  <Sparkles className="w-3 h-3 text-cyan-400" />
+                                  +1 Rep All
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => matchPreviousSessionForExercise(exIdx)}
+                                  className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[11px] font-medium transition flex items-center gap-1"
+                                  title="Restore sets to match previous session"
+                                >
+                                  <RefreshCw className="w-3 h-3 text-stone-400" />
+                                  Match Last
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-stone-500 font-mono">
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              <span>First session for this exercise • Baseline target will be saved to your history</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* REACTIVE SETUP CONTROLS (Directly affects all sets below) */}
@@ -1451,104 +2022,134 @@ export default function ExerciseTracker() {
                             <div className="col-span-2 text-right">Log / Copy</div>
                           </div>
 
-                          {activeEx.sets.map((set, sIdx) => (
-                            <div 
-                              key={set.id}
-                              className={`grid grid-cols-12 gap-2 items-center p-2 rounded-xl transition ${
-                                set.completed 
-                                  ? 'bg-emerald-950/20 border border-emerald-500/20' 
-                                  : 'bg-stone-950/50 hover:bg-stone-950/80 border border-stone-800/80'
-                              }`}
-                            >
-                              {/* Set Number */}
-                              <div className="col-span-1 text-center font-mono font-bold text-stone-400 text-xs">
-                                {set.setNumber}
-                              </div>
+                          {activeEx.sets.map((set, sIdx) => {
+                            const prevSet = prevPerf?.sets[sIdx];
+                            return (
+                              <div 
+                                key={set.id}
+                                className={`grid grid-cols-12 gap-2 items-center p-2 rounded-xl transition ${
+                                  set.completed 
+                                    ? 'bg-emerald-950/20 border border-emerald-500/20' 
+                                    : 'bg-stone-950/50 hover:bg-stone-950/80 border border-stone-800/80'
+                                }`}
+                              >
+                                {/* Set Number & Clickable Previous Log */}
+                                <div className="col-span-1 text-center font-mono font-bold text-stone-400 text-xs flex flex-col items-center justify-center">
+                                  <span>{set.setNumber}</span>
+                                  {prevSet && (
+                                    <button
+                                      type="button"
+                                      onClick={() => applyPreviousSetToCurrent(exIdx, sIdx, prevSet)}
+                                      className="text-[9px] font-mono text-stone-500 hover:text-amber-400 hover:underline transition truncate max-w-full"
+                                      title={`Last time: ${prevSet.weight} × ${prevSet.reps}. Tap to copy to this set.`}
+                                    >
+                                      {prevSet.weight}×{prevSet.reps}
+                                    </button>
+                                  )}
+                                </div>
 
-                              {/* Set Type */}
-                              <div className="col-span-2">
-                                <select
-                                  value={set.type}
-                                  onChange={(e) => {
-                                    const val = e.target.value as WorkoutSet['type'];
-                                    setActiveExercises(prev => {
-                                      const next = [...prev];
-                                      next[exIdx].sets[sIdx].type = val;
-                                      return next;
-                                    });
-                                  }}
-                                  className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-[11px] rounded px-1.5 py-1 focus:outline-none focus:border-amber-500"
-                                >
-                                  <option value="Working">Working</option>
-                                  <option value="Warmup">Warmup</option>
-                                  <option value="Drop Set">Drop</option>
-                                  <option value="Failure">Failure</option>
-                                </select>
-                              </div>
+                                {/* Set Type */}
+                                <div className="col-span-2">
+                                  <select
+                                    value={set.type}
+                                    onChange={(e) => {
+                                      const val = e.target.value as WorkoutSet['type'];
+                                      setActiveExercises(prev => {
+                                        const next = [...prev];
+                                        next[exIdx].sets[sIdx].type = val;
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-[11px] rounded px-1.5 py-1 focus:outline-none focus:border-amber-500"
+                                  >
+                                    <option value="Working">Working</option>
+                                    <option value="Warmup">Warmup</option>
+                                    <option value="Drop Set">Drop</option>
+                                    <option value="Failure">Failure</option>
+                                  </select>
+                                </div>
 
-                              {/* Individual Set Weight Adjuster */}
-                              <div className="col-span-4 flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => updateIndividualSetWeight(exIdx, sIdx, -5)}
-                                  className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                  title="Minus 5"
-                                >
-                                  -5
-                                </button>
-                                <input
-                                  type="number"
-                                  value={set.weight}
-                                  onChange={(e) => {
-                                    const val = parseFloat(e.target.value) || 0;
-                                    setActiveExercises(prev => {
-                                      const next = [...prev];
-                                      next[exIdx].sets[sIdx].weight = val;
-                                      return next;
-                                    });
-                                  }}
-                                  className="w-16 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
-                                />
-                                <button
-                                  onClick={() => updateIndividualSetWeight(exIdx, sIdx, 5)}
-                                  className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                  title="Plus 5"
-                                >
-                                  +5
-                                </button>
-                              </div>
+                                {/* Individual Set Weight Adjuster */}
+                                <div className="col-span-4 flex flex-col items-center justify-center">
+                                  <div className="flex items-center justify-center gap-1 w-full">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, -5)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      title="Minus 5"
+                                    >
+                                      -5
+                                    </button>
+                                    <input
+                                      type="number"
+                                      value={set.weight}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value) || 0;
+                                        setActiveExercises(prev => {
+                                          const next = [...prev];
+                                          next[exIdx].sets[sIdx].weight = val;
+                                          return next;
+                                        });
+                                      }}
+                                      className="w-16 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, 5)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      title="Plus 5"
+                                    >
+                                      +5
+                                    </button>
+                                  </div>
+                                  {prevSet && set.weight > prevSet.weight && (
+                                    <span className="text-[9px] font-bold text-emerald-400 font-mono">
+                                      +{set.weight - prevSet.weight} {unit}
+                                    </span>
+                                  )}
+                                </div>
 
-                              {/* Individual Set Reps Adjuster */}
-                              <div className="col-span-3 flex items-center justify-center gap-1">
-                                <button
-                                  onClick={() => updateIndividualSetReps(exIdx, sIdx, -1)}
-                                  className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                  title="Minus 1 rep"
-                                >
-                                  -1
-                                </button>
-                                <input
-                                  type="number"
-                                  value={set.reps}
-                                  onChange={(e) => {
-                                    const val = parseInt(e.target.value) || 0;
-                                    setActiveExercises(prev => {
-                                      const next = [...prev];
-                                      next[exIdx].sets[sIdx].reps = val;
-                                      return next;
-                                    });
-                                  }}
-                                  className={`w-12 bg-stone-900 border text-center font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500 ${
-                                    set.reps >= activeEx.targetReps ? 'text-emerald-400 border-emerald-500/50' : 'text-white border-stone-700'
-                                  }`}
-                                />
-                                <button
-                                  onClick={() => updateIndividualSetReps(exIdx, sIdx, 1)}
-                                  className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                  title="Plus 1 rep"
-                                >
-                                  +1
-                                </button>
-                              </div>
+                                {/* Individual Set Reps Adjuster */}
+                                <div className="col-span-3 flex flex-col items-center justify-center">
+                                  <div className="flex items-center justify-center gap-1 w-full">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateIndividualSetReps(exIdx, sIdx, -1)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      title="Minus 1 rep"
+                                    >
+                                      -1
+                                    </button>
+                                    <input
+                                      type="number"
+                                      value={set.reps}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value) || 0;
+                                        setActiveExercises(prev => {
+                                          const next = [...prev];
+                                          next[exIdx].sets[sIdx].reps = val;
+                                          return next;
+                                        });
+                                      }}
+                                      className={`w-12 bg-stone-900 border text-center font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500 ${
+                                        set.reps >= activeEx.targetReps ? 'text-emerald-400 border-emerald-500/50' : 'text-white border-stone-700'
+                                      }`}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => updateIndividualSetReps(exIdx, sIdx, 1)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      title="Plus 1 rep"
+                                    >
+                                      +1
+                                    </button>
+                                  </div>
+                                  {prevSet && set.reps > prevSet.reps && (
+                                    <span className="text-[9px] font-bold text-cyan-400 font-mono">
+                                      +{set.reps - prevSet.reps} reps
+                                    </span>
+                                  )}
+                                </div>
 
                               {/* Complete Checkmark & Clone */}
                               <div className="col-span-2 flex items-center justify-end gap-1.5">
@@ -1583,7 +2184,8 @@ export default function ExerciseTracker() {
                                 )}
                               </div>
                             </div>
-                          ))}
+                          );
+                        })}
                         </div>
 
                         {/* Add Set Button */}
@@ -2815,6 +3417,384 @@ export default function ExerciseTracker() {
               >
                 {confirmModal.confirmText}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: CREATE / MODIFY WORKOUT ROUTINE                         */}
+      {/* ============================================================== */}
+      {routineModal && routineModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-stone-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                  {routineModal.mode === 'create' ? <Plus className="w-5 h-5" /> : routineModal.mode === 'save_active' ? <FolderPlus className="w-5 h-5" /> : <Edit3 className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">
+                    {routineModal.mode === 'create' 
+                      ? 'Create New Workout Routine' 
+                      : routineModal.mode === 'save_active'
+                      ? 'Save Current Workout as Routine'
+                      : `Modify Routine: ${routineModal.name}`}
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Customize exercises, target sets, reps, and baseline weights
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoutineModal(null)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content Scroll Area */}
+            <div className="p-5 overflow-y-auto space-y-5 text-xs">
+              {/* Routine Meta Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-stone-400 font-bold mb-1 uppercase tracking-wider text-[10px]">
+                    Routine Name <span className="text-amber-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={routineModal.name}
+                    onChange={(e) => setRoutineModal({ ...routineModal, name: e.target.value })}
+                    placeholder="e.g. Chest & Back Hypertrophy"
+                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-amber-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-stone-400 font-bold mb-1 uppercase tracking-wider text-[10px]">
+                    Split Category
+                  </label>
+                  <select
+                    value={routineModal.split}
+                    onChange={(e) => setRoutineModal({ ...routineModal, split: e.target.value as SplitCategory })}
+                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 text-xs"
+                  >
+                    {SPLIT_OPTIONS.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-stone-400 font-bold mb-1 uppercase tracking-wider text-[10px]">
+                  Description / Focus Notes
+                </label>
+                <input
+                  type="text"
+                  value={routineModal.description}
+                  onChange={(e) => setRoutineModal({ ...routineModal, description: e.target.value })}
+                  placeholder="e.g. Primary focus on horizontal pressing and vertical pulling with 8-12 rep range"
+                  className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-white placeholder-stone-600 focus:outline-none focus:border-amber-500 text-xs"
+                />
+              </div>
+
+              {/* Exercises in Routine List */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Dumbbell className="w-4 h-4 text-amber-500" />
+                    <span className="font-bold text-white uppercase tracking-wider text-[11px]">
+                      Exercises in this Routine ({routineModal.exerciseConfigs.length})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRoutineModal({ ...routineModal, isPickerOpen: !routineModal.isPickerOpen })}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{routineModal.isPickerOpen ? 'Hide Picker' : 'Add Exercises'}</span>
+                  </button>
+                </div>
+
+                {/* Inline Exercise Picker from Database */}
+                {routineModal.isPickerOpen && (
+                  <div className="p-4 bg-stone-950 rounded-2xl border border-stone-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 text-stone-500 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          placeholder="Search movements (e.g. Press, Squat, Curl)..."
+                          value={routineModal.pickerSearch}
+                          onChange={(e) => setRoutineModal({ ...routineModal, pickerSearch: e.target.value })}
+                          className="w-full bg-stone-900 border border-stone-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <select
+                        value={routineModal.pickerSplit}
+                        onChange={(e) => setRoutineModal({ ...routineModal, pickerSplit: e.target.value })}
+                        className="bg-stone-900 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="All">All Splits</option>
+                        {SPLIT_OPTIONS.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 divide-y divide-stone-800/40">
+                      {EXERCISE_DATABASE.filter(ex => {
+                        const matchesSplit = routineModal.pickerSplit === 'All' || ex.split === routineModal.pickerSplit;
+                        const matchesSearch = ex.name.toLowerCase().includes(routineModal.pickerSearch.toLowerCase()) ||
+                          ex.primaryMuscle.toLowerCase().includes(routineModal.pickerSearch.toLowerCase());
+                        return matchesSplit && matchesSearch;
+                      }).map(ex => {
+                        const isAlreadyAdded = routineModal.exerciseConfigs.some(c => c.exerciseId === ex.id);
+                        return (
+                          <div key={ex.id} className="pt-1.5 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="font-semibold text-white block truncate">{ex.name}</span>
+                              <span className="text-[10px] text-stone-500">{ex.subCategory} • {ex.defaultEquipment}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isAlreadyAdded) return;
+                                const prevPerf = getPreviousExercisePerformance(ex.id, ex.name, history);
+                                const newConfig = {
+                                  exerciseId: ex.id,
+                                  targetSets: prevPerf?.targetSets || ex.defaultTarget?.targetSets || 3,
+                                  targetReps: prevPerf?.targetReps || ex.defaultTarget?.targetReps || 10,
+                                  targetWeight: prevPerf?.maxWeight || ex.defaultTarget?.defaultWeight || 45,
+                                  equipment: ex.defaultEquipment
+                                };
+                                setRoutineModal({
+                                  ...routineModal,
+                                  exerciseConfigs: [...routineModal.exerciseConfigs, newConfig]
+                                });
+                              }}
+                              disabled={isAlreadyAdded}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                                isAlreadyAdded
+                                  ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
+                                  : 'bg-amber-500 hover:bg-amber-400 text-stone-950'
+                              }`}
+                            >
+                              {isAlreadyAdded ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                              <span>{isAlreadyAdded ? 'Added' : 'Add'}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Exercises currently in routine */}
+                {routineModal.exerciseConfigs.length === 0 ? (
+                  <div className="text-center py-8 bg-stone-950/40 rounded-2xl border border-stone-800/80 p-4">
+                    <p className="text-stone-500 text-xs">
+                      No exercises in this routine yet. Click "Add Exercises" above to add movements.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {routineModal.exerciseConfigs.map((cfg, cfgIdx) => {
+                      const def = EXERCISE_DATABASE.find(e => e.id === cfg.exerciseId) || EXERCISE_DATABASE[0];
+                      const prevPerf = getPreviousExercisePerformance(cfg.exerciseId, def.name, history);
+                      return (
+                        <div
+                          key={`${cfg.exerciseId}-${cfgIdx}`}
+                          className="p-3 bg-stone-950/70 border border-stone-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-stone-500 font-bold">#{cfgIdx + 1}</span>
+                              <span className="font-bold text-white truncate">{def.name}</span>
+                              <span className="text-[10px] text-amber-400/90 font-mono px-1.5 py-0.5 bg-amber-500/10 rounded">
+                                {cfg.equipment}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-stone-500 flex items-center gap-2">
+                              <span>{def.subCategory}</span>
+                              {prevPerf && (
+                                <span className="text-emerald-400/90 font-mono">
+                                  Last: {prevPerf.summary} {unit}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Exercise Targets Steppers */}
+                          <div className="flex items-center gap-2 self-end sm:self-center">
+                            {/* Sets */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-lg border border-stone-800">
+                              <span className="text-stone-400 text-[10px]">Sets:</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  updated[cfgIdx].targetSets = Math.max(1, updated[cfgIdx].targetSets - 1);
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono font-bold text-amber-400 px-1">{cfg.targetSets}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  updated[cfgIdx].targetSets = Math.min(8, updated[cfgIdx].targetSets + 1);
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Reps */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-lg border border-stone-800">
+                              <span className="text-stone-400 text-[10px]">Reps:</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  updated[cfgIdx].targetReps = Math.max(1, updated[cfgIdx].targetReps - 1);
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono font-bold text-amber-400 px-1">{cfg.targetReps}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  updated[cfgIdx].targetReps = updated[cfgIdx].targetReps + 1;
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Default Weight */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-lg border border-stone-800">
+                              <span className="text-stone-400 text-[10px]">{unit}:</span>
+                              <input
+                                type="number"
+                                value={cfg.targetWeight}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  updated[cfgIdx].targetWeight = val;
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="w-12 bg-stone-950 border border-stone-700 text-center font-mono font-bold text-amber-400 rounded py-0.5 text-xs focus:outline-none"
+                              />
+                            </div>
+
+                            {/* Reorder Up & Down */}
+                            <div className="flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                disabled={cfgIdx === 0}
+                                onClick={() => {
+                                  if (cfgIdx === 0) return;
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  const temp = updated[cfgIdx - 1];
+                                  updated[cfgIdx - 1] = updated[cfgIdx];
+                                  updated[cfgIdx] = temp;
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="p-1 rounded bg-stone-900 hover:bg-stone-800 disabled:opacity-30 text-stone-400 hover:text-white"
+                                title="Move up"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={cfgIdx === routineModal.exerciseConfigs.length - 1}
+                                onClick={() => {
+                                  if (cfgIdx === routineModal.exerciseConfigs.length - 1) return;
+                                  const updated = [...routineModal.exerciseConfigs];
+                                  const temp = updated[cfgIdx + 1];
+                                  updated[cfgIdx + 1] = updated[cfgIdx];
+                                  updated[cfgIdx] = temp;
+                                  setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                                }}
+                                className="p-1 rounded bg-stone-900 hover:bg-stone-800 disabled:opacity-30 text-stone-400 hover:text-white"
+                                title="Move down"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            {/* Remove */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = routineModal.exerciseConfigs.filter((_, i) => i !== cfgIdx);
+                                setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+                              }}
+                              className="p-1.5 rounded text-stone-500 hover:text-red-400 hover:bg-stone-900 transition"
+                              title="Remove from routine"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-stone-800 bg-stone-950 flex items-center justify-between gap-3">
+              <div>
+                {routineModal.mode === 'edit' && routineModal.routineId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = routineModal.routineId!;
+                      setRoutineModal(null);
+                      handleDeleteRoutine(id);
+                    }}
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 font-semibold"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Routine
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRoutineModal(null)}
+                  className="px-4 py-2 rounded-xl border border-stone-700 hover:bg-stone-800 text-stone-300 text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRoutineModal}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs transition shadow-lg shadow-amber-500/20"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Routine</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

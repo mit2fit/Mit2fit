@@ -42,6 +42,10 @@ import {
   loadStoredProtocolKey,
   saveStoredProtocolKey,
   generateProtocolKey,
+  calculateNavyBodyFat,
+  calculateDeurenbergBodyFat,
+  calculateBodyComposition,
+  evaluateRecompositionDelta,
   exportBiometricsCSV,
   formatBiometricsTextReport,
   PROFILE_STORAGE_KEY,
@@ -83,7 +87,6 @@ const DEFAULT_BENCHMARKS: BenchmarkData = {
 };
 
 export default function Dashboard() {
-  // Protocol Key is auto-loaded or generated; zero friction, no blocking gate!
   const [protocolKey, setProtocolKey] = useState<string>(loadStoredProtocolKey);
   const [benchmarks, setBenchmarks] = useState<BenchmarkData>(() => {
     const profile = loadStoredProfile();
@@ -96,7 +99,7 @@ export default function Dashboard() {
         console.error("Failed to parse benchmarks", e);
       }
     }
-    // Sync with persistent biometric profile if available
+    // Sync with persistent biometric profile
     if (profile) {
       base.age = profile.age || base.age;
       base.height = Math.round(profile.heightCm * 0.393701) || base.height;
@@ -204,6 +207,28 @@ export default function Dashboard() {
     return bmi.toFixed(1);
   };
 
+  // Refined Body Fat & Composition based on U.S. Navy Anthropometric Standard
+  const calculateCurrentBodyComposition = () => {
+    const profile = loadStoredProfile();
+    const heightCm = Math.round(benchmarks.height / 0.393701);
+    const weightKg = Math.round((benchmarks.bodyWeight / 2.20462) * 10) / 10;
+    const waistCm = profile.waistCm || 82;
+    const hipCm = profile.hipCm || 98;
+    const neckCm = profile.neckCm || (profile.gender === 'female' ? 34 : 38);
+
+    const bf = profile.bodyFatMethod === 'navy'
+      ? calculateNavyBodyFat(profile.gender, heightCm, waistCm, hipCm, neckCm)
+      : calculateDeurenbergBodyFat(profile.gender, benchmarks.age, Number(calculateBMI()));
+
+    const { leanMassKg, fatMassKg } = calculateBodyComposition(weightKg, bf);
+    const leanMassLbs = Math.round(leanMassKg * 2.20462);
+    const fatMassLbs = Math.round(fatMassKg * 2.20462);
+
+    return { bodyFat: bf, leanMassLbs, fatMassLbs, leanMassKg, fatMassKg };
+  };
+
+  const currentComposition = calculateCurrentBodyComposition();
+
   const handleCommitSession = () => {
     const updated = {
       ...benchmarks,
@@ -223,18 +248,23 @@ export default function Dashboard() {
     }, 3000);
   };
 
-  // Instant Check-in Snapshot from Dashboard
+  // Instant Check-in Snapshot from Dashboard with Lean Muscle Tracking
   const handleLogDashboardSnapshot = (noteText?: string) => {
     const currentProfile = loadStoredProfile();
     const heightCm = Math.round(benchmarks.height / 0.393701);
     const weightKg = Math.round((benchmarks.bodyWeight / 2.20462) * 10) / 10;
     const waistCm = currentProfile.waistCm || 82;
     const hipCm = currentProfile.hipCm || 98;
+    const neckCm = currentProfile.neckCm || (currentProfile.gender === 'female' ? 34 : 38);
     const whr = hipCm > 0 ? Math.round((waistCm / hipCm) * 100) / 100 : 0.84;
     const heightM = heightCm / 100;
     const bmi = Math.round((weightKg / (heightM * heightM)) * 10) / 10;
-    const bfFactor = currentProfile.gender === 'male' ? 1 : 0;
-    const bodyFat = Math.round(Math.max(3, (1.20 * bmi) + (0.23 * benchmarks.age) - (10.8 * bfFactor) - 5.4) * 10) / 10;
+    
+    const bf = currentProfile.bodyFatMethod === 'navy'
+      ? calculateNavyBodyFat(currentProfile.gender, heightCm, waistCm, hipCm, neckCm)
+      : calculateDeurenbergBodyFat(currentProfile.gender, benchmarks.age, bmi);
+
+    const { leanMassKg, fatMassKg } = calculateBodyComposition(weightKg, bf);
     const activityMult = benchmarks.lifestyle === 'athlete' ? 1.725 : benchmarks.lifestyle === 'active' ? 1.55 : 1.2;
     let bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * benchmarks.age);
     bmr = currentProfile.gender === 'male' ? bmr + 5 : bmr - 161;
@@ -247,13 +277,17 @@ export default function Dashboard() {
       heightCm,
       waistCm,
       hipCm,
+      neckCm,
       whr,
       bmi,
-      bodyFat,
+      bodyFat: bf,
+      leanMassKg,
+      fatMassKg,
+      bodyFatMethod: currentProfile.bodyFatMethod || 'navy',
       tdee,
       targetCalories: tdee,
       goal: currentProfile.nutritionGoal || 'maintain',
-      notes: noteText?.trim() || `Dashboard Check-in: ${benchmarks.bodyWeight} lbs | RHR: ${benchmarks.heartRateRest} BPM | Strength Ratio: ${calculateStrengthRatio()}x`
+      notes: noteText?.trim() || `Dashboard Check-in: ${benchmarks.bodyWeight} lbs | Lean: ${Math.round(leanMassKg * 2.20462)} lbs | BF: ${bf}% (U.S. Navy Method)`
     };
 
     const updated = [newSnapshot, ...history];
@@ -457,8 +491,8 @@ export default function Dashboard() {
           {[
             { label: 'Metabolic Efficiency', value: `${calculateHREfficiency()}%`, icon: Zap },
             { label: 'Strength Ratio', value: `${calculateStrengthRatio()}x`, icon: Activity },
-            { label: 'Cardiac Recovery', value: `${benchmarks.heartRateRecovery} BPM`, icon: Clock },
-            { label: 'Metabolic BMI', value: calculateBMI(), icon: TrendingUp },
+            { label: 'Body Fat (Navy)', value: `${currentComposition.bodyFat}%`, icon: Scale },
+            { label: 'Lean Muscle Mass', value: `${currentComposition.leanMassLbs} LBS`, icon: Dumbbell },
             { label: 'Timeline Check-ins', value: `${history.length} Logs`, icon: History },
           ].map((stat, i) => (
             <div key={i} className="bg-zinc-900 border border-edge p-4 md:p-6">
@@ -637,28 +671,32 @@ export default function Dashboard() {
                     <h3 className="text-xl font-black uppercase tracking-tight italic">Protocol Analytics</h3>
                 </div>
                 
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center py-2 border-b border-brand/10">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-1.5 border-b border-brand/10">
                     <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Strength-Weight Ratio</span>
-                    <span className="text-lg font-black italic">{calculateStrengthRatio()}</span>
+                    <span className="text-base font-black italic">{calculateStrengthRatio()}x</span>
                   </div>
-                  <div className="flex justify-between items-center py-2 border-b border-brand/10">
+                  <div className="flex justify-between items-center py-1.5 border-b border-brand/10">
+                    <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Body Fat (Navy)</span>
+                    <span className="text-base font-black italic text-brand">{currentComposition.bodyFat}%</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-brand/10">
+                    <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Lean Muscle Mass</span>
+                    <span className="text-base font-black italic">{currentComposition.leanMassLbs} LBS</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-brand/10">
+                    <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Fat Adipose Mass</span>
+                    <span className="text-base font-black italic text-amber-400">{currentComposition.fatMassLbs} LBS</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-brand/10">
                     <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Cardiac Efficiency</span>
-                    <span className="text-lg font-black italic">{calculateHREfficiency()}%</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-brand/10">
-                    <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Metabolic BMI</span>
-                    <span className="text-lg font-black italic">{calculateBMI()}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-brand/10">
-                    <span className="text-[10px] font-mono uppercase text-zinc-500 tracking-widest">Recovery Tempo</span>
-                    <span className="text-sm font-black uppercase text-brand">Superior</span>
+                    <span className="text-base font-black italic">{calculateHREfficiency()}%</span>
                   </div>
                 </div>
 
-                <div className="mt-8">
+                <div className="mt-6">
                   <p className="text-[9px] font-mono uppercase text-zinc-500 leading-loose italic">
-                    "Adaptive scoring: Age ({benchmarks.age}) and lifestyle ({benchmarks.lifestyle}) calibrated into your biological dashboard."
+                    "Adaptive scoring: Neck & waist anthropometrics isolate true fat oxidation from lean contractile tissue preservation."
                   </p>
                 </div>
              </div>
@@ -671,7 +709,7 @@ export default function Dashboard() {
         </div>
 
         {/* ========================================================================= */}
-        {/* BIOMETRIC & VITALS PROGRESSION TIMELINE                                   */}
+        {/* BIOMETRIC & RECOMPOSITION TIMELINE                                        */}
         {/* ========================================================================= */}
         <div className="bg-zinc-900 border border-edge p-6 md:p-8 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-edge pb-4">
@@ -680,10 +718,10 @@ export default function Dashboard() {
                 <History size={14} /> Historical Progression Tracking
               </div>
               <h3 className="text-2xl font-black uppercase tracking-tight italic text-white mt-1">
-                Biometric Timeline & Vitals History
+                Biometric & Recomposition History
               </h3>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Saved snapshots from your check-ins over time. Never lose your historical measurements.
+                Tracks total weight vs. lean muscle mass and fat mass changes. Identifies whether weight loss was fat or muscle.
               </p>
             </div>
 
@@ -713,7 +751,11 @@ export default function Dashboard() {
             <div className="space-y-3">
               {history.slice(0, 5).map((snap, i) => {
                 const prev = history[i + 1];
-                const weightDiff = prev ? Math.round((snap.weightKg - prev.weightKg) * 2.20462) : null;
+                const recomp = prev ? evaluateRecompositionDelta(snap, prev) : null;
+                const weightDiffLbs = prev ? Math.round((snap.weightKg - prev.weightKg) * 2.20462) : null;
+                const leanDiffLbs = prev ? Math.round((snap.leanMassKg - prev.leanMassKg) * 2.20462) : null;
+                const fatDiffLbs = prev ? Math.round((snap.fatMassKg - prev.fatMassKg) * 2.20462) : null;
+
                 const dateStr = new Date(snap.date).toLocaleDateString(undefined, {
                   month: 'short',
                   day: 'numeric',
@@ -723,55 +765,93 @@ export default function Dashboard() {
                 return (
                   <div 
                     key={snap.id}
-                    className="p-4 bg-black border border-edge flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    className="p-4 bg-black border border-edge space-y-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="w-2 h-2 rounded-full bg-brand shrink-0" />
-                      <div>
-                        <div className="font-mono text-xs font-bold text-white flex items-center gap-2">
-                          <span>{dateStr}</span>
-                          <span className="px-2 py-0.5 text-[9px] uppercase font-bold border border-brand/30 bg-brand/10 text-brand">
-                            {snap.goal}
-                          </span>
-                        </div>
-                        <div className="text-[10px] font-mono text-zinc-500 mt-0.5">
-                          {snap.notes || 'Routine check-in logged'}
-                        </div>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-edge/60 pb-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="w-2 h-2 rounded-full bg-brand shrink-0" />
+                        <span className="font-mono text-xs font-bold text-white">
+                          {dateStr}
+                        </span>
+                        <span className="px-2 py-0.5 text-[9px] uppercase font-bold border border-brand/30 bg-brand/10 text-brand">
+                          {snap.goal}
+                        </span>
+                        <span className="text-[9px] font-mono text-zinc-500">
+                          {snap.bodyFatMethod === 'navy' ? 'U.S. Navy Method' : 'BMI Model'}
+                        </span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSnapshot(snap.id)}
+                        className="text-zinc-600 hover:text-red-400 text-xs flex items-center gap-1 self-end sm:self-center transition"
+                        title="Remove snapshot"
+                      >
+                        <Trash2 size={13} /> Delete
+                      </button>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-4 text-center font-mono text-xs">
+                    {/* Recomposition Verdict */}
+                    {recomp && (
+                      <div className={`p-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 border ${
+                        recomp.classification === 'elite_recomp'
+                          ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                          : recomp.classification === 'catabolic_loss'
+                          ? 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+                          : 'bg-zinc-950 border-zinc-800 text-zinc-300'
+                      }`}>
+                        <div>
+                          <strong className="font-bold">{recomp.headline}: </strong>
+                          <span className="text-zinc-400">{recomp.detail}</span>
+                        </div>
+                        <div className="font-mono text-[11px] font-bold shrink-0 flex items-center gap-2">
+                          <span className={leanDiffLbs && leanDiffLbs >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            Lean: {leanDiffLbs && leanDiffLbs > 0 ? `+${leanDiffLbs}` : leanDiffLbs} lbs
+                          </span>
+                          <span className={fatDiffLbs && fatDiffLbs <= 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                            Fat: {fatDiffLbs && fatDiffLbs > 0 ? `+${fatDiffLbs}` : fatDiffLbs} lbs
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center font-mono text-xs">
                       <div className="bg-zinc-900/60 p-2 border border-edge">
-                        <span className="text-[9px] text-zinc-500 block uppercase">Weight</span>
+                        <span className="text-[9px] text-zinc-500 block uppercase">Scale Weight</span>
                         <span className="font-bold text-white">{Math.round(snap.weightKg * 2.20462)} lbs</span>
-                        {weightDiff !== null && (
-                          <span className={`text-[9px] block ${weightDiff <= 0 ? 'text-brand' : 'text-amber-400'}`}>
-                            {weightDiff > 0 ? `+${weightDiff}` : weightDiff} lbs
+                        {weightDiffLbs !== null && (
+                          <span className={`text-[9px] block ${weightDiffLbs <= 0 ? 'text-brand' : 'text-amber-400'}`}>
+                            {weightDiffLbs > 0 ? `+${weightDiffLbs}` : weightDiffLbs} lbs
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-zinc-900/60 p-2 border border-brand/20">
+                        <span className="text-[9px] text-brand block uppercase font-bold">Lean Muscle</span>
+                        <span className="font-bold text-brand">{Math.round(snap.leanMassKg * 2.20462)} lbs</span>
+                        {leanDiffLbs !== null && (
+                          <span className={`text-[9px] block ${leanDiffLbs >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {leanDiffLbs > 0 ? `+${leanDiffLbs}` : leanDiffLbs} lbs
                           </span>
                         )}
                       </div>
                       <div className="bg-zinc-900/60 p-2 border border-edge">
-                        <span className="text-[9px] text-zinc-500 block uppercase">WHR</span>
-                        <span className="font-bold text-brand">{snap.whr}</span>
+                        <span className="text-[9px] text-amber-400 block uppercase font-bold">Fat Mass</span>
+                        <span className="font-bold text-amber-400">{Math.round(snap.fatMassKg * 2.20462)} lbs</span>
+                        {fatDiffLbs !== null && (
+                          <span className={`text-[9px] block ${fatDiffLbs <= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {fatDiffLbs > 0 ? `+${fatDiffLbs}` : fatDiffLbs} lbs
+                          </span>
+                        )}
                       </div>
                       <div className="bg-zinc-900/60 p-2 border border-edge">
                         <span className="text-[9px] text-zinc-500 block uppercase">Body Fat</span>
                         <span className="font-bold text-white">{snap.bodyFat}%</span>
                       </div>
                       <div className="bg-zinc-900/60 p-2 border border-edge">
-                        <span className="text-[9px] text-zinc-500 block uppercase">Calories</span>
-                        <span className="font-bold text-zinc-300">{snap.targetCalories}</span>
+                        <span className="text-[9px] text-zinc-500 block uppercase">Waist-To-Hip</span>
+                        <span className="font-bold text-brand">{snap.whr}</span>
                       </div>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSnapshot(snap.id)}
-                      className="p-2 text-zinc-600 hover:text-red-400 self-end md:self-center transition"
-                      title="Remove snapshot"
-                    >
-                      <Trash2 size={14} />
-                    </button>
                   </div>
                 );
               })}
@@ -781,7 +861,7 @@ export default function Dashboard() {
                   to="/tools"
                   className="text-xs font-mono text-brand hover:underline inline-flex items-center gap-1.5 uppercase font-bold tracking-wider"
                 >
-                  View Full Biometric History & Diagnostics in Tools &rarr;
+                  View Full Biometric & Body Composition Lab in Tools &rarr;
                 </Link>
               </div>
             </div>
@@ -905,7 +985,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-white">Log Biometric Check-in</h3>
-                    <p className="text-xs text-stone-400">Record current measurements</p>
+                    <p className="text-xs text-stone-400">Record current measurements & composition</p>
                   </div>
                 </div>
                 <button
@@ -918,9 +998,11 @@ export default function Dashboard() {
 
               <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 text-xs font-mono space-y-1.5">
                 <div>Weight: <strong className="text-white">{benchmarks.bodyWeight} lbs</strong></div>
+                <div>Body Fat (Navy): <strong className="text-brand">{currentComposition.bodyFat}%</strong></div>
+                <div>Lean Muscle: <strong className="text-white">{currentComposition.leanMassLbs} lbs</strong></div>
+                <div>Fat Mass: <strong className="text-amber-400">{currentComposition.fatMassLbs} lbs</strong></div>
                 <div>Resting HR: <strong className="text-brand">{benchmarks.heartRateRest} BPM</strong></div>
                 <div>Strength Ratio: <strong className="text-white">{calculateStrengthRatio()}x</strong></div>
-                <div>Cardiac Recovery: <strong className="text-brand">{benchmarks.heartRateRecovery} BPM</strong></div>
               </div>
 
               <div>
@@ -930,7 +1012,7 @@ export default function Dashboard() {
                 <textarea
                   value={checkinNote}
                   onChange={(e) => setCheckinNote(e.target.value)}
-                  placeholder="e.g. Completed mechanical squat workout, resting HR down, feeling recovered..."
+                  placeholder="e.g. Strength maintained on bench & squat, waist down, feeling lean..."
                   className="w-full bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs text-white placeholder-stone-600 focus:outline-none focus:border-brand h-20 resize-none font-mono"
                 />
               </div>
@@ -955,7 +1037,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Data & Share Portal Modal (Matching Tracker & Tools) */}
+        {/* Data & Share Portal Modal */}
         {isDataPortalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
             <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">

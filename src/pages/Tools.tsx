@@ -38,11 +38,14 @@ import {
   Clock,
   Plus,
   ShieldCheck,
-  Key
+  Key,
+  Shield,
+  Zap
 } from 'lucide-react';
 import { 
   BiometricProfile, 
   BiometricSnapshot, 
+  BodyFatMethod,
   loadStoredProfile, 
   saveStoredProfile, 
   loadStoredBiometricHistory, 
@@ -50,6 +53,10 @@ import {
   loadStoredProtocolKey, 
   saveStoredProtocolKey,
   generateProtocolKey,
+  calculateNavyBodyFat,
+  calculateDeurenbergBodyFat,
+  calculateBodyComposition,
+  evaluateRecompositionDelta,
   exportBiometricsCSV, 
   formatBiometricsTextReport,
   PROFILE_STORAGE_KEY,
@@ -90,9 +97,17 @@ export default function Tools() {
         const hip = parseFloat(params.get('hip') || '');
         if (!isNaN(hip) && hip >= 50 && hip <= 250) stored.hipCm = hip;
       }
+      if (params.has('neck')) {
+        const neck = parseFloat(params.get('neck') || '');
+        if (!isNaN(neck) && neck >= 20 && neck <= 70) stored.neckCm = neck;
+      }
       if (params.has('key')) {
         const k = params.get('key');
         if (k && k.length >= 4) stored.protocolKey = k.toUpperCase();
+      }
+      if (params.has('method')) {
+        const m = params.get('method');
+        if (m === 'navy' || m === 'deurenberg') stored.bodyFatMethod = m;
       }
     } catch (e) {
       console.error('URL param parsing error', e);
@@ -173,31 +188,45 @@ export default function Tools() {
     return { label: 'Obese', color: 'text-rose-500', badgeBg: 'bg-rose-500/10 border-rose-500/30' };
   };
 
-  // 2. Body Fat % Calculation (Deurenberg Formula)
-  const calculateBodyFatValue = () => {
-    const bmi = calculateBMIValue();
-    const genderFactor = profile.gender === 'male' ? 1 : 0;
-    const bodyFat = (1.20 * bmi) + (0.23 * profile.age) - (10.8 * genderFactor) - 5.4;
-    return Math.max(3, bodyFat);
+  // 2. Refined Body Fat % Calculation (Navy Anthropometric vs Deurenberg)
+  const calculateBodyFatValue = (method: BodyFatMethod = profile.bodyFatMethod) => {
+    if (method === 'navy') {
+      return calculateNavyBodyFat(
+        profile.gender, 
+        profile.heightCm, 
+        profile.waistCm, 
+        profile.hipCm, 
+        profile.neckCm || (profile.gender === 'female' ? 34 : 38)
+      );
+    }
+    return calculateDeurenbergBodyFat(profile.gender, profile.age, calculateBMIValue());
   };
 
-  const calculateBodyFat = () => {
-    return calculateBodyFatValue().toFixed(1);
+  const calculateBodyFat = (method?: BodyFatMethod) => {
+    return calculateBodyFatValue(method).toFixed(1);
   };
+
+  // Tissue Partitioning (Lean Muscle Mass vs Fat Mass)
+  const getBodyComposition = (method: BodyFatMethod = profile.bodyFatMethod) => {
+    const bf = calculateBodyFatValue(method);
+    return calculateBodyComposition(profile.weightKg, bf);
+  };
+
+  const bodyComposition = getBodyComposition();
 
   const getBodyFatCategory = (bf: number) => {
     if (profile.gender === 'male') {
       if (bf < 6) return { label: 'Essential Fat', color: 'text-sky-400', badgeBg: 'bg-sky-400/10 border-sky-400/30' };
-      if (bf < 14) return { label: 'Athletic', color: 'text-brand', badgeBg: 'bg-brand/10 border-brand/30' };
-      if (bf < 18) return { label: 'Fitness', color: 'text-brand opacity-90', badgeBg: 'bg-brand/10 border-brand/30' };
+      if (bf < 14) return { label: 'Athletic (Muscular)', color: 'text-brand', badgeBg: 'bg-brand/10 border-brand/30' };
+      if (bf < 18) return { label: 'Fitness Leanness', color: 'text-brand opacity-90', badgeBg: 'bg-brand/10 border-brand/30' };
       if (bf < 25) return { label: 'Moderate', color: 'text-amber-400', badgeBg: 'bg-amber-400/10 border-amber-400/30' };
-      return { label: 'Elevated', color: 'text-rose-500', badgeBg: 'bg-rose-500/10 border-rose-500/30' };
+      return { label: 'Elevated Adiposity', color: 'text-rose-500', badgeBg: 'bg-rose-500/10 border-rose-500/30' };
     } else {
       if (bf < 14) return { label: 'Essential Fat', color: 'text-sky-400', badgeBg: 'bg-sky-400/10 border-sky-400/30' };
-      if (bf < 21) return { label: 'Athletic', color: 'text-brand', badgeBg: 'bg-brand/10 border-brand/30' };
-      if (bf < 25) return { label: 'Fitness', color: 'text-brand opacity-90', badgeBg: 'bg-brand/10 border-brand/30' };
+      if (bf < 21) return { label: 'Athletic (Muscular)', color: 'text-brand', badgeBg: 'bg-brand/10 border-brand/30' };
+      if (bf < 25) return { label: 'Fitness Leanness', color: 'text-brand opacity-90', badgeBg: 'bg-brand/10 border-brand/30' };
       if (bf < 32) return { label: 'Moderate', color: 'text-amber-400', badgeBg: 'bg-amber-400/10 border-amber-400/30' };
-      return { label: 'Elevated', color: 'text-rose-500', badgeBg: 'bg-rose-500/10 border-rose-500/30' };
+      return { label: 'Elevated Adiposity', color: 'text-rose-500', badgeBg: 'bg-rose-500/10 border-rose-500/30' };
     }
   };
 
@@ -302,7 +331,7 @@ export default function Tools() {
     };
   };
 
-  // 7. Multi-Factor Health & Fitness Profile Analysis
+  // 7. Multi-Factor Health & Recomposition Analysis
   const getConsolidatedProfileAnalysis = () => {
     const bmi = calculateBMIValue();
     const bf = calculateBodyFatValue();
@@ -321,28 +350,28 @@ export default function Tools() {
 
     if (bmi >= 25 && isAthleticBF && isLowWHR) {
       archetype = 'High Muscular Density (Athletic Overload)';
-      summary = `Scale weight indicates a high BMI (${bmi.toFixed(1)}), but your favorable Waist-to-Hip ratio (${whrData.whr}) and low body fat (${bf.toFixed(1)}%) demonstrate substantial muscular development rather than visceral or central adiposity. Standard BMI charts falsely categorize this build as overweight.`;
-      recommendation = 'Maintain heavy compound resistance training with progressive overload. Fuel with maintenance or lean surplus macros to support dense myofibrillar hypertrophy.';
+      summary = `Scale weight indicates a high BMI (${bmi.toFixed(1)}), but your U.S. Navy circumference analysis (${bf.toFixed(1)}% body fat) and favorable Waist-to-Hip ratio (${whrData.whr}) prove substantial contractile muscle density rather than visceral fat. Standard BMI charts falsely categorize this build as overweight.`;
+      recommendation = 'Maintain heavy compound resistance training with progressive overload. Fuel with maintenance or lean surplus macros to support dense myofibrillar hypertrophy while keeping waist circumference tight.';
       priority = 'hypertrophy';
     } else if (bmi < 25 && isHighWHR) {
       archetype = 'Metabolic Caution (Normal Weight Central Adiposity)';
-      summary = `While overall BMI (${bmi.toFixed(1)}) falls within standard ranges, your elevated Waist-to-Hip ratio (${whrData.whr}) indicates visceral fat deposition around core abdominal organs. This pattern is clinically correlated with insulin resistance and elevated cardiovascular strain despite normal scale weight.`;
+      summary = `While overall BMI (${bmi.toFixed(1)}) falls within standard ranges, your elevated Waist-to-Hip ratio (${whrData.whr}) indicates visceral fat deposition around core abdominal organs. This pattern is clinically correlated with insulin resistance despite normal scale weight.`;
       recommendation = 'Prioritize progressive resistance training 3-4 days/week to build metabolically active muscle, pair with daily 8k-10k step threshold and moderate carbohydrate timing.';
       priority = 'recomp';
     } else if (isHighBF || isHighWHR) {
       archetype = 'Cardio-Metabolic Optimization Required';
-      summary = `Both estimated adiposity (${bf.toFixed(1)}%) and waist distribution (${whrData.whr}) indicate higher central storage. Reducing abdominal circumference through a steady nutritional deficit will drastically improve resting blood pressure, insulin sensitivity, and joint longevity.`;
+      summary = `Estimated adiposity (${bf.toFixed(1)}%) and waist circumference indicate higher central storage. Reducing abdominal inches while preserving lean contractile mass through resistance training will drastically improve resting blood pressure and insulin sensitivity.`;
       recommendation = 'Execute a structured 400-500 kcal deficit with high protein intake (1.8-2.2g/kg). Focus on resistance training to preserve lean mass while mobilizing adipose reserves.';
       priority = 'fat-loss';
     } else if (isAthleticBF && isLowWHR) {
       archetype = 'Optimal Functional Athlete';
-      summary = `Your biometric markers demonstrate excellent physical conditioning. Low waist-to-hip ratio (${whrData.whr}), optimal body fat (${bf.toFixed(1)}%), and balanced BMI reflect strong cardiovascular and metabolic resilience with minimal visceral risk.`;
+      summary = `Your biometric markers demonstrate excellent body recomposition. Low waist-to-hip ratio (${whrData.whr}), optimal body fat (${bf.toFixed(1)}%), and ${profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg} kg` : `${Math.round(bodyComposition.leanMassKg * 2.20462)} lbs`} of lean mass reflect strong cardiovascular and muscular resilience.`;
       recommendation = 'You are in an optimal physical baseline. Target sport-specific performance milestones, strength peaks, or structured lean mass accumulation.';
       priority = 'strength';
     } else {
       archetype = 'Healthy Baseline (Recomposition Ready)';
       summary = `Your baseline vitals are well within healthy physiological ranges. With an active energy expenditure and balanced WHR (${whrData.whr}), your metabolism is primed for body recomposition—building lean contractile mass while trimming trace abdominal fat.`;
-      recommendation = 'Follow a slight caloric deficit or maintenance phase with progressive resistance programming. Track weekly waist circumference as your primary non-scale victory metric.';
+      recommendation = 'Follow a slight caloric deficit or maintenance phase with progressive resistance programming. Track weekly waist circumference and lean mass partitioning as your non-scale victory metrics.';
       priority = 'recomp';
     }
 
@@ -357,7 +386,8 @@ export default function Tools() {
   const handleLogSnapshot = (customNote?: string) => {
     const whr = Number(calculateWHR());
     const bmi = Number(calculateBMI());
-    const bodyFat = Number(calculateBodyFat());
+    const bf = Number(calculateBodyFat());
+    const { leanMassKg, fatMassKg } = calculateBodyComposition(profile.weightKg, bf);
     const tdee = calculateTDEE();
     const targetCalories = macroData.calories;
 
@@ -372,13 +402,17 @@ export default function Tools() {
       heightCm: profile.heightCm,
       waistCm: profile.waistCm,
       hipCm: profile.hipCm,
+      neckCm: profile.neckCm || (profile.gender === 'female' ? 34 : 38),
       whr,
       bmi,
-      bodyFat,
+      bodyFat: bf,
+      leanMassKg,
+      fatMassKg,
+      bodyFatMethod: profile.bodyFatMethod,
       tdee,
       targetCalories,
       goal: profile.nutritionGoal,
-      notes: customNote?.trim() || `Check-in: ${profile.nutritionGoal.toUpperCase()} phase (${snapshotWeightFormatted}, WHR ${whr})`
+      notes: customNote?.trim() || `Check-in: ${profile.nutritionGoal.toUpperCase()} phase (${snapshotWeightFormatted}, BF ${bf}%, Lean: ${profile.unitSystem === 'metric' ? `${leanMassKg}kg` : `${Math.round(leanMassKg * 2.20462)}lbs`})`
     };
 
     const updated = [newSnapshot, ...history];
@@ -390,7 +424,7 @@ export default function Tools() {
     setTimeout(() => setAlertNotice(null), 3500);
   };
 
-  // Delete an individual snapshot (fixes issue if accidentally added)
+  // Delete an individual snapshot
   const handleDeleteSnapshot = (id: string) => {
     const updated = history.filter(item => item.id !== id);
     setHistory(updated);
@@ -446,6 +480,8 @@ export default function Tools() {
       url.searchParams.set('g', profile.gender);
       url.searchParams.set('waist', profile.waistCm.toString());
       url.searchParams.set('hip', profile.hipCm.toString());
+      url.searchParams.set('neck', (profile.neckCm || 38).toString());
+      url.searchParams.set('method', profile.bodyFatMethod);
       url.searchParams.set('key', profile.protocolKey || 'MIT-FIT-782');
       navigator.clipboard.writeText(url.toString());
       setAlertNotice('Share link with your current metrics copied to clipboard!');
@@ -559,8 +595,8 @@ export default function Tools() {
                 Performance <span className="text-brand">Analytics.</span>
               </h1>
               <p className="text-base sm:text-lg text-zinc-400 max-w-2xl mt-4 leading-relaxed font-sans">
-                Unified biometric intelligence. Enter your baseline metrics once—everything automatically 
-                persists, logs progress over time, and shares seamlessly without starting fresh.
+                Unified biometric intelligence. Features the refined U.S. Navy Anthropometric Body Composition formula—distinguishing 
+                true fat loss from muscle preservation during body recomposition.
               </p>
             </div>
             
@@ -618,13 +654,13 @@ export default function Tools() {
           <div className="p-6 md:p-8 border-b border-edge bg-black/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-widest font-black">
-                <User size={14} /> Unified Starting Point Entry (Auto-Saved)
+                <User size={14} /> Baseline Measurements (Auto-Saved)
               </div>
               <h2 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white mt-1">
-                Your Baseline Biometric Profile
+                Anthropometric & Biometric Inputs
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Every slider adjustment is automatically saved to your device. You'll never start from scratch.
+                Neck and waist circumferences are used by the U.S. Navy formula to accurately isolate fat loss from lean muscle.
               </p>
             </div>
 
@@ -663,12 +699,12 @@ export default function Tools() {
             </div>
           </div>
 
-          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
             
             {/* Weight */}
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
-                <span className="text-zinc-500 font-bold">Weight</span>
+                <span className="text-zinc-500 font-bold">Total Weight</span>
                 <span className="text-brand font-bold text-sm">
                   {profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}
                 </span>
@@ -724,7 +760,9 @@ export default function Tools() {
             {/* Waist Circumference */}
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
-                <span className="text-zinc-500 font-bold">Waist (Narrowest)</span>
+                <span className="text-zinc-500 font-bold flex items-center gap-1">
+                  Waist <span className="text-[9px] text-brand border border-brand/30 px-1 rounded">Fat Marker</span>
+                </span>
                 <span className="text-brand font-bold text-sm">
                   {profile.unitSystem === 'metric' ? `${profile.waistCm} cm` : `${cmToIn(profile.waistCm)} in`}
                 </span>
@@ -749,10 +787,40 @@ export default function Tools() {
               </div>
             </div>
 
+            {/* Neck Circumference (Essential for Navy Body Fat) */}
+            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+              <div className="flex justify-between items-center text-[10px] font-mono uppercase">
+                <span className="text-zinc-500 font-bold flex items-center gap-1">
+                  Neck <span className="text-[9px] text-cyan-400 border border-cyan-400/30 px-1 rounded">Muscle Anchor</span>
+                </span>
+                <span className="text-cyan-400 font-bold text-sm">
+                  {profile.unitSystem === 'metric' ? `${profile.neckCm || 38} cm` : `${cmToIn(profile.neckCm || 38)} in`}
+                </span>
+              </div>
+              <input 
+                type="range" 
+                min={profile.unitSystem === 'metric' ? 25 : 10} 
+                max={profile.unitSystem === 'metric' ? 60 : 24} 
+                value={profile.unitSystem === 'metric' ? (profile.neckCm || 38) : Number(cmToIn(profile.neckCm || 38))} 
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setProfile({ 
+                    ...profile, 
+                    neckCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                  });
+                }}
+                className="w-full accent-cyan-400 cursor-pointer" 
+              />
+              <div className="flex justify-between text-[9px] font-mono text-zinc-600">
+                <span>{profile.unitSystem === 'metric' ? '25cm' : '10in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '60cm' : '24in'}</span>
+              </div>
+            </div>
+
             {/* Hip Circumference */}
             <div className="space-y-2 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
-                <span className="text-zinc-500 font-bold">Hip (Widest)</span>
+                <span className="text-zinc-500 font-bold">Hip</span>
                 <span className="text-brand font-bold text-sm">
                   {profile.unitSystem === 'metric' ? `${profile.hipCm} cm` : `${cmToIn(profile.hipCm)} in`}
                 </span>
@@ -814,7 +882,42 @@ export default function Tools() {
                 <option value="1.725">Very Active (6-7 days/wk)</option>
                 <option value="1.9">Extreme (2x Daily / Athlete)</option>
               </select>
-              <div className="text-[9px] font-mono text-zinc-600">Used for BMR / TDEE calculation</div>
+              <div className="text-[9px] font-mono text-zinc-600">BMR / TDEE multiplier</div>
+            </div>
+
+            {/* Body Fat Calculation Formula Selector */}
+            <div className="space-y-2 bg-paper/60 p-4 border border-edge lg:col-span-1">
+              <div className="flex justify-between items-center text-[10px] font-mono uppercase">
+                <span className="text-zinc-500 font-bold">Body Fat Formula</span>
+                <span className="text-brand font-bold text-[10px] uppercase">{profile.bodyFatMethod === 'navy' ? 'Navy (Accurate)' : 'Deurenberg'}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setProfile({ ...profile, bodyFatMethod: 'navy' })}
+                  className={`py-2 px-2 text-[9px] font-bold uppercase tracking-wider rounded border transition ${
+                    profile.bodyFatMethod === 'navy'
+                      ? 'bg-brand text-black border-brand'
+                      : 'bg-black/50 text-zinc-400 border-edge hover:text-white'
+                  }`}
+                  title="U.S. Navy Method: Measures circumference changes, accurately distinguishing fat loss from muscle preservation"
+                >
+                  U.S. Navy (Best)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProfile({ ...profile, bodyFatMethod: 'deurenberg' })}
+                  className={`py-2 px-2 text-[9px] font-bold uppercase tracking-wider rounded border transition ${
+                    profile.bodyFatMethod === 'deurenberg'
+                      ? 'bg-brand text-black border-brand'
+                      : 'bg-black/50 text-zinc-400 border-edge hover:text-white'
+                  }`}
+                  title="Deurenberg Formula: Crude estimation derived only from BMI and Age"
+                >
+                  BMI-Based
+                </button>
+              </div>
+              <div className="text-[9px] font-mono text-zinc-500">Navy captures true recomposition</div>
             </div>
 
             {/* Nutrition Phase Goal */}
@@ -868,7 +971,7 @@ export default function Tools() {
                 : 'bg-surface text-zinc-400 hover:text-white border border-edge'
             }`}
           >
-            <History size={16} /> Progress Timeline ({history.length})
+            <History size={16} /> Progress & Recomposition Timeline ({history.length})
           </button>
 
           <span className="text-zinc-700 mx-2 hidden sm:inline">|</span>
@@ -877,9 +980,9 @@ export default function Tools() {
           </span>
 
           {[
+            { id: 'BODYFAT', icon: <Calculator size={14} />, label: 'Body Fat % & Lean Mass' },
             { id: 'WHR', icon: <Scale size={14} />, label: 'Waist-to-Hip' },
             { id: 'BMI', icon: <User size={14} />, label: 'BMI' },
-            { id: 'BODYFAT', icon: <Calculator size={14} />, label: 'Body Fat %' },
             { id: 'CALORIES', icon: <Flame size={14} />, label: 'Metabolism / TDEE' },
             { id: 'MACROS', icon: <PieChart size={14} />, label: 'Macros' },
             { id: 'WATER', icon: <Droplets size={14} />, label: 'Hydration' },
@@ -910,6 +1013,29 @@ export default function Tools() {
             {/* Metric Tiles Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               
+              {/* Refined Body Fat % & Tissue Partitioning Tile */}
+              <div 
+                onClick={() => setActiveTool('BODYFAT')}
+                className="bg-surface border border-brand/40 p-5 hover:border-brand transition-all cursor-pointer group relative overflow-hidden"
+              >
+                <div className="flex items-center justify-between text-zinc-500 mb-2">
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-brand">Body Fat %</span>
+                  <Calculator size={14} className="text-brand group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="text-3xl font-black tracking-tight text-white mb-2">
+                  {calculateBodyFat()}<span className="text-lg text-brand">%</span>
+                </div>
+                <div className={`inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border ${getBodyFatCategory(Number(calculateBodyFat())).badgeBg} ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
+                  {getBodyFatCategory(Number(calculateBodyFat())).label}
+                </div>
+                <div className="mt-3 text-[10px] font-mono text-zinc-400 flex items-center justify-between">
+                  <span>Lean Mass:</span>
+                  <strong className="text-white">
+                    {profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg}kg` : `${kgToLbs(bodyComposition.leanMassKg)}lbs`}
+                  </strong>
+                </div>
+              </div>
+
               {/* WHR Tile */}
               <div 
                 onClick={() => setActiveTool('WHR')}
@@ -947,26 +1073,6 @@ export default function Tools() {
                 </div>
                 <div className="mt-3 text-[10px] font-mono text-zinc-500">
                   {profile.unitSystem === 'metric' ? `${profile.weightKg}kg / ${profile.heightCm}cm` : `${kgToLbs(profile.weightKg)}lbs / ${cmToIn(profile.heightCm)}in`}
-                </div>
-              </div>
-
-              {/* Body Fat % Tile */}
-              <div 
-                onClick={() => setActiveTool('BODYFAT')}
-                className="bg-surface border border-edge p-5 hover:border-brand/60 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center justify-between text-zinc-500 mb-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold">Body Fat</span>
-                  <Calculator size={14} className="text-brand group-hover:scale-110 transition-transform" />
-                </div>
-                <div className="text-3xl font-black tracking-tight text-white mb-2">
-                  {calculateBodyFat()}<span className="text-lg text-brand">%</span>
-                </div>
-                <div className={`inline-block px-2 py-0.5 text-[9px] font-mono uppercase tracking-wider font-bold border ${getBodyFatCategory(Number(calculateBodyFat())).badgeBg} ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
-                  {getBodyFatCategory(Number(calculateBodyFat())).label}
-                </div>
-                <div className="mt-3 text-[10px] font-mono text-zinc-500">
-                  Deurenberg Formula
                 </div>
               </div>
 
@@ -1044,7 +1150,7 @@ export default function Tools() {
                       Holistic Diagnostic Synthesis
                     </span>
                     <h3 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white">
-                      Cross-Indexed Physiological Evaluation
+                      Body Composition & Recomposition Quality
                     </h3>
                   </div>
                 </div>
@@ -1079,6 +1185,37 @@ export default function Tools() {
                     </p>
                   </div>
 
+                  {/* Body Composition Tissue Split Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <div className="p-4 bg-black/50 border border-edge space-y-1">
+                      <span className="text-[9px] font-mono uppercase text-zinc-500 block">Total Mass</span>
+                      <div className="text-xl font-black text-white">
+                        {profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-400">Gross scale weight</span>
+                    </div>
+
+                    <div className="p-4 bg-black/50 border border-brand/30 space-y-1">
+                      <span className="text-[9px] font-mono uppercase text-brand block font-bold">Lean Muscle & Bone</span>
+                      <div className="text-xl font-black text-brand">
+                        {profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg} kg` : `${kgToLbs(bodyComposition.leanMassKg)} lbs`}
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-400">
+                        {Math.round((bodyComposition.leanMassKg / profile.weightKg) * 100)}% of total mass
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-black/50 border border-edge space-y-1">
+                      <span className="text-[9px] font-mono uppercase text-amber-400 block font-bold">Adipose Fat Mass</span>
+                      <div className="text-xl font-black text-amber-400">
+                        {profile.unitSystem === 'metric' ? `${bodyComposition.fatMassKg} kg` : `${kgToLbs(bodyComposition.fatMassKg)} lbs`}
+                      </div>
+                      <span className="text-[9px] font-mono text-zinc-400">
+                        {calculateBodyFat()}% body fat
+                      </span>
+                    </div>
+                  </div>
+
                   {/* WHR + Body Fat Visual Scales */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                     <div className="p-4 bg-black/50 border border-edge space-y-2">
@@ -1097,7 +1234,7 @@ export default function Tools() {
 
                     <div className="p-4 bg-black/50 border border-edge space-y-2">
                       <div className="flex justify-between text-[10px] font-mono uppercase">
-                        <span className="text-zinc-400">Body Fat Percentage</span>
+                        <span className="text-zinc-400">Body Fat ({profile.bodyFatMethod === 'navy' ? 'U.S. Navy' : 'BMI'})</span>
                         <span className="font-bold text-brand">{calculateBodyFat()}%</span>
                       </div>
                       <div className="w-full bg-zinc-800 h-2 overflow-hidden flex">
@@ -1157,7 +1294,7 @@ export default function Tools() {
                     </div>
                   </div>
 
-                  {/* Consultation Link (Fixed & Verified) */}
+                  {/* Consultation Link */}
                   <Link 
                     to="/consultation"
                     className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest border border-brand text-brand hover:bg-brand hover:text-black py-4 transition-all font-mono"
@@ -1201,10 +1338,10 @@ export default function Tools() {
                   </div>
                   <div>
                     <h4 className="text-base font-black uppercase tracking-tight text-white">
-                      Track Progress Over Time
+                      Recomposition Timeline
                     </h4>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      {history.length} logged check-in snapshot(s). Review weight, WHR, and body fat trends.
+                      {history.length} logged check-in snapshot(s). Review Lean Muscle vs Fat Mass changes.
                     </p>
                   </div>
                 </div>
@@ -1222,7 +1359,7 @@ export default function Tools() {
         )}
 
         {/* ========================================================================= */}
-        {/* VIEW 2: PROGRESS TIMELINE (HISTORY TRACKING OVER TIME) */}
+        {/* VIEW 2: PROGRESS & RECOMPOSITION TIMELINE                                 */}
         {/* ========================================================================= */}
         {activeTool === 'HISTORY' && (
           <motion.div
@@ -1234,13 +1371,13 @@ export default function Tools() {
             <div className="bg-surface border border-edge p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2 text-brand font-mono text-[10px] uppercase tracking-widest font-black">
-                  <History size={14} /> Biometric Progression Timeline
+                  <History size={14} /> Biometric & Recomposition Timeline
                 </div>
                 <h3 className="text-2xl font-black uppercase tracking-tight text-white mt-1">
-                  Historical Check-in Records
+                  Historical Check-in & Tissue Partitioning Records
                 </h3>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Logged biometric snapshots tracked over time. Analyze how weight, waist circumference, and WHR change across weeks.
+                  Distinguishes true fat loss from muscle loss. Tracks lean muscle preservation against waist reduction over time.
                 </p>
               </div>
 
@@ -1285,7 +1422,7 @@ export default function Tools() {
                 </div>
                 <h4 className="text-lg font-black uppercase tracking-tight text-white">No Check-in Snapshots Yet</h4>
                 <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                  Click "Log New Check-in" above to record your current weight, waist, hip, and body composition as your first timeline entry.
+                  Click "Log New Check-in" above to record your current measurements as your first timeline entry.
                 </p>
                 <button
                   type="button"
@@ -1298,10 +1435,12 @@ export default function Tools() {
             ) : (
               <div className="space-y-4">
                 {history.map((item, idx) => {
-                  const prevItem = history[idx + 1]; // Previous chronological entry
+                  const prevItem = history[idx + 1];
+                  const recomp = prevItem ? evaluateRecompositionDelta(item, prevItem) : null;
                   const weightDelta = prevItem ? Math.round((item.weightKg - prevItem.weightKg) * 10) / 10 : null;
+                  const leanDelta = prevItem ? Math.round((item.leanMassKg - prevItem.leanMassKg) * 10) / 10 : null;
+                  const fatDelta = prevItem ? Math.round((item.fatMassKg - prevItem.fatMassKg) * 10) / 10 : null;
                   const whrDelta = prevItem ? Math.round((item.whr - prevItem.whr) * 100) / 100 : null;
-                  const bfDelta = prevItem ? Math.round((item.bodyFat - prevItem.bodyFat) * 10) / 10 : null;
 
                   const dateDisplay = new Date(item.date).toLocaleDateString(undefined, {
                     weekday: 'short',
@@ -1317,7 +1456,7 @@ export default function Tools() {
                     >
                       {/* Top Bar: Date, Badge, Delete */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-edge/60 pb-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-wrap">
                           <span className="w-2 h-2 rounded-full bg-brand" />
                           <span className="font-mono text-xs font-bold text-white uppercase tracking-wider">
                             {dateDisplay}
@@ -1327,6 +1466,9 @@ export default function Tools() {
                           </span>
                           <span className="px-2 py-0.5 border border-brand/30 bg-brand/10 text-brand text-[9px] font-mono uppercase font-bold">
                             {item.goal.toUpperCase()} PHASE
+                          </span>
+                          <span className="text-[9px] font-mono text-zinc-500 border border-zinc-800 px-1.5 py-0.5">
+                            {item.bodyFatMethod === 'navy' ? 'U.S. Navy Method' : 'Deurenberg Method'}
                           </span>
                         </div>
 
@@ -1342,11 +1484,45 @@ export default function Tools() {
                         </div>
                       </div>
 
+                      {/* Recomposition Verdict Banner if previous snapshot exists */}
+                      {recomp && (
+                        <div className={`p-3 border rounded-none text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                          recomp.classification === 'elite_recomp'
+                            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                            : recomp.classification === 'catabolic_loss'
+                            ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                            : recomp.classification === 'lean_hypertrophy'
+                            ? 'bg-brand/10 border-brand/40 text-brand'
+                            : 'bg-zinc-900 border-zinc-800 text-zinc-300'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {recomp.classification === 'catabolic_loss' ? (
+                              <AlertTriangle size={15} className="text-rose-400 shrink-0" />
+                            ) : (
+                              <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                            )}
+                            <div>
+                              <strong className="font-bold">{recomp.headline}: </strong>
+                              <span className="text-zinc-300 font-sans">{recomp.detail}</span>
+                            </div>
+                          </div>
+
+                          <div className="font-mono text-[11px] shrink-0 font-bold flex items-center gap-3">
+                            <span className={leanDelta && leanDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                              Lean Mass: {leanDelta && leanDelta > 0 ? `+${profile.unitSystem === 'metric' ? leanDelta : Math.round(leanDelta * 2.20462)}` : `${profile.unitSystem === 'metric' ? leanDelta : Math.round(leanDelta! * 2.20462)}`} {profile.unitSystem === 'metric' ? 'kg' : 'lbs'}
+                            </span>
+                            <span className={fatDelta && fatDelta <= 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                              Fat Mass: {fatDelta && fatDelta > 0 ? `+${profile.unitSystem === 'metric' ? fatDelta : Math.round(fatDelta * 2.20462)}` : `${profile.unitSystem === 'metric' ? fatDelta : Math.round(fatDelta! * 2.20462)}`} {profile.unitSystem === 'metric' ? 'kg' : 'lbs'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Metrics Breakdown Grid */}
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {/* Weight */}
                         <div className="bg-black/50 p-3 border border-edge">
-                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Weight</span>
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Total Weight</span>
                           <div className="text-lg font-black text-white mt-0.5">
                             {profile.unitSystem === 'metric' 
                               ? `${item.weightKg} kg` 
@@ -1362,7 +1538,43 @@ export default function Tools() {
                           )}
                         </div>
 
-                        {/* Waist */}
+                        {/* Lean Mass */}
+                        <div className="bg-black/50 p-3 border border-brand/20">
+                          <span className="text-[9px] font-mono uppercase text-brand block font-bold">Lean Muscle</span>
+                          <div className="text-lg font-black text-brand mt-0.5">
+                            {profile.unitSystem === 'metric' 
+                              ? `${item.leanMassKg} kg` 
+                              : `${kgToLbs(item.leanMassKg)} lbs`}
+                          </div>
+                          {leanDelta !== null && (
+                            <span className={`text-[10px] font-mono font-bold mt-0.5 block ${
+                              leanDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}>
+                              {leanDelta > 0 ? `+${profile.unitSystem === 'metric' ? leanDelta : Math.round(leanDelta * 2.20462)}` : `${profile.unitSystem === 'metric' ? leanDelta : Math.round(leanDelta * 2.20462)}`}
+                              {profile.unitSystem === 'metric' ? 'kg' : 'lbs'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Fat Mass */}
+                        <div className="bg-black/50 p-3 border border-edge">
+                          <span className="text-[9px] font-mono uppercase text-amber-400 block font-bold">Adipose Fat</span>
+                          <div className="text-lg font-black text-amber-400 mt-0.5">
+                            {profile.unitSystem === 'metric' 
+                              ? `${item.fatMassKg} kg` 
+                              : `${kgToLbs(item.fatMassKg)} lbs`}
+                          </div>
+                          {fatDelta !== null && (
+                            <span className={`text-[10px] font-mono font-bold mt-0.5 block ${
+                              fatDelta <= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}>
+                              {fatDelta > 0 ? `+${profile.unitSystem === 'metric' ? fatDelta : Math.round(fatDelta * 2.20462)}` : `${profile.unitSystem === 'metric' ? fatDelta : Math.round(fatDelta * 2.20462)}`}
+                              {profile.unitSystem === 'metric' ? 'kg' : 'lbs'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Waist Circumference */}
                         <div className="bg-black/50 p-3 border border-edge">
                           <span className="text-[9px] font-mono uppercase text-zinc-500 block">Waist</span>
                           <div className="text-lg font-black text-white mt-0.5">
@@ -1373,15 +1585,13 @@ export default function Tools() {
                           <span className="text-[9px] font-mono text-zinc-500">Circumference</span>
                         </div>
 
-                        {/* Hip */}
+                        {/* Body Fat % */}
                         <div className="bg-black/50 p-3 border border-edge">
-                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Hip</span>
+                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Body Fat</span>
                           <div className="text-lg font-black text-white mt-0.5">
-                            {profile.unitSystem === 'metric' 
-                              ? `${item.hipCm} cm` 
-                              : `${cmToIn(item.hipCm)} in`}
+                            {item.bodyFat}%
                           </div>
-                          <span className="text-[9px] font-mono text-zinc-500">Circumference</span>
+                          <span className="text-[9px] font-mono text-zinc-500">{item.bodyFatMethod === 'navy' ? 'Navy' : 'BMI'}</span>
                         </div>
 
                         {/* WHR */}
@@ -1397,30 +1607,6 @@ export default function Tools() {
                               {whrDelta > 0 ? `+${whrDelta}` : `${whrDelta}`} WHR
                             </span>
                           )}
-                        </div>
-
-                        {/* Body Fat % */}
-                        <div className="bg-black/50 p-3 border border-edge">
-                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Body Fat</span>
-                          <div className="text-lg font-black text-white mt-0.5">
-                            {item.bodyFat}%
-                          </div>
-                          {bfDelta !== null && (
-                            <span className={`text-[10px] font-mono font-bold flex items-center gap-0.5 mt-0.5 ${
-                              bfDelta <= 0 ? 'text-brand' : 'text-amber-400'
-                            }`}>
-                              {bfDelta > 0 ? `+${bfDelta}%` : `${bfDelta}%`}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Calories */}
-                        <div className="bg-black/50 p-3 border border-edge">
-                          <span className="text-[9px] font-mono uppercase text-zinc-500 block">Target / TDEE</span>
-                          <div className="text-lg font-black text-zinc-200 mt-0.5">
-                            {item.targetCalories}
-                          </div>
-                          <span className="text-[9px] font-mono text-zinc-500">{item.tdee} TDEE</span>
                         </div>
                       </div>
 
@@ -1447,6 +1633,88 @@ export default function Tools() {
             {/* Diagnostic Theory Context */}
             <div className="lg:col-span-7 bg-surface border border-edge p-6 md:p-10 space-y-6">
               
+              {activeTool === 'BODYFAT' && (
+                <>
+                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
+                    <Calculator size={16} /> Adipose Tissue & Lean Muscle Diagnostic
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
+                    U.S. Navy Anthropometric Body Composition Standard
+                  </h3>
+                  
+                  {/* Physiological Difference Highlighted by User */}
+                  <div className="p-4 bg-brand/5 border border-brand/30 space-y-2">
+                    <div className="flex items-center gap-2 text-brand text-xs font-mono font-bold uppercase tracking-wider">
+                      <Zap size={14} /> Muscle Preservation vs. Catabolic Fat Loss
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+                      When someone engages in progressive resistance training and loses fat while maintaining dense contractile muscle, 
+                      their waist circumference drops drastically even if their total scale weight and BMI change minimally. 
+                      Under crude BMI-based formulas, this is miscounted as "little to no body fat loss". 
+                      The U.S. Navy formula isolates circumferences (waist, neck, hip) against skeletal height, 
+                      accurately recognizing that abdominal fat was eliminated while lean mass was preserved!
+                    </p>
+                  </div>
+
+                  {/* Formula Comparison Toggle */}
+                  <div className="p-4 bg-black/40 border border-edge space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-bold">
+                        Active Calculation Formula:
+                      </span>
+                      <div className="flex border border-edge bg-paper p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setProfile({ ...profile, bodyFatMethod: 'navy' })}
+                          className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                            profile.bodyFatMethod === 'navy' ? 'bg-brand text-black font-black' : 'text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          U.S. Navy Method
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProfile({ ...profile, bodyFatMethod: 'deurenberg' })}
+                          className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                            profile.bodyFatMethod === 'deurenberg' ? 'bg-brand text-black font-black' : 'text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          Deurenberg (BMI)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="text-xs font-mono text-zinc-400 space-y-1 pt-1 border-t border-edge/60">
+                      <div>• U.S. Navy Body Fat: <strong className="text-brand">{calculateBodyFat('navy')}%</strong> (Circumference-accurate)</div>
+                      <div>• Deurenberg BMI Body Fat: <strong className="text-zinc-300">{calculateBodyFat('deurenberg')}%</strong> (Crude BMI reference)</div>
+                    </div>
+                  </div>
+
+                  {/* Tissue Partitioning Breakdown */}
+                  <div className="p-4 bg-paper border border-edge space-y-3">
+                    <div className="text-xs font-mono uppercase tracking-wider text-zinc-500 font-bold">
+                      Calculated Tissue Partitioning:
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-center font-mono">
+                      <div className="bg-black/60 p-3 border border-brand/30">
+                        <span className="text-[10px] text-brand block uppercase font-bold">Lean Body Mass</span>
+                        <div className="text-2xl font-black text-white mt-1">
+                          {profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg} kg` : `${kgToLbs(bodyComposition.leanMassKg)} lbs`}
+                        </div>
+                        <span className="text-[9px] text-zinc-500">Contractile muscle, organs, bone</span>
+                      </div>
+                      <div className="bg-black/60 p-3 border border-edge">
+                        <span className="text-[10px] text-amber-400 block uppercase font-bold">Stored Adipose Fat</span>
+                        <div className="text-2xl font-black text-amber-400 mt-1">
+                          {profile.unitSystem === 'metric' ? `${bodyComposition.fatMassKg} kg` : `${kgToLbs(bodyComposition.fatMassKg)} lbs`}
+                        </div>
+                        <span className="text-[9px] text-zinc-500">Metabolic lipid reserves</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
               {activeTool === 'WHR' && (
                 <>
                   <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
@@ -1535,27 +1803,6 @@ export default function Tools() {
                 </>
               )}
 
-              {activeTool === 'BODYFAT' && (
-                <>
-                  <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
-                    <Calculator size={16} /> Adipose Tissue Estimation
-                  </div>
-                  <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-white">
-                    Deurenberg Body Composition Formula
-                  </h3>
-                  <p className="text-sm text-zinc-300 leading-relaxed font-sans">
-                    Utilizing age, sex, and calculated BMI, the Deurenberg formula models the relative percentage 
-                    of adipose tissue against lean biological structures. Essential fat is biologically required for 
-                    endocrine and neurological function.
-                  </p>
-
-                  <div className="p-4 bg-paper border border-edge text-xs font-mono text-zinc-400 space-y-1">
-                    <div>• Male Essential Fat: 2% – 5% | Athletic Target: 6% – 13%</div>
-                    <div>• Female Essential Fat: 10% – 13% | Athletic Target: 14% – 20%</div>
-                  </div>
-                </>
-              )}
-
               {activeTool === 'CALORIES' && (
                 <>
                   <div className="flex items-center gap-2 text-brand font-mono text-xs uppercase tracking-widest font-bold">
@@ -1620,6 +1867,43 @@ export default function Tools() {
             <div className="lg:col-span-5 bg-black border border-edge p-6 md:p-10 relative overflow-hidden">
               <div className="space-y-6">
                 
+                {activeTool === 'BODYFAT' && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
+                        Calculated Body Fat
+                      </h3>
+                      <span className="text-[10px] font-mono text-brand font-bold uppercase">
+                        {profile.bodyFatMethod === 'navy' ? 'U.S. Navy Method' : 'BMI Model'}
+                      </span>
+                    </div>
+                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none text-white">
+                      {calculateBodyFat()}<span className="text-4xl text-brand shrink-0">%</span>
+                    </div>
+                    <div className={`text-xl font-black uppercase tracking-tight italic ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
+                      {getBodyFatCategory(Number(calculateBodyFat())).label}
+                    </div>
+
+                    <div className="pt-4 border-t border-edge/60 space-y-2">
+                      <div className="text-xs font-mono uppercase text-zinc-500 font-bold">Mass Breakdown:</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                        <div className="p-2.5 bg-paper border border-brand/20">
+                          <span className="text-[10px] text-zinc-500 block">Lean Mass:</span>
+                          <strong className="text-brand text-sm">
+                            {profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg} kg` : `${kgToLbs(bodyComposition.leanMassKg)} lbs`}
+                          </strong>
+                        </div>
+                        <div className="p-2.5 bg-paper border border-edge">
+                          <span className="text-[10px] text-zinc-500 block">Fat Mass:</span>
+                          <strong className="text-amber-400 text-sm">
+                            {profile.unitSystem === 'metric' ? `${bodyComposition.fatMassKg} kg` : `${kgToLbs(bodyComposition.fatMassKg)} lbs`}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {activeTool === 'WHR' && (
                   <>
                     <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
@@ -1648,20 +1932,6 @@ export default function Tools() {
                     </div>
                     <div className={`text-xl font-black uppercase tracking-tight italic ${getBMICategory(Number(calculateBMI())).color}`}>
                       {getBMICategory(Number(calculateBMI())).label}
-                    </div>
-                  </>
-                )}
-
-                {activeTool === 'BODYFAT' && (
-                  <>
-                    <h3 className="text-zinc-500 font-mono text-[10px] uppercase tracking-[0.3em]">
-                      Estimated Body Fat
-                    </h3>
-                    <div className="text-6xl sm:text-8xl md:text-[7rem] font-black tracking-tighter leading-none text-white">
-                      {calculateBodyFat()}<span className="text-4xl text-brand shrink-0">%</span>
-                    </div>
-                    <div className={`text-xl font-black uppercase tracking-tight italic ${getBodyFatCategory(Number(calculateBodyFat())).color}`}>
-                      {getBodyFatCategory(Number(calculateBodyFat())).label}
                     </div>
                   </>
                 )}
@@ -1720,7 +1990,7 @@ export default function Tools() {
                   </>
                 )}
 
-                {/* Consultation Link (Smooth route navigation) */}
+                {/* Consultation Link */}
                 <Link 
                   to="/consultation"
                   className="mt-8 w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest border border-edge py-4 hover:border-brand hover:text-brand transition-all font-mono"
@@ -1748,7 +2018,7 @@ export default function Tools() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">Log Biometric Snapshot</h3>
-                  <p className="text-xs text-stone-400">Save current metrics to your timeline</p>
+                  <p className="text-xs text-stone-400">Save current measurements & body composition</p>
                 </div>
               </div>
               <button
@@ -1763,11 +2033,11 @@ export default function Tools() {
               <div className="text-stone-400 uppercase tracking-wider text-[10px] font-bold">Snapshot Summary:</div>
               <div className="grid grid-cols-2 gap-2 font-mono">
                 <div>Weight: <strong className="text-white">{profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}</strong></div>
-                <div>WHR: <strong className="text-brand">{calculateWHR()}</strong></div>
-                <div>Waist: <strong className="text-white">{profile.unitSystem === 'metric' ? `${profile.waistCm} cm` : `${cmToIn(profile.waistCm)} in`}</strong></div>
                 <div>Body Fat: <strong className="text-brand">{calculateBodyFat()}%</strong></div>
-                <div>Calories: <strong className="text-white">{macroData.calories} kcal</strong></div>
-                <div>Phase: <strong className="text-amber-400 uppercase">{profile.nutritionGoal}</strong></div>
+                <div>Lean Muscle: <strong className="text-white">{profile.unitSystem === 'metric' ? `${bodyComposition.leanMassKg} kg` : `${kgToLbs(bodyComposition.leanMassKg)} lbs`}</strong></div>
+                <div>Fat Mass: <strong className="text-amber-400">{profile.unitSystem === 'metric' ? `${bodyComposition.fatMassKg} kg` : `${kgToLbs(bodyComposition.fatMassKg)} lbs`}</strong></div>
+                <div>Waist / WHR: <strong className="text-white">{profile.unitSystem === 'metric' ? `${profile.waistCm}cm` : `${cmToIn(profile.waistCm)}in`} / {calculateWHR()}</strong></div>
+                <div>Phase: <strong className="text-brand uppercase">{profile.nutritionGoal}</strong></div>
               </div>
             </div>
 
@@ -1778,7 +2048,7 @@ export default function Tools() {
               <textarea
                 value={checkinNote}
                 onChange={(e) => setCheckinNote(e.target.value)}
-                placeholder="e.g. Week 4 fat loss check-in, feeling energized, waist down 1cm..."
+                placeholder="e.g. Waist down 1.5cm, strength maintained on squat and press, high energy..."
                 className="w-full bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs text-white placeholder-stone-600 focus:outline-none focus:border-brand h-20 resize-none font-mono"
               />
             </div>

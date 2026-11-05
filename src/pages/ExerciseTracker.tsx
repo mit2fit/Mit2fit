@@ -41,7 +41,12 @@ import {
   ArrowDown,
   Sparkles,
   RefreshCw,
-  FolderPlus
+  FolderPlus,
+  Trophy,
+  Volume2,
+  VolumeX,
+  Disc,
+  Layers
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -156,6 +161,195 @@ export function getPreviousExercisePerformance(
     }
   }
   return null;
+}
+
+// Estimated 1-Rep Max (e1RM) using Epley Formula: weight * (1 + reps / 30)
+export function calculateE1RM(weight: number, reps: number): number {
+  if (weight <= 0 || reps <= 0) return 0;
+  if (reps === 1) return weight;
+  return Math.round(weight * (1 + Math.min(reps, 30) / 30) * 10) / 10;
+}
+
+// Find exercise all-time historical bests (max weight and best estimated 1RM)
+export interface AllTimePR {
+  maxWeight: number;
+  bestE1RM: number;
+  bestReps: number;
+  bestDate: string;
+}
+
+export function getExerciseAllTimePR(
+  exerciseId: string,
+  exerciseName: string,
+  historyList: CompletedWorkout[]
+): AllTimePR {
+  let maxWeight = 0;
+  let bestE1RM = 0;
+  let bestReps = 0;
+  let bestDate = '';
+
+  for (const workout of historyList) {
+    const foundEx = workout.exercises.find(
+      e => e.id === exerciseId || e.name.toLowerCase() === exerciseName.toLowerCase()
+    );
+    if (foundEx && foundEx.sets) {
+      for (const s of foundEx.sets) {
+        if (s.completed && s.type !== 'Warmup' && s.weight > 0 && s.reps > 0) {
+          if (s.weight > maxWeight) {
+            maxWeight = s.weight;
+          }
+          const e1rm = calculateE1RM(s.weight, s.reps);
+          if (e1rm > bestE1RM) {
+            bestE1RM = e1rm;
+            bestReps = s.reps;
+            bestDate = workout.date;
+          }
+        }
+      }
+    }
+  }
+
+  return { maxWeight, bestE1RM, bestReps, bestDate };
+}
+
+// Plate Calculator Breakdown interface and engine
+export interface PlateItem {
+  weight: number;
+  count: number;
+  color: string;
+  label: string;
+}
+
+export interface PlateBreakdown {
+  barWeight: number;
+  weightPerSide: number;
+  platesPerSide: PlateItem[];
+  exactMatch: boolean;
+  remainder: number;
+}
+
+export function calculatePlates(totalWeight: number, unit: 'lbs' | 'kg'): PlateBreakdown {
+  const barWeight = unit === 'lbs' ? 45 : 20;
+  if (totalWeight <= barWeight) {
+    return {
+      barWeight,
+      weightPerSide: 0,
+      platesPerSide: [],
+      exactMatch: true,
+      remainder: 0
+    };
+  }
+
+  let remainingPerSide = (totalWeight - barWeight) / 2;
+  const plateConfig = unit === 'lbs'
+    ? [
+        { weight: 45, color: 'bg-blue-600 text-white border-blue-400', label: '45' },
+        { weight: 35, color: 'bg-amber-600 text-white border-amber-400', label: '35' },
+        { weight: 25, color: 'bg-emerald-600 text-white border-emerald-400', label: '25' },
+        { weight: 10, color: 'bg-zinc-200 text-zinc-900 border-zinc-300 font-black', label: '10' },
+        { weight: 5, color: 'bg-rose-600 text-white border-rose-400', label: '5' },
+        { weight: 2.5, color: 'bg-zinc-700 text-zinc-100 border-zinc-500', label: '2.5' }
+      ]
+    : [
+        { weight: 25, color: 'bg-rose-600 text-white border-rose-400', label: '25' },
+        { weight: 20, color: 'bg-blue-600 text-white border-blue-400', label: '20' },
+        { weight: 15, color: 'bg-amber-600 text-white border-amber-400', label: '15' },
+        { weight: 10, color: 'bg-emerald-600 text-white border-emerald-400', label: '10' },
+        { weight: 5, color: 'bg-zinc-200 text-zinc-900 border-zinc-300 font-black', label: '5' },
+        { weight: 2.5, color: 'bg-zinc-700 text-zinc-100 border-zinc-500', label: '2.5' },
+        { weight: 1.25, color: 'bg-zinc-500 text-white border-zinc-400', label: '1.25' }
+      ];
+
+  const plates: PlateItem[] = [];
+  for (const p of plateConfig) {
+    if (remainingPerSide >= p.weight - 0.01) {
+      const count = Math.floor((remainingPerSide + 0.001) / p.weight);
+      if (count > 0) {
+        plates.push({ weight: p.weight, count, color: p.color, label: p.label });
+        remainingPerSide = Math.round((remainingPerSide - count * p.weight) * 100) / 100;
+      }
+    }
+  }
+
+  return {
+    barWeight,
+    weightPerSide: Math.round(((totalWeight - barWeight) / 2) * 10) / 10,
+    platesPerSide: plates,
+    exactMatch: remainingPerSide < 0.05,
+    remainder: remainingPerSide
+  };
+}
+
+// Progressive Warm-Up Ramp Generator
+export function generateWarmupSets(targetWeight: number, unit: 'lbs' | 'kg'): WorkoutSet[] {
+  const barWeight = unit === 'lbs' ? 45 : 20;
+  const warmupSets: WorkoutSet[] = [];
+  const step = unit === 'lbs' ? 5 : 2.5;
+  const roundToStep = (w: number) => Math.max(barWeight, Math.round(w / step) * step);
+
+  if (targetWeight <= barWeight + (unit === 'lbs' ? 20 : 10)) {
+    warmupSets.push({
+      id: `warmup-${Date.now()}-1`,
+      setNumber: 1,
+      weight: barWeight,
+      reps: 10,
+      completed: false,
+      type: 'Warmup'
+    });
+  } else {
+    // 1. Empty Bar Mobility
+    warmupSets.push({
+      id: `warmup-${Date.now()}-1`,
+      setNumber: 1,
+      weight: barWeight,
+      reps: 10,
+      completed: false,
+      type: 'Warmup'
+    });
+
+    // 2. ~50% working weight
+    const w50 = roundToStep(targetWeight * 0.5);
+    if (w50 > barWeight) {
+      warmupSets.push({
+        id: `warmup-${Date.now()}-2`,
+        setNumber: 2,
+        weight: w50,
+        reps: 5,
+        completed: false,
+        type: 'Warmup'
+      });
+    }
+
+    // 3. ~75% working weight
+    const w75 = roundToStep(targetWeight * 0.75);
+    if (w75 > (warmupSets[warmupSets.length - 1]?.weight || barWeight)) {
+      warmupSets.push({
+        id: `warmup-${Date.now()}-3`,
+        setNumber: 3,
+        weight: w75,
+        reps: 3,
+        completed: false,
+        type: 'Warmup'
+      });
+    }
+
+    // 4. Potentiation single for heavy working sets (>= 200 lbs or >= 90 kg)
+    if (targetWeight >= (unit === 'lbs' ? 200 : 90)) {
+      const w88 = roundToStep(targetWeight * 0.88);
+      if (w88 > w75) {
+        warmupSets.push({
+          id: `warmup-${Date.now()}-4`,
+          setNumber: 4,
+          weight: w88,
+          reps: 1,
+          completed: false,
+          type: 'Warmup'
+        });
+      }
+    }
+  }
+
+  return warmupSets;
 }
 
 // Factory for default routines
@@ -510,6 +704,23 @@ export default function ExerciseTracker() {
   const [isDataPortalOpen, setIsDataPortalOpen] = useState(false);
   const [alertNotice, setAlertNotice] = useState<string | null>(null);
 
+  // Audio Chime Toggle for Rest Timer
+  const [isRestSoundEnabled, setIsRestSoundEnabled] = useState(true);
+
+  // Barbell Plate Calculator Modal State
+  const [plateModal, setPlateModal] = useState<{
+    isOpen: boolean;
+    exerciseName: string;
+    weight: number;
+  } | null>(null);
+
+  // Exercise Substitute Modal State
+  const [substituteModal, setSubstituteModal] = useState<{
+    isOpen: boolean;
+    exIdx: number;
+    exercise: ExerciseDefinition;
+  } | null>(null);
+
   // In-App Confirmation Modal (Sandbox & iFrame safe - eliminates window.confirm)
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -566,34 +777,56 @@ export default function ExerciseTracker() {
     return () => clearInterval(timer);
   }, [isTimerRunning]);
 
-  // Rest Timer Countdown & Audio Chime
+  // Rest Timer Countdown & Audio Chime + Haptic Vibration
   useEffect(() => {
     if (restSecondsLeft === null || restSecondsLeft <= 0) return;
     const timer = setInterval(() => {
       setRestSecondsLeft(prev => {
         if (prev === null || prev <= 1) {
-          try {
-            const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(880, ctx.currentTime);
-            gain.gain.setValueAtTime(0.12, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.35);
-          } catch (e) {
-            // Audio context safely ignored if blocked
+          // Play harmonic bell chime if audio enabled
+          if (isRestSoundEnabled) {
+            try {
+              const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+              const ctx = new AudioCtx();
+              
+              const playTone = (freq: number, start: number, duration: number, vol = 0.14) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
+                gain.gain.setValueAtTime(vol, ctx.currentTime + start);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + start);
+                osc.stop(ctx.currentTime + start + duration);
+              };
+
+              // Triple rising chime (E5 -> A5 -> C#6)
+              playTone(659.25, 0, 0.28, 0.12);
+              playTone(880.0, 0.16, 0.32, 0.14);
+              playTone(1108.73, 0.34, 0.45, 0.15);
+            } catch (e) {
+              // Audio context safely ignored if blocked by browser policy
+            }
           }
+
+          // Haptic vibration feedback on mobile
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate([200, 100, 200]);
+            } catch (e) {}
+          }
+
+          setAlertNotice('⏰ Rest interval complete! Ready for your next set.');
+          setTimeout(() => setAlertNotice(null), 3500);
           return null;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [restSecondsLeft]);
+  }, [restSecondsLeft, isRestSoundEnabled]);
 
   // Available Subcategories based on selected split (Dynamic Dual-Lens)
   const availableSubCategories = useMemo(() => {
@@ -1063,6 +1296,19 @@ export default function ExerciseTracker() {
       
       if (willBeCompleted) {
         setRestSecondsLeft(restInitialSeconds);
+
+        // Instant PR detection for completed working sets
+        if (targetSet.type !== 'Warmup' && targetSet.weight > 0 && targetSet.reps > 0) {
+          const pr = getExerciseAllTimePR(next[exIdx].exercise.id, next[exIdx].exercise.name, history);
+          const currentE1RM = calculateE1RM(targetSet.weight, targetSet.reps);
+          if (pr.maxWeight > 0 && targetSet.weight > pr.maxWeight) {
+            setAlertNotice(`🏆 ALL-TIME WEIGHT PR: ${next[exIdx].exercise.name} ${targetSet.weight} ${unit}! (Previous: ${pr.maxWeight} ${unit})`);
+            setTimeout(() => setAlertNotice(null), 4500);
+          } else if (pr.bestE1RM > 0 && currentE1RM > pr.bestE1RM) {
+            setAlertNotice(`🏆 NEW ESTIMATED 1RM PR: ${next[exIdx].exercise.name} ${currentE1RM} ${unit}! (${targetSet.weight}×${targetSet.reps})`);
+            setTimeout(() => setAlertNotice(null), 4500);
+          }
+        }
       }
       return next;
     });
@@ -1120,6 +1366,83 @@ export default function ExerciseTracker() {
 
   const removeExercise = (instanceId: string) => {
     setActiveExercises(prev => prev.filter(e => e.instanceId !== instanceId));
+  };
+
+  // Re-order active exercises: Move Up
+  const moveExerciseUp = (idx: number) => {
+    if (idx <= 0) return;
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[idx - 1];
+      next[idx - 1] = temp;
+      return next;
+    });
+  };
+
+  // Re-order active exercises: Move Down
+  const moveExerciseDown = (idx: number) => {
+    setActiveExercises(prev => {
+      if (idx >= prev.length - 1) return prev;
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[idx + 1];
+      next[idx + 1] = temp;
+      return next;
+    });
+  };
+
+  // 1-Click Progressive Warm-Up Ramp Generator
+  const addWarmupRamp = (exIdx: number) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const ex = next[exIdx];
+      const workingSets = ex.sets.filter(s => s.type !== 'Warmup');
+      const targetW = ex.targetWeight || (workingSets[0]?.weight || 135);
+      const warmups = generateWarmupSets(targetW, unit);
+
+      // Prepend warmup sets before existing working sets and renumber
+      const combined = [...warmups, ...workingSets].map((s, idx) => ({
+        ...s,
+        setNumber: idx + 1
+      }));
+
+      next[exIdx].sets = combined;
+      next[exIdx].targetSets = combined.length;
+      return next;
+    });
+    setAlertNotice(`Warm-up progression ramp generated for ${activeExercises[exIdx].exercise.name}!`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Substitute Exercise Handler
+  const handleSubstituteExercise = (exIdx: number, newExercise: ExerciseDefinition) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
+      const newWeight = prevPerf ? prevPerf.maxWeight : (newExercise.defaultTarget?.defaultWeight || 45);
+      const newReps = prevPerf ? prevPerf.targetReps : (newExercise.defaultTarget?.targetReps || 10);
+
+      next[exIdx] = {
+        ...next[exIdx],
+        exercise: newExercise,
+        equipment: newExercise.defaultEquipment,
+        targetWeight: newWeight,
+        targetReps: newReps,
+        minReps: newExercise.defaultTarget?.minReps || 8,
+        maxReps: newExercise.defaultTarget?.maxReps || 12,
+        sets: next[exIdx].sets.map((s, sIdx) => ({
+          ...s,
+          weight: prevPerf?.sets[sIdx]?.weight || prevPerf?.lastWeight || newWeight,
+          reps: prevPerf?.sets[sIdx]?.reps || prevPerf?.avgReps || newReps,
+          completed: false
+        }))
+      };
+      return next;
+    });
+    setSubstituteModal(null);
+    setAlertNotice(`Swapped to ${newExercise.name}!`);
+    setTimeout(() => setAlertNotice(null), 3500);
   };
 
   const addExerciseToWorkout = (exercise: ExerciseDefinition, equipment: string) => {
@@ -1532,12 +1855,14 @@ export default function ExerciseTracker() {
 
         {/* Live Rest Timer Progress Bar */}
         {restSecondsLeft !== null && (
-          <div className="bg-amber-500/10 border-t border-amber-500/30 px-4 py-2 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-3">
-              <Timer className="w-4 h-4 text-amber-500 animate-pulse" />
-              <span className="font-medium text-stone-200">
-                Rest Period: <strong className="font-mono text-amber-400 text-sm ml-1">{formatTime(restSecondsLeft)}</strong>
-              </span>
+          <div className="bg-amber-500/10 border-t border-amber-500/30 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Timer className="w-4 h-4 text-amber-500 animate-pulse" />
+                <span className="font-medium text-stone-200">
+                  Rest Period: <strong className="font-mono text-amber-400 text-sm ml-1">{formatTime(restSecondsLeft)}</strong>
+                </span>
+              </div>
               <div className="flex items-center gap-1">
                 {[60, 90, 120, 180].map(s => (
                   <button
@@ -1550,14 +1875,44 @@ export default function ExerciseTracker() {
                     {s}s
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setRestSecondsLeft(prev => (prev || 0) + 30)}
+                  className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-800 hover:bg-stone-700 text-amber-300 font-semibold"
+                  title="Add 30 seconds rest"
+                >
+                  +30s
+                </button>
               </div>
             </div>
-            <button 
-              onClick={() => setRestSecondsLeft(null)}
-              className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1"
-            >
-              <X className="w-3.5 h-3.5" /> Skip
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRestSoundEnabled(!isRestSoundEnabled)}
+                className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 flex items-center gap-1 text-[11px] px-2 transition"
+                title={isRestSoundEnabled ? 'Chime sound enabled (Click to mute)' : 'Chime sound muted (Click to enable)'}
+              >
+                {isRestSoundEnabled ? (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="text-[10px] text-stone-300">Sound ON</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5 text-stone-500" />
+                    <span className="text-[10px] text-stone-400">Muted</span>
+                  </>
+                )}
+              </button>
+
+              <button 
+                onClick={() => setRestSecondsLeft(null)}
+                className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1 bg-stone-800/50 hover:bg-stone-800 px-2 py-1 rounded"
+              >
+                <X className="w-3.5 h-3.5" /> Skip
+              </button>
+            </div>
           </div>
         )}
 
@@ -1909,11 +2264,11 @@ export default function ExerciseTracker() {
                           <div className="flex items-center gap-1.5 bg-stone-950 px-2.5 py-1.5 rounded-xl border border-stone-800 text-xs">
                             <span className="text-stone-400 font-medium">Weight ({unit}):</span>
                             <button 
-                              onClick={() => updateTargetWeight(exIdx, -5)}
-                              className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[11px] flex items-center justify-center font-bold"
-                              title="Minus 5"
+                              onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? -5 : -2.5)}
+                              className="w-7 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[11px] flex items-center justify-center font-bold"
+                              title={`Minus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                             >
-                              -5
+                              -{unit === 'lbs' ? '5' : '2.5'}
                             </button>
                             <input
                               type="number"
@@ -1926,23 +2281,86 @@ export default function ExerciseTracker() {
                               title="Target weight applied to all uncompleted sets"
                             />
                             <button 
-                              onClick={() => updateTargetWeight(exIdx, 5)}
-                              className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[11px] flex items-center justify-center font-bold"
-                              title="Plus 5"
+                              onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? 5 : 2.5)}
+                              className="w-7 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[11px] flex items-center justify-center font-bold"
+                              title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                             >
-                              +5
+                              +{unit === 'lbs' ? '5' : '2.5'}
                             </button>
                           </div>
 
-                          {/* Clean Form Guide & Biomechanics Modal Link */}
+                          {/* Plate Calculator Assistant */}
+                          <button
+                            type="button"
+                            onClick={() => setPlateModal({
+                              isOpen: true,
+                              exerciseName: activeEx.exercise.name,
+                              weight: activeEx.targetWeight || (activeEx.sets[0]?.weight || 135)
+                            })}
+                            className="p-2 rounded-xl border border-cyan-500/30 bg-cyan-950/30 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-cyan-900/50 flex items-center gap-1.5 transition shadow-sm"
+                            title="Open Barbell Plate Breakdown Calculator"
+                          >
+                            <Disc className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="hidden sm:inline">Plates</span>
+                          </button>
+
+                          {/* Progressive Warm-Up Ramp Generator */}
+                          <button
+                            type="button"
+                            onClick={() => addWarmupRamp(exIdx)}
+                            className="p-2 rounded-xl border border-amber-500/30 bg-amber-950/30 text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-900/50 flex items-center gap-1.5 transition shadow-sm"
+                            title="Generate Progressive Warm-Up Sets (Bar, 50%, 75%)"
+                          >
+                            <Flame className="w-3.5 h-3.5 text-amber-400" />
+                            <span className="hidden sm:inline">Warmup</span>
+                          </button>
+
+                          {/* Exercise Substitution Helper */}
+                          <button
+                            type="button"
+                            onClick={() => setSubstituteModal({
+                              isOpen: true,
+                              exIdx,
+                              exercise: activeEx.exercise
+                            })}
+                            className="p-2 rounded-xl border border-emerald-500/30 bg-emerald-950/30 text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-900/50 flex items-center gap-1.5 transition shadow-sm"
+                            title="Substitute Movement (If equipment is occupied in gym)"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="hidden sm:inline">Swap</span>
+                          </button>
+
+                          {/* Form Guide & Biomechanics */}
                           <button
                             onClick={() => setSelectedGuideExercise(activeEx.exercise)}
                             className="p-2 rounded-xl border border-stone-700 bg-stone-800/80 text-xs text-stone-300 hover:text-amber-400 hover:border-amber-500/40 flex items-center gap-1.5 transition"
                             title="Open Exercise Execution Guide & Form Cues"
                           >
                             <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                            <span className="hidden sm:inline">Guide & Cues</span>
+                            <span className="hidden sm:inline">Guide</span>
                           </button>
+
+                          {/* Exercise Resequencing Up / Down */}
+                          <div className="flex items-center gap-0.5 bg-stone-950 px-1 py-1 rounded-xl border border-stone-800">
+                            <button
+                              type="button"
+                              disabled={exIdx === 0}
+                              onClick={() => moveExerciseUp(exIdx)}
+                              className="p-1 rounded text-stone-400 hover:text-white hover:bg-stone-800 disabled:opacity-20 disabled:hover:text-stone-400 transition"
+                              title="Move exercise up"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={exIdx === activeExercises.length - 1}
+                              onClick={() => moveExerciseDown(exIdx)}
+                              className="p-1 rounded text-stone-400 hover:text-white hover:bg-stone-800 disabled:opacity-20 disabled:hover:text-stone-400 transition"
+                              title="Move exercise down"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
 
                           {/* Remove Exercise */}
                           <button
@@ -2074,11 +2492,11 @@ export default function ExerciseTracker() {
                                   <div className="flex items-center justify-center gap-1 w-full">
                                     <button
                                       type="button"
-                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, -5)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                      title="Minus 5"
+                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, unit === 'lbs' ? -5 : -2.5)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
+                                      title={`Minus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                                     >
-                                      -5
+                                      -{unit === 'lbs' ? '5' : '2.5'}
                                     </button>
                                     <input
                                       type="number"
@@ -2095,18 +2513,38 @@ export default function ExerciseTracker() {
                                     />
                                     <button
                                       type="button"
-                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, 5)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
-                                      title="Plus 5"
+                                      onClick={() => updateIndividualSetWeight(exIdx, sIdx, unit === 'lbs' ? 5 : 2.5)}
+                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
+                                      title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                                     >
-                                      +5
+                                      +{unit === 'lbs' ? '5' : '2.5'}
                                     </button>
                                   </div>
-                                  {prevSet && set.weight > prevSet.weight && (
-                                    <span className="text-[9px] font-bold text-emerald-400 font-mono">
-                                      +{set.weight - prevSet.weight} {unit}
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    {(() => {
+                                      const allTimePR = getExerciseAllTimePR(activeEx.exercise.id, activeEx.exercise.name, history);
+                                      const isSetPR = set.completed && set.type !== 'Warmup' && set.weight > 0 && (
+                                        (allTimePR.maxWeight > 0 && set.weight > allTimePR.maxWeight) ||
+                                        (allTimePR.bestE1RM > 0 && calculateE1RM(set.weight, set.reps) > allTimePR.bestE1RM)
+                                      );
+                                      if (isSetPR) {
+                                        return (
+                                          <span className="text-[9px] font-bold text-amber-300 font-mono flex items-center gap-0.5 px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/40">
+                                            <Trophy className="w-2.5 h-2.5 text-amber-400" />
+                                            PR!
+                                          </span>
+                                        );
+                                      }
+                                      if (prevSet && set.weight > prevSet.weight) {
+                                        return (
+                                          <span className="text-[9px] font-bold text-emerald-400 font-mono">
+                                            +{set.weight - prevSet.weight} {unit}
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
+                                  </div>
                                 </div>
 
                                 {/* Individual Set Reps Adjuster */}
@@ -2144,11 +2582,18 @@ export default function ExerciseTracker() {
                                       +1
                                     </button>
                                   </div>
-                                  {prevSet && set.reps > prevSet.reps && (
-                                    <span className="text-[9px] font-bold text-cyan-400 font-mono">
-                                      +{set.reps - prevSet.reps} reps
-                                    </span>
-                                  )}
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    {set.completed && set.weight > 0 && set.reps > 0 && (
+                                      <span className="text-[9px] font-mono text-stone-400" title="Estimated 1-Rep Max">
+                                        e1RM: <strong className="text-stone-300">{calculateE1RM(set.weight, set.reps)}</strong>
+                                      </span>
+                                    )}
+                                    {prevSet && set.reps > prevSet.reps && !set.completed && (
+                                      <span className="text-[9px] font-bold text-cyan-400 font-mono">
+                                        +{set.reps - prevSet.reps} reps
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                               {/* Complete Checkmark & Clone */}
@@ -2316,6 +2761,128 @@ export default function ExerciseTracker() {
                 </div>
               </div>
             </div>
+
+            {/* Scientific Hypertrophy Volume Landmarks (MEV / MAV / MRV) */}
+            {(() => {
+              // Aggregate sets by muscle category across this week
+              const muscleVolumeMap: Record<string, number> = {
+                'Chest': 0,
+                'Back / Lats': 0,
+                'Quads & Glutes': 0,
+                'Hamstrings': 0,
+                'Shoulders': 0,
+                'Arms': 0
+              };
+
+              thisWeekWorkouts.forEach(workout => {
+                workout.exercises.forEach(ex => {
+                  const completedSets = ex.sets.filter(s => s.completed && s.type !== 'Warmup').length;
+                  const cat = ex.subCategory.toLowerCase();
+                  if (cat.includes('chest')) muscleVolumeMap['Chest'] += completedSets;
+                  else if (cat.includes('back') || cat.includes('lat')) muscleVolumeMap['Back / Lats'] += completedSets;
+                  else if (cat.includes('quad') || cat.includes('calv') || cat.includes('glute')) muscleVolumeMap['Quads & Glutes'] += completedSets;
+                  else if (cat.includes('hamstring')) muscleVolumeMap['Hamstrings'] += completedSets;
+                  else if (cat.includes('shoulder')) muscleVolumeMap['Shoulders'] += completedSets;
+                  else if (cat.includes('bicep') || cat.includes('tricep') || cat.includes('arm')) muscleVolumeMap['Arms'] += completedSets;
+                  else muscleVolumeMap['Back / Lats'] += completedSets;
+                });
+              });
+
+              // Also include active in-progress completed sets
+              activeExercises.forEach(ex => {
+                const count = ex.sets.filter(s => s.completed && s.type !== 'Warmup').length;
+                const cat = ex.exercise.subCategory.toLowerCase();
+                if (cat.includes('chest')) muscleVolumeMap['Chest'] += count;
+                else if (cat.includes('back') || cat.includes('lat')) muscleVolumeMap['Back / Lats'] += count;
+                else if (cat.includes('quad') || cat.includes('calv') || cat.includes('glute')) muscleVolumeMap['Quads & Glutes'] += count;
+                else if (cat.includes('hamstring')) muscleVolumeMap['Hamstrings'] += count;
+                else if (cat.includes('shoulder')) muscleVolumeMap['Shoulders'] += count;
+                else if (cat.includes('bicep') || cat.includes('tricep') || cat.includes('arm')) muscleVolumeMap['Arms'] += count;
+                else muscleVolumeMap['Back / Lats'] += count;
+              });
+
+              const landmarks = [
+                { name: 'Chest', sets: muscleVolumeMap['Chest'], mev: 8, mav: 16, mrv: 22 },
+                { name: 'Back / Lats', sets: muscleVolumeMap['Back / Lats'], mev: 10, mav: 18, mrv: 24 },
+                { name: 'Quads & Glutes', sets: muscleVolumeMap['Quads & Glutes'], mev: 8, mav: 16, mrv: 22 },
+                { name: 'Hamstrings', sets: muscleVolumeMap['Hamstrings'], mev: 6, mav: 14, mrv: 20 },
+                { name: 'Shoulders', sets: muscleVolumeMap['Shoulders'], mev: 8, mav: 18, mrv: 24 },
+                { name: 'Arms', sets: muscleVolumeMap['Arms'], mev: 6, mav: 16, mrv: 20 }
+              ];
+
+              return (
+                <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-6 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-white flex items-center gap-2">
+                          <span>Hypertrophy Volume Landmarks</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-mono">
+                            Evidence-Based MEV / MAV
+                          </span>
+                        </h3>
+                        <p className="text-xs text-stone-400">
+                          Direct working sets completed this week relative to scientific growth landmarks
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-mono text-stone-400">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-stone-600" /> &lt;MEV (Maintenance)</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> MAV (Sweet Spot)</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> MRV (Peak)</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                    {landmarks.map(m => {
+                      const pct = Math.min(100, Math.round((m.sets / m.mrv) * 100));
+                      const isMAV = m.sets >= m.mev && m.sets <= m.mav;
+                      const statusBadge = m.sets < m.mev 
+                        ? { label: 'Sub-MEV', color: 'bg-stone-800 text-stone-400' }
+                        : isMAV 
+                        ? { label: 'Optimal Growth (MAV)', color: 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30' }
+                        : { label: 'High Volume (MRV)', color: 'bg-amber-950/80 text-amber-300 border border-amber-500/30' };
+
+                      return (
+                        <div key={m.name} className="bg-stone-950/70 p-3.5 rounded-2xl border border-stone-800/80 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-white">{m.name}</span>
+                            <span className="font-mono font-bold text-stone-300">
+                              <span className={m.sets >= m.mev ? 'text-emerald-400' : 'text-stone-400'}>{m.sets}</span>
+                              <span className="text-stone-500"> / {m.mav} sets</span>
+                            </span>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="w-full bg-stone-800/70 h-2 rounded-full overflow-hidden flex">
+                            <div 
+                              className={`h-full transition-all duration-500 ${
+                                m.sets >= m.mev && m.sets <= m.mav 
+                                  ? 'bg-emerald-500' 
+                                  : m.sets > m.mav 
+                                  ? 'bg-amber-500' 
+                                  : 'bg-cyan-500/70'
+                              }`} 
+                              style={{ width: `${Math.max(4, pct)}%` }}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className={`px-1.5 py-0.5 rounded font-mono font-medium ${statusBadge.color}`}>
+                              {statusBadge.label}
+                            </span>
+                            <span className="text-stone-500 font-mono">Target: {m.mev}–{m.mav} sets</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Exercise-by-Exercise Overload Progression Comparison */}
             <div className="space-y-4">
@@ -3324,6 +3891,44 @@ export default function ExerciseTracker() {
               </div>
             </div>
 
+            {/* Session PR Showcase */}
+            {(() => {
+              const prsInSession: string[] = [];
+              completedModalData.exercises.forEach(ex => {
+                ex.sets.forEach(s => {
+                  if (s.completed && s.type !== 'Warmup' && s.weight > 0 && s.reps > 0) {
+                    const prevHist = history.filter(w => w.id !== completedModalData.id);
+                    const pr = getExerciseAllTimePR(ex.id, ex.name, prevHist);
+                    const e1rm = calculateE1RM(s.weight, s.reps);
+                    if ((pr.maxWeight > 0 && s.weight > pr.maxWeight) || (pr.bestE1RM > 0 && e1rm > pr.bestE1RM)) {
+                      const entry = `${ex.name}: ${s.weight} ${completedModalData.unit} × ${s.reps} (e1RM: ${e1rm} ${completedModalData.unit})`;
+                      if (!prsInSession.includes(entry)) prsInSession.push(entry);
+                    }
+                  }
+                });
+              });
+
+              if (prsInSession.length > 0) {
+                return (
+                  <div className="bg-amber-500/10 border border-amber-500/30 p-3.5 rounded-2xl text-left space-y-1.5 animate-in fade-in">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                      <Trophy className="w-4 h-4 text-amber-400" />
+                      <span>{prsInSession.length} Personal Record{prsInSession.length > 1 ? 's' : ''} Achieved Today!</span>
+                    </div>
+                    <div className="space-y-1 text-xs text-stone-200 font-mono">
+                      {prsInSession.map((p, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5">
+                          <span className="text-amber-500">🏆</span>
+                          <span>{p}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {/* Direct Send / Share Workout Row */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-stone-400 uppercase tracking-wider">
@@ -3418,6 +4023,234 @@ export default function ExerciseTracker() {
                 {confirmModal.confirmText}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: BARBELL PLATE CALCULATOR                                */}
+      {/* ============================================================== */}
+      {plateModal && plateModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                  <Disc className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Barbell Plate Calculator</h3>
+                  <p className="text-xs text-stone-400">{plateModal.exerciseName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlateModal(null)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Weight Adjuster Inside Modal */}
+            <div className="flex items-center justify-between bg-stone-950 p-3 rounded-2xl border border-stone-800">
+              <span className="text-xs text-stone-400 font-semibold uppercase tracking-wider">Target Weight</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlateModal(prev => prev ? { ...prev, weight: Math.max(unit === 'lbs' ? 45 : 20, prev.weight - (unit === 'lbs' ? 10 : 5)) } : null)}
+                  className="w-8 h-8 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 font-mono font-bold text-xs"
+                >
+                  -{unit === 'lbs' ? 10 : 5}
+                </button>
+                <input
+                  type="number"
+                  value={plateModal.weight}
+                  onChange={(e) => {
+                    const w = parseFloat(e.target.value) || 0;
+                    setPlateModal(prev => prev ? { ...prev, weight: w } : null);
+                  }}
+                  className="w-20 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-sm rounded py-1 focus:outline-none focus:border-cyan-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPlateModal(prev => prev ? { ...prev, weight: prev.weight + (unit === 'lbs' ? 10 : 5) } : null)}
+                  className="w-8 h-8 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 font-mono font-bold text-xs"
+                >
+                  +{unit === 'lbs' ? 10 : 5}
+                </button>
+                <span className="text-xs font-mono font-bold text-cyan-400">{unit}</span>
+              </div>
+            </div>
+
+            {(() => {
+              const breakdown = calculatePlates(plateModal.weight, unit);
+              return (
+                <div className="space-y-4">
+                  {/* Visual Barbell Representation */}
+                  <div className="bg-stone-950/80 p-5 rounded-2xl border border-stone-800/80 flex flex-col items-center justify-center space-y-3">
+                    <div className="text-[10px] font-mono text-stone-400 uppercase tracking-widest text-center">
+                      Olympic Bar ({breakdown.barWeight} {unit}) + Each Side: <strong className="text-cyan-400 text-xs">{breakdown.weightPerSide} {unit}</strong>
+                    </div>
+
+                    {/* Barbell graphic */}
+                    <div className="w-full flex items-center justify-center py-4 overflow-x-auto">
+                      <div className="flex items-center">
+                        {/* Bar sleeve left */}
+                        <div className="w-8 h-3 bg-zinc-600 rounded-l" />
+                        <div className="w-2 h-8 bg-zinc-400" />
+                        
+                        {/* Plates on side */}
+                        <div className="flex items-center gap-1 px-1">
+                          {breakdown.platesPerSide.length > 0 ? (
+                            breakdown.platesPerSide.flatMap(p => 
+                              Array.from({ length: p.count }).map((_, i) => (
+                                <div
+                                  key={`${p.weight}-${i}`}
+                                  className={`flex items-center justify-center rounded px-1.5 py-3 text-[10px] font-mono font-bold shadow-md border ${p.color}`}
+                                  style={{
+                                    height: `${Math.max(38, Math.min(80, 36 + p.weight * 1.1))}px`
+                                  }}
+                                  title={`${p.label} ${unit}`}
+                                >
+                                  {p.label}
+                                </div>
+                              ))
+                            )
+                          ) : (
+                            <span className="text-xs text-stone-500 italic px-4">Empty Bar (No Plates)</span>
+                          )}
+                        </div>
+
+                        {/* Center Bar shaft */}
+                        <div className="w-2 h-8 bg-zinc-400" />
+                        <div className="w-16 h-2.5 bg-gradient-to-r from-zinc-500 to-zinc-400" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* List of plates */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold text-stone-300 uppercase tracking-wider">
+                      Plates Required Per Sleeve:
+                    </div>
+                    {breakdown.platesPerSide.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {breakdown.platesPerSide.map(p => (
+                          <div
+                            key={p.weight}
+                            className="flex items-center justify-between p-2.5 rounded-xl bg-stone-950 border border-stone-800 font-mono"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={`w-3 h-3 rounded-full ${p.color.split(' ')[0]}`} />
+                              <span className="text-stone-200 font-bold">{p.label} {unit} plate</span>
+                            </div>
+                            <span className="text-amber-400 font-bold">× {p.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-stone-950 rounded-xl text-xs text-stone-400 text-center border border-stone-800">
+                        Weight matches or is less than the unloaded Olympic bar ({breakdown.barWeight} {unit}).
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <button
+              type="button"
+              onClick={() => setPlateModal(null)}
+              className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition shadow-lg shadow-cyan-600/20"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: SUBSTITUTE / SWAP EXERCISE                              */}
+      {/* ============================================================== */}
+      {substituteModal && substituteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[88vh] flex flex-col">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Substitute Movement</h3>
+                  <p className="text-xs text-stone-400">
+                    Replace <strong className="text-stone-200">{substituteModal.exercise.name}</strong> with an equivalent movement
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubstituteModal(null)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-stone-400 bg-stone-950 p-3 rounded-xl border border-stone-800 flex items-center justify-between">
+              <span>Matching Muscle Group:</span>
+              <span className="font-bold text-amber-400 font-mono">{substituteModal.exercise.primaryMuscle} ({substituteModal.exercise.subCategory})</span>
+            </div>
+
+            {/* List of Alternate Movements */}
+            <div className="overflow-y-auto space-y-2 flex-1 pr-1 divide-y divide-stone-800/40">
+              {EXERCISE_DATABASE
+                .filter(ex => 
+                  ex.id !== substituteModal.exercise.id &&
+                  (ex.subCategory === substituteModal.exercise.subCategory || ex.split === substituteModal.exercise.split)
+                )
+                .map(altEx => {
+                  const prevPerf = getPreviousExercisePerformance(altEx.id, altEx.name, history);
+                  return (
+                    <div
+                      key={altEx.id}
+                      className="pt-2 flex items-center justify-between p-3 rounded-xl hover:bg-stone-950 transition border border-transparent hover:border-stone-800"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-bold text-white text-xs flex items-center gap-2">
+                          <span>{altEx.name}</span>
+                          <span className="text-[10px] font-mono text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40">
+                            {altEx.defaultEquipment}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-stone-400 flex items-center gap-2">
+                          <span>{altEx.primaryMuscle}</span>
+                          {prevPerf && (
+                            <span className="text-amber-400 font-mono">
+                              • Last logged: {prevPerf.maxWeight} {unit} × {prevPerf.targetReps}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSubstituteExercise(substituteModal.exIdx, altEx)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm"
+                      >
+                        Select
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSubstituteModal(null)}
+              className="w-full py-2.5 rounded-xl border border-stone-700 hover:bg-stone-800 text-stone-300 font-semibold text-xs transition"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

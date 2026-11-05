@@ -36,6 +36,7 @@ import {
   RefreshCw,
   X,
   Clock,
+  Minus,
   Plus,
   ShieldCheck,
   Key,
@@ -60,7 +61,11 @@ import {
   exportBiometricsCSV, 
   formatBiometricsTextReport,
   PROFILE_STORAGE_KEY,
-  HISTORY_STORAGE_KEY
+  HISTORY_STORAGE_KEY,
+  cmToIn,
+  inToCm,
+  kgToLbs,
+  lbsToKg
 } from '../utils/fitnessStorage';
 
 type ToolType = 'DASHBOARD' | 'HISTORY' | 'WHR' | 'BMI' | 'BODYFAT' | 'CALORIES' | 'MACROS' | 'WATER';
@@ -165,11 +170,50 @@ export default function Tools() {
     saveStoredBiometricHistory(history);
   }, [history]);
 
-  // Conversion Helpers
-  const kgToLbs = (kg: number) => Math.round(kg * 2.20462);
-  const lbsToKg = (lbs: number) => Math.round((lbs / 2.20462) * 10) / 10;
-  const cmToIn = (cm: number) => (cm * 0.393701).toFixed(1);
-  const inToCm = (inches: number) => Math.round((inches / 0.393701) * 10) / 10;
+  // Micro-nudge stepper handler for pinpoint decimal precision without drag friction
+  const handleNudge = (field: 'weight' | 'height' | 'waist' | 'neck' | 'hip' | 'age', delta: number) => {
+    setProfile(prev => {
+      if (field === 'age') {
+        const next = Math.max(14, Math.min(95, prev.age + delta));
+        return { ...prev, age: next };
+      }
+      if (prev.unitSystem === 'metric') {
+        if (field === 'weight') return { ...prev, weightKg: Math.round(Math.max(35, Math.min(220, prev.weightKg + delta)) * 10) / 10 };
+        if (field === 'height') return { ...prev, heightCm: Math.round(Math.max(120, Math.min(230, prev.heightCm + delta)) * 10) / 10 };
+        if (field === 'waist') return { ...prev, waistCm: Math.round(Math.max(45, Math.min(160, prev.waistCm + delta)) * 10) / 10 };
+        if (field === 'neck') return { ...prev, neckCm: Math.round(Math.max(22, Math.min(65, (prev.neckCm || 38) + delta)) * 10) / 10 };
+        if (field === 'hip') return { ...prev, hipCm: Math.round(Math.max(55, Math.min(170, prev.hipCm + delta)) * 10) / 10 };
+      } else {
+        // Imperial units: delta is in inches (or lbs for weight)
+        if (field === 'weight') {
+          const curLbs = kgToLbs(prev.weightKg);
+          const nextLbs = Math.round(Math.max(75, Math.min(480, curLbs + delta)) * 10) / 10;
+          return { ...prev, weightKg: lbsToKg(nextLbs) };
+        }
+        if (field === 'height') {
+          const curIn = parseFloat(cmToIn(prev.heightCm));
+          const nextIn = Math.round(Math.max(48, Math.min(90, curIn + delta)) * 10) / 10;
+          return { ...prev, heightCm: inToCm(nextIn) };
+        }
+        if (field === 'waist') {
+          const curIn = parseFloat(cmToIn(prev.waistCm));
+          const nextIn = Math.round(Math.max(18, Math.min(65, curIn + delta)) * 10) / 10;
+          return { ...prev, waistCm: inToCm(nextIn) };
+        }
+        if (field === 'neck') {
+          const curIn = parseFloat(cmToIn(prev.neckCm || 38));
+          const nextIn = Math.round(Math.max(9, Math.min(26, curIn + delta)) * 10) / 10;
+          return { ...prev, neckCm: inToCm(nextIn) };
+        }
+        if (field === 'hip') {
+          const curIn = parseFloat(cmToIn(prev.hipCm));
+          const nextIn = Math.round(Math.max(22, Math.min(68, curIn + delta)) * 10) / 10;
+          return { ...prev, hipCm: inToCm(nextIn) };
+        }
+      }
+      return prev;
+    });
+  };
 
   // 1. BMI Calculation
   const calculateBMIValue = () => {
@@ -702,20 +746,39 @@ export default function Tools() {
           <div className="p-6 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
             
             {/* Weight */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Total Weight</span>
-                <span className="text-brand font-bold text-sm">
-                  {profile.unitSystem === 'metric' ? `${profile.weightKg} kg` : `${kgToLbs(profile.weightKg)} lbs`}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('weight', -0.5)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Decrease by 0.5"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-brand font-bold text-sm min-w-[3.8rem] text-center font-mono">
+                    {profile.unitSystem === 'metric' ? `${profile.weightKg.toFixed(1)} kg` : `${kgToLbs(profile.weightKg).toFixed(1)} lbs`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('weight', 0.5)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Increase by 0.5"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min={profile.unitSystem === 'metric' ? 40 : 90} 
-                max={profile.unitSystem === 'metric' ? 160 : 350} 
+                step="0.1"
+                min={profile.unitSystem === 'metric' ? 35 : 75} 
+                max={profile.unitSystem === 'metric' ? 220 : 480} 
                 value={profile.unitSystem === 'metric' ? profile.weightKg : kgToLbs(profile.weightKg)} 
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = parseFloat(e.target.value);
                   setProfile({ 
                     ...profile, 
                     weightKg: profile.unitSystem === 'metric' ? val : lbsToKg(val) 
@@ -724,144 +787,241 @@ export default function Tools() {
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{profile.unitSystem === 'metric' ? '40kg' : '90lbs'}</span>
-                <span>{profile.unitSystem === 'metric' ? '160kg' : '350lbs'}</span>
+                <span>{profile.unitSystem === 'metric' ? '35kg' : '75lbs'}</span>
+                <span>{profile.unitSystem === 'metric' ? '220kg' : '480lbs'}</span>
               </div>
             </div>
 
             {/* Height */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Height</span>
-                <span className="text-brand font-bold text-sm">
-                  {profile.unitSystem === 'metric' ? `${profile.heightCm} cm` : `${cmToIn(profile.heightCm)} in`}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('height', profile.unitSystem === 'metric' ? -0.5 : -0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Decrease by 0.1 / 0.5"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-brand font-bold text-sm min-w-[3.8rem] text-center font-mono">
+                    {profile.unitSystem === 'metric' ? `${profile.heightCm.toFixed(1)} cm` : `${cmToIn(profile.heightCm)} in`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('height', profile.unitSystem === 'metric' ? 0.5 : 0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Increase by 0.1 / 0.5"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min={profile.unitSystem === 'metric' ? 130 : 51} 
-                max={profile.unitSystem === 'metric' ? 220 : 86} 
-                value={profile.unitSystem === 'metric' ? profile.heightCm : Number(cmToIn(profile.heightCm))} 
+                step="0.1"
+                min={profile.unitSystem === 'metric' ? 120 : 47} 
+                max={profile.unitSystem === 'metric' ? 230 : 91} 
+                value={profile.unitSystem === 'metric' ? profile.heightCm : parseFloat(cmToIn(profile.heightCm))} 
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = parseFloat(e.target.value);
                   setProfile({ 
                     ...profile, 
-                    heightCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                    heightCm: profile.unitSystem === 'metric' ? val : inToCm(val) 
                   });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{profile.unitSystem === 'metric' ? '130cm' : '51in'}</span>
-                <span>{profile.unitSystem === 'metric' ? '220cm' : '86in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '120cm' : '47in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '230cm' : '91in'}</span>
               </div>
             </div>
 
             {/* Waist Circumference */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold flex items-center gap-1">
                   Waist <span className="text-[9px] text-brand border border-brand/30 px-1 rounded">Fat Marker</span>
                 </span>
-                <span className="text-brand font-bold text-sm">
-                  {profile.unitSystem === 'metric' ? `${profile.waistCm} cm` : `${cmToIn(profile.waistCm)} in`}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('waist', profile.unitSystem === 'metric' ? -0.5 : -0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Decrease by 0.1 / 0.5"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-brand font-bold text-sm min-w-[3.8rem] text-center font-mono">
+                    {profile.unitSystem === 'metric' ? `${profile.waistCm.toFixed(1)} cm` : `${cmToIn(profile.waistCm)} in`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('waist', profile.unitSystem === 'metric' ? 0.5 : 0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Increase by 0.1 / 0.5"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min={profile.unitSystem === 'metric' ? 50 : 20} 
-                max={profile.unitSystem === 'metric' ? 150 : 60} 
-                value={profile.unitSystem === 'metric' ? profile.waistCm : Number(cmToIn(profile.waistCm))} 
+                step="0.1"
+                min={profile.unitSystem === 'metric' ? 45 : 18} 
+                max={profile.unitSystem === 'metric' ? 160 : 65} 
+                value={profile.unitSystem === 'metric' ? profile.waistCm : parseFloat(cmToIn(profile.waistCm))} 
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = parseFloat(e.target.value);
                   setProfile({ 
                     ...profile, 
-                    waistCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                    waistCm: profile.unitSystem === 'metric' ? val : inToCm(val) 
                   });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{profile.unitSystem === 'metric' ? '50cm' : '20in'}</span>
-                <span>{profile.unitSystem === 'metric' ? '150cm' : '60in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '45cm' : '18in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '160cm' : '65in'}</span>
               </div>
             </div>
 
             {/* Neck Circumference (Essential for Navy Body Fat) */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold flex items-center gap-1">
                   Neck <span className="text-[9px] text-cyan-400 border border-cyan-400/30 px-1 rounded">Muscle Anchor</span>
                 </span>
-                <span className="text-cyan-400 font-bold text-sm">
-                  {profile.unitSystem === 'metric' ? `${profile.neckCm || 38} cm` : `${cmToIn(profile.neckCm || 38)} in`}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('neck', profile.unitSystem === 'metric' ? -0.5 : -0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-cyan-400/20 text-zinc-400 hover:text-cyan-400 border border-zinc-700 hover:border-cyan-400/40 transition-colors"
+                    title="Decrease by 0.1 / 0.5"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-cyan-400 font-bold text-sm min-w-[3.8rem] text-center font-mono">
+                    {profile.unitSystem === 'metric' ? `${(profile.neckCm || 38).toFixed(1)} cm` : `${cmToIn(profile.neckCm || 38)} in`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('neck', profile.unitSystem === 'metric' ? 0.5 : 0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-cyan-400/20 text-zinc-400 hover:text-cyan-400 border border-zinc-700 hover:border-cyan-400/40 transition-colors"
+                    title="Increase by 0.1 / 0.5"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min={profile.unitSystem === 'metric' ? 25 : 10} 
-                max={profile.unitSystem === 'metric' ? 60 : 24} 
-                value={profile.unitSystem === 'metric' ? (profile.neckCm || 38) : Number(cmToIn(profile.neckCm || 38))} 
+                step="0.1"
+                min={profile.unitSystem === 'metric' ? 22 : 9} 
+                max={profile.unitSystem === 'metric' ? 65 : 26} 
+                value={profile.unitSystem === 'metric' ? (profile.neckCm || 38) : parseFloat(cmToIn(profile.neckCm || 38))} 
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = parseFloat(e.target.value);
                   setProfile({ 
                     ...profile, 
-                    neckCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                    neckCm: profile.unitSystem === 'metric' ? val : inToCm(val) 
                   });
                 }}
                 className="w-full accent-cyan-400 cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{profile.unitSystem === 'metric' ? '25cm' : '10in'}</span>
-                <span>{profile.unitSystem === 'metric' ? '60cm' : '24in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '22cm' : '9in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '65cm' : '26in'}</span>
               </div>
             </div>
 
             {/* Hip Circumference */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Hip</span>
-                <span className="text-brand font-bold text-sm">
-                  {profile.unitSystem === 'metric' ? `${profile.hipCm} cm` : `${cmToIn(profile.hipCm)} in`}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('hip', profile.unitSystem === 'metric' ? -0.5 : -0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Decrease by 0.1 / 0.5"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-brand font-bold text-sm min-w-[3.8rem] text-center font-mono">
+                    {profile.unitSystem === 'metric' ? `${profile.hipCm.toFixed(1)} cm` : `${cmToIn(profile.hipCm)} in`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('hip', profile.unitSystem === 'metric' ? 0.5 : 0.1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Increase by 0.1 / 0.5"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min={profile.unitSystem === 'metric' ? 60 : 24} 
-                max={profile.unitSystem === 'metric' ? 160 : 64} 
-                value={profile.unitSystem === 'metric' ? profile.hipCm : Number(cmToIn(profile.hipCm))} 
+                step="0.1"
+                min={profile.unitSystem === 'metric' ? 55 : 22} 
+                max={profile.unitSystem === 'metric' ? 170 : 68} 
+                value={profile.unitSystem === 'metric' ? profile.hipCm : parseFloat(cmToIn(profile.hipCm))} 
                 onChange={(e) => {
-                  const val = Number(e.target.value);
+                  const val = parseFloat(e.target.value);
                   setProfile({ 
                     ...profile, 
-                    hipCm: profile.unitSystem === 'metric' ? val : Math.round(inToCm(val)) 
+                    hipCm: profile.unitSystem === 'metric' ? val : inToCm(val) 
                   });
                 }}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>{profile.unitSystem === 'metric' ? '60cm' : '24in'}</span>
-                <span>{profile.unitSystem === 'metric' ? '160cm' : '64in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '55cm' : '22in'}</span>
+                <span>{profile.unitSystem === 'metric' ? '170cm' : '68in'}</span>
               </div>
             </div>
 
             {/* Age */}
-            <div className="space-y-2 bg-paper/60 p-4 border border-edge">
+            <div className="space-y-2.5 bg-paper/60 p-4 border border-edge">
               <div className="flex justify-between items-center text-[10px] font-mono uppercase">
                 <span className="text-zinc-500 font-bold">Age</span>
-                <span className="text-brand font-bold text-sm">{profile.age} yrs</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('age', -1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Decrease by 1 yr"
+                  >
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-brand font-bold text-sm min-w-[3.2rem] text-center font-mono">
+                    {profile.age} yrs
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleNudge('age', 1)}
+                    className="w-5 h-5 flex items-center justify-center rounded bg-zinc-800 hover:bg-brand/20 text-zinc-400 hover:text-brand border border-zinc-700 hover:border-brand/40 transition-colors"
+                    title="Increase by 1 yr"
+                  >
+                    <Plus size={10} />
+                  </button>
+                </div>
               </div>
               <input 
                 type="range" 
-                min="16" 
-                max="85" 
+                step="1"
+                min="14" 
+                max="95" 
                 value={profile.age} 
                 onChange={(e) => setProfile({ ...profile, age: Number(e.target.value) })}
                 className="w-full accent-brand cursor-pointer" 
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-600">
-                <span>16 yrs</span>
-                <span>85 yrs</span>
+                <span>14 yrs</span>
+                <span>95 yrs</span>
               </div>
             </div>
 

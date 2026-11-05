@@ -47,6 +47,15 @@ export const PROFILE_STORAGE_KEY = 'mit2fit_biometric_profile_v2';
 export const HISTORY_STORAGE_KEY = 'mit2fit_biometric_history_v2';
 export const PROTOCOL_KEY_STORAGE = 'mit2fit_protocol_key';
 
+// Standard international conversion constants
+export const CM_PER_INCH = 2.54;
+export const LBS_PER_KG = 2.20462262;
+
+export const cmToIn = (cm: number): string => (cm / CM_PER_INCH).toFixed(1);
+export const inToCm = (inches: number): number => Math.round((inches * CM_PER_INCH) * 10) / 10;
+export const kgToLbs = (kg: number): number => Math.round((kg * LBS_PER_KG) * 10) / 10;
+export const lbsToKg = (lbs: number): number => Math.round((lbs / LBS_PER_KG) * 10) / 10;
+
 export const DEFAULT_PROFILE: BiometricProfile = {
   weightKg: 76,
   heightCm: 178,
@@ -379,13 +388,13 @@ export function exportBiometricsCSV(history: BiometricSnapshot[], unitSystem: 'm
   let csv = 'Date,Weight,Height,Waist,Hip,Neck,WHR,BMI,BodyFat_Pct,Method,LeanMass,FatMass,TDEE,Target_Calories,Goal,Notes\n';
   history.forEach(item => {
     const date = new Date(item.date).toISOString().split('T')[0];
-    const weightStr = unitSystem === 'metric' ? `${item.weightKg} kg` : `${Math.round(item.weightKg * 2.20462)} lbs`;
-    const heightStr = unitSystem === 'metric' ? `${item.heightCm} cm` : `${(item.heightCm * 0.393701).toFixed(1)} in`;
-    const waistStr = unitSystem === 'metric' ? `${item.waistCm} cm` : `${(item.waistCm * 0.393701).toFixed(1)} in`;
-    const hipStr = unitSystem === 'metric' ? `${item.hipCm} cm` : `${(item.hipCm * 0.393701).toFixed(1)} in`;
-    const neckStr = unitSystem === 'metric' ? `${item.neckCm || 38} cm` : `${((item.neckCm || 38) * 0.393701).toFixed(1)} in`;
-    const leanStr = unitSystem === 'metric' ? `${item.leanMassKg} kg` : `${Math.round(item.leanMassKg * 2.20462)} lbs`;
-    const fatStr = unitSystem === 'metric' ? `${item.fatMassKg} kg` : `${Math.round(item.fatMassKg * 2.20462)} lbs`;
+    const weightStr = unitSystem === 'metric' ? `${item.weightKg} kg` : `${kgToLbs(item.weightKg)} lbs`;
+    const heightStr = unitSystem === 'metric' ? `${item.heightCm} cm` : `${cmToIn(item.heightCm)} in`;
+    const waistStr = unitSystem === 'metric' ? `${item.waistCm} cm` : `${cmToIn(item.waistCm)} in`;
+    const hipStr = unitSystem === 'metric' ? `${item.hipCm} cm` : `${cmToIn(item.hipCm)} in`;
+    const neckStr = unitSystem === 'metric' ? `${item.neckCm || 38} cm` : `${cmToIn(item.neckCm || 38)} in`;
+    const leanStr = unitSystem === 'metric' ? `${item.leanMassKg} kg` : `${kgToLbs(item.leanMassKg)} lbs`;
+    const fatStr = unitSystem === 'metric' ? `${item.fatMassKg} kg` : `${kgToLbs(item.fatMassKg)} lbs`;
     const notesClean = (item.notes || '').replace(/"/g, '""');
 
     csv += `"${date}","${weightStr}","${heightStr}","${waistStr}","${hipStr}","${neckStr}",${item.whr},${item.bmi},${item.bodyFat},"${item.bodyFatMethod || 'navy'}","${leanStr}","${fatStr}",${item.tdee},${item.targetCalories},"${item.goal}","${notesClean}"\n`;
@@ -414,16 +423,16 @@ export function formatBiometricsTextReport(
 
   const weightDisplay = unitSystem === 'metric' 
     ? `${profile.weightKg} kg` 
-    : `${Math.round(profile.weightKg * 2.20462)} lbs`;
+    : `${kgToLbs(profile.weightKg)} lbs`;
   const waistDisplay = unitSystem === 'metric' 
     ? `${profile.waistCm} cm` 
-    : `${(profile.waistCm * 0.393701).toFixed(1)} in`;
+    : `${cmToIn(profile.waistCm)} in`;
   const hipDisplay = unitSystem === 'metric' 
     ? `${profile.hipCm} cm` 
-    : `${(profile.hipCm * 0.393701).toFixed(1)} in`;
+    : `${cmToIn(profile.hipCm)} in`;
   const neckDisplay = unitSystem === 'metric' 
     ? `${profile.neckCm} cm` 
-    : `${(profile.neckCm * 0.393701).toFixed(1)} in`;
+    : `${cmToIn(profile.neckCm)} in`;
 
   const whr = (profile.hipCm > 0 ? profile.waistCm / profile.hipCm : 0.85).toFixed(2);
   const heightM = profile.heightCm / 100;
@@ -434,8 +443,8 @@ export function formatBiometricsTextReport(
     : calculateDeurenbergBodyFat(profile.gender, profile.age, Number(bmi));
 
   const { leanMassKg, fatMassKg } = calculateBodyComposition(profile.weightKg, bodyFat);
-  const leanDisplay = unitSystem === 'metric' ? `${leanMassKg} kg` : `${Math.round(leanMassKg * 2.20462)} lbs`;
-  const fatDisplay = unitSystem === 'metric' ? `${fatMassKg} kg` : `${Math.round(fatMassKg * 2.20462)} lbs`;
+  const leanDisplay = unitSystem === 'metric' ? `${leanMassKg} kg` : `${kgToLbs(leanMassKg)} lbs`;
+  const fatDisplay = unitSystem === 'metric' ? `${fatMassKg} kg` : `${kgToLbs(fatMassKg)} lbs`;
 
   let txt = `📊 MIT2FIT Biometric Performance Report\n`;
   txt += `🔑 Protocol Key: ${profile.protocolKey || 'MIT-SECURE'}\n`;

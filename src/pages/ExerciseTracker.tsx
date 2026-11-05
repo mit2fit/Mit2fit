@@ -1770,7 +1770,7 @@ export default function ExerciseTracker() {
 
           {/* Navigation Tabs, Stopwatch Controls & Unit Toggle */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-            {/* Primary Start / Pause Stopwatch Button */}
+            {/* Primary Start / Pause Stopwatch & Finish Workout Hub */}
             {!hasStartedWorkout ? (
               <button
                 onClick={() => {
@@ -1783,18 +1783,30 @@ export default function ExerciseTracker() {
                 Start Workout
               </button>
             ) : (
-              <button
-                onClick={() => setIsTimerRunning(!isTimerRunning)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
-                  isTimerRunning 
-                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30' 
-                    : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
-                }`}
-                title={isTimerRunning ? 'Pause Stopwatch' : 'Resume Stopwatch'}
-              >
-                {isTimerRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                <span>{isTimerRunning ? 'Pause' : 'Resume'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setIsTimerRunning(!isTimerRunning)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                    isTimerRunning 
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30' 
+                      : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
+                  }`}
+                  title={isTimerRunning ? 'Pause Stopwatch' : 'Resume Stopwatch'}
+                >
+                  {isTimerRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                  <span>{isTimerRunning ? 'Pause' : 'Resume'}</span>
+                </button>
+
+                <button
+                  onClick={handleFinishWorkout}
+                  disabled={totalCompletedSets === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:hover:bg-emerald-500 text-stone-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/25 whitespace-nowrap"
+                  title={totalCompletedSets === 0 ? "Complete at least 1 set to finish" : "Finish and record this workout to history"}
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Finish Workout ({totalCompletedSets}/{totalTargetSets})</span>
+                </button>
+              </div>
             )}
 
             <div className="bg-stone-950 p-1 rounded-xl border border-stone-800 flex items-center text-xs">
@@ -1932,7 +1944,7 @@ export default function ExerciseTracker() {
         {/* TAB 1: ACTIVE WORKOUT ROUTINE                                  */}
         {/* ============================================================== */}
         {activeTab === 'workout' && (
-          <div className="space-y-6">
+          <div className={`space-y-6 ${hasStartedWorkout ? 'pb-24' : ''}`}>
             {/* Split Presets & Custom Routines Switcher Bar */}
             <div className="bg-stone-900/50 p-4 rounded-2xl border border-stone-800 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2077,10 +2089,10 @@ export default function ExerciseTracker() {
                 <button
                   onClick={handleQuickUpdateActiveRoutine}
                   className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-stone-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
-                  title="Save current sets and exercises into active routine"
+                  title="Save current exercises and set configurations into routine template"
                 >
                   <Save className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Save Routine Changes</span>
+                  <span className="hidden sm:inline">Save as Routine Template</span>
                 </button>
                 {(hasStartedWorkout || totalCompletedSets > 0 || elapsedSeconds > 0) && (
                   <button
@@ -2102,10 +2114,11 @@ export default function ExerciseTracker() {
                 <button
                   onClick={handleFinishWorkout}
                   disabled={totalCompletedSets === 0}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:pointer-events-none text-white font-bold rounded-xl text-xs transition shadow-lg shadow-emerald-600/20"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:pointer-events-none text-stone-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20"
+                  title={totalCompletedSets === 0 ? "Complete at least 1 set to finish" : "Finish and record this workout to history"}
                 >
-                  <Check className="w-4 h-4" />
-                  Finish & Save
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  Finish Workout
                 </button>
               </div>
             </div>
@@ -2654,6 +2667,48 @@ export default function ExerciseTracker() {
                   );
                 })}
               </div>
+            )}
+
+            {/* Docked Quick Action Bar during active workout */}
+            {hasStartedWorkout && (
+              <aside 
+                aria-label="Active Workout Controls"
+                className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-xl bg-stone-900/95 border border-emerald-500/40 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 animate-in slide-in-from-bottom-3"
+              >
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <div className="font-mono font-bold text-white text-sm">
+                    {formatTime(elapsedSeconds)}
+                  </div>
+                  <span className="text-stone-500 hidden sm:inline">•</span>
+                  <span className="text-emerald-400 font-bold font-mono text-xs hidden sm:inline">
+                    {totalCompletedSets} / {totalTargetSets} Sets
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold flex items-center gap-1 transition"
+                    title="Add exercise to current workout"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Add Exercise</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleFinishWorkout}
+                    disabled={totalCompletedSets === 0}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:hover:bg-emerald-500 text-stone-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/30 whitespace-nowrap"
+                    title={totalCompletedSets === 0 ? "Complete at least 1 set to finish" : "Finish and log this workout to history"}
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Finish Workout</span>
+                  </button>
+                </div>
+              </aside>
             )}
           </div>
         )}

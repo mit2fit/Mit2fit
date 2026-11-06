@@ -46,7 +46,13 @@ import {
   Volume2,
   VolumeX,
   Disc,
-  Layers
+  Layers,
+  Printer,
+  Bell,
+  BellRing,
+  Link2,
+  Unlink,
+  Gauge
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -70,6 +76,7 @@ interface WorkoutSet {
   reps: number;
   completed: boolean;
   type: 'Working' | 'Warmup' | 'Drop Set' | 'Failure';
+  rpe?: number; // Rate of Perceived Exertion (e.g. 6 to 10)
 }
 
 interface ActiveExercise {
@@ -83,6 +90,7 @@ interface ActiveExercise {
   maxReps: number;
   sets: WorkoutSet[];
   notes?: string;
+  supersetTag?: string;  // e.g. "A1", "A2", "B1", "B2"
 }
 
 interface CompletedWorkout {
@@ -104,7 +112,8 @@ interface CompletedWorkout {
     equipment: string;
     targetSets: number;
     targetReps: number;
-    sets: { weight: number; reps: number; completed: boolean; type: string }[];
+    sets: { weight: number; reps: number; completed: boolean; type: string; rpe?: number }[];
+    supersetTag?: string;
   }[];
 }
 
@@ -557,14 +566,17 @@ function formatWeeklyText(weekNum: number, workouts: CompletedWorkout[], totalVo
   return txt;
 }
 
-// Helper: Export history as CSV spreadsheet
+// Helper: Export history as CSV spreadsheet with full metadata (RPE, e1RM, Set Type)
 function exportCSV(workouts: CompletedWorkout[]) {
-  let csv = 'Date,Week,Workout Title,Exercise,Equipment,Set Number,Weight,Reps,Completed\n';
+  let csv = 'Date,Week,Workout Title,Exercise,Equipment,Superset,Set Number,Type,Weight,Reps,RPE,e1RM,Completed\n';
   workouts.forEach(w => {
     const date = new Date(w.date).toISOString().split('T')[0];
     w.exercises.forEach(ex => {
       ex.sets.forEach((s, idx) => {
-        csv += `"${date}",${w.weekNumber},"${w.title}","${ex.name}","${ex.equipment}",${idx + 1},${s.weight},${s.reps},${s.completed ? 'Yes' : 'No'}\n`;
+        const e1rm = s.weight > 0 && s.reps > 0 ? Math.round(s.weight * (1 + s.reps / 30)) : 0;
+        const rpeStr = s.rpe ? s.rpe.toString() : '';
+        const supersetStr = ex.supersetTag || '';
+        csv += `"${date}",${w.weekNumber},"${w.title}","${ex.name}","${ex.equipment}","${supersetStr}",${idx + 1},"${s.type || 'Working'}",${s.weight},${s.reps},"${rpeStr}",${e1rm},${s.completed ? 'Yes' : 'No'}\n`;
       });
     });
   });
@@ -731,6 +743,29 @@ export default function ExerciseTracker() {
     onConfirm: () => void;
   } | null>(null);
 
+  // Exercise History Drawer Modal
+  const [historyDrawerExercise, setHistoryDrawerExercise] = useState<{ id: string; name: string } | null>(null);
+
+  // RPE / RIR Tracking Column Toggle (Persisted in localStorage)
+  const [showRpeColumn, setShowRpeColumn] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mit2fit_tracker_show_rpe') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Browser Notification Permission for Rest Timer
+  const [notificationPermission, setNotificationPermission] = useState<string>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+
+  // History Tab: Selected Exercise for e1RM Progression Analytics
+  const [historyAnalyticsExercise, setHistoryAnalyticsExercise] = useState<string>('');
+
   // Hidden file input for importing workout data
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -818,6 +853,16 @@ export default function ExerciseTracker() {
             } catch (e) {}
           }
 
+          // Desktop/mobile web notification if permission granted
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification('⏰ Rest Complete — Mit2Fit', {
+                body: 'Rest countdown complete! Time to crush your next set.',
+                icon: '/favicon.ico'
+              });
+            } catch (e) {}
+          }
+
           setAlertNotice('⏰ Rest interval complete! Ready for your next set.');
           setTimeout(() => setAlertNotice(null), 3500);
           return null;
@@ -827,6 +872,15 @@ export default function ExerciseTracker() {
     }, 1000);
     return () => clearInterval(timer);
   }, [restSecondsLeft, isRestSoundEnabled]);
+
+  // Sync rest countdown to browser document title
+  useEffect(() => {
+    if (restSecondsLeft !== null && restSecondsLeft > 0) {
+      document.title = `⏱️ (${formatTime(restSecondsLeft)}) Rest | Mit2Fit Tracker`;
+    } else {
+      document.title = 'Mit2Fit | High-Performance Fitness & Hypertrophy Tracker';
+    }
+  }, [restSecondsLeft]);
 
   // Available Subcategories based on selected split (Dynamic Dual-Lens)
   const availableSubCategories = useMemo(() => {
@@ -1565,7 +1619,14 @@ export default function ExerciseTracker() {
         equipment: ex.equipment,
         targetSets: ex.targetSets,
         targetReps: ex.targetReps,
-        sets: ex.sets.map(s => ({ weight: s.weight, reps: s.reps, completed: s.completed, type: s.type }))
+        sets: ex.sets.map(s => ({ 
+          weight: s.weight, 
+          reps: s.reps, 
+          completed: s.completed, 
+          type: s.type,
+          rpe: s.rpe 
+        })),
+        supersetTag: ex.supersetTag
       }))
     };
 
@@ -1724,9 +1785,10 @@ export default function ExerciseTracker() {
     : 100;
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 pt-20 pb-28">
-      {/* Top Banner / Session Header */}
-      <div className="border-b border-stone-800 bg-stone-900/60 backdrop-blur sticky top-16 z-30">
+    <div className="min-h-screen bg-stone-950 text-stone-100 pt-20 pb-28 print:pt-0 print:pb-0 print:bg-white print:text-black">
+      <div className="print:hidden">
+        {/* Top Banner / Session Header */}
+        <div className="border-b border-stone-800 bg-stone-900/60 backdrop-blur sticky top-16 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
@@ -1918,6 +1980,53 @@ export default function ExerciseTracker() {
                 )}
               </button>
 
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof window !== 'undefined' && 'Notification' in window) {
+                    try {
+                      const res = await Notification.requestPermission();
+                      setNotificationPermission(res);
+                      if (res === 'granted') {
+                        setAlertNotice('Background Rest Notifications Enabled!');
+                        try {
+                          new Notification('Mit2Fit Notifications Enabled', {
+                            body: 'You will receive an alert whenever rest ends!',
+                            icon: '/favicon.ico'
+                          });
+                        } catch {}
+                      } else {
+                        setAlertNotice('Browser blocked notification permission.');
+                      }
+                    } catch {
+                      setAlertNotice('Notification permission request was cancelled.');
+                    }
+                    setTimeout(() => setAlertNotice(null), 3000);
+                  } else {
+                    setAlertNotice('Browser notifications not supported on this device.');
+                    setTimeout(() => setAlertNotice(null), 3000);
+                  }
+                }}
+                className={`p-1 rounded flex items-center gap-1 text-[11px] px-2 transition ${
+                  notificationPermission === 'granted'
+                    ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-stone-800/80 hover:bg-stone-700 text-stone-400'
+                }`}
+                title={notificationPermission === 'granted' ? 'Background browser notifications active' : 'Click to enable background browser notifications when rest finishes'}
+              >
+                {notificationPermission === 'granted' ? (
+                  <>
+                    <BellRing className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-[10px]">Alerts ON</span>
+                  </>
+                ) : (
+                  <>
+                    <Bell className="w-3.5 h-3.5" />
+                    <span className="text-[10px]">Alerts</span>
+                  </>
+                )}
+              </button>
+
               <button 
                 onClick={() => setRestSecondsLeft(null)}
                 className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1 bg-stone-800/50 hover:bg-stone-800 px-2 py-1 rounded"
@@ -2094,6 +2203,34 @@ export default function ExerciseTracker() {
                   <Save className="w-3.5 h-3.5 text-amber-400" />
                   <span className="hidden sm:inline">Save as Routine Template</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-stone-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                  title="Print clean black-and-white gym workout sheet with blank checkboxes"
+                >
+                  <Printer className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="hidden sm:inline">Print Sheet</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRpeColumn(prev => {
+                      const next = !prev;
+                      try { localStorage.setItem('mit2fit_tracker_show_rpe', String(next)); } catch {}
+                      return next;
+                    });
+                  }}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border ${
+                    showRpeColumn
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                      : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                  }`}
+                  title="Toggle Rate of Perceived Exertion (RPE / RIR) tracking column"
+                >
+                  <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                  <span>RPE: {showRpeColumn ? 'ON' : 'OFF'}</span>
+                </button>
                 {(hasStartedWorkout || totalCompletedSets > 0 || elapsedSeconds > 0) && (
                   <button
                     onClick={handleResetActiveRoutine}
@@ -2151,7 +2288,11 @@ export default function ExerciseTracker() {
                   return (
                     <div 
                       key={activeEx.instanceId}
-                      className="bg-stone-900/70 border border-stone-800 rounded-2xl overflow-hidden shadow-xl transition-all"
+                      className={`bg-stone-900/70 border rounded-2xl overflow-hidden shadow-xl transition-all ${
+                        activeEx.supersetTag 
+                          ? 'border-cyan-500/50 border-l-4 border-l-cyan-400 shadow-cyan-950/20' 
+                          : 'border-stone-800'
+                      }`}
                     >
                       {/* Exercise Header & Reactive Setup Controls */}
                       <div className="p-4 sm:p-5 border-b border-stone-800/80 bg-stone-900/90 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -2161,6 +2302,12 @@ export default function ExerciseTracker() {
                               {activeEx.exercise.name}
                             </h3>
                             {/* Dynamic Taxonomy Tags */}
+                            {activeEx.supersetTag && (
+                              <span className="text-[11px] font-bold text-cyan-300 px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-500/40 flex items-center gap-1">
+                                <Zap className="w-3 h-3 text-cyan-400" />
+                                SUPERSET {activeEx.supersetTag}
+                              </span>
+                            )}
                             <span className="text-[11px] font-semibold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
                               {activeEx.exercise.split}
                             </span>
@@ -2189,6 +2336,15 @@ export default function ExerciseTracker() {
                                 <span className="font-mono font-bold text-amber-300">{prevPerf.summary} {unit}</span>
                                 <span className="text-[10px] text-stone-500">({new Date(prevPerf.workoutDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})</span>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryDrawerExercise({ id: activeEx.exercise.id, name: activeEx.exercise.name })}
+                                className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-amber-400 text-[11px] font-semibold border border-stone-700 transition flex items-center gap-1 shadow-sm"
+                                title="View full exercise history logs & e1RM progression curve"
+                              >
+                                <TrendingUp className="w-3 h-3 text-amber-400" />
+                                <span>Curve & History</span>
+                              </button>
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <button
                                   type="button"
@@ -2220,9 +2376,20 @@ export default function ExerciseTracker() {
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-stone-500 font-mono">
-                              <Sparkles className="w-3 h-3 text-amber-500" />
-                              <span>First session for this exercise • Baseline target will be saved to your history</span>
+                            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-500 font-mono">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                <span>First session for this exercise • Baseline target will be saved to your history</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setHistoryDrawerExercise({ id: activeEx.exercise.id, name: activeEx.exercise.name })}
+                                className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-amber-300 text-[10px] font-semibold transition flex items-center gap-1"
+                                title="Check previous records if logged in other workouts"
+                              >
+                                <TrendingUp className="w-3 h-3 text-amber-400" />
+                                Past Records
+                              </button>
                             </div>
                           )}
                         </div>
@@ -2353,6 +2520,32 @@ export default function ExerciseTracker() {
                             <span className="hidden sm:inline">Guide</span>
                           </button>
 
+                          {/* Superset Linker Dropdown */}
+                          <div className="flex items-center gap-1 bg-stone-950 px-2 py-1 rounded-xl border border-stone-800 text-xs">
+                            <Link2 className={`w-3.5 h-3.5 ${activeEx.supersetTag ? 'text-cyan-400' : 'text-stone-500'}`} />
+                            <select
+                              value={activeEx.supersetTag || ''}
+                              onChange={(e) => {
+                                const val = e.target.value || undefined;
+                                setActiveExercises(prev => {
+                                  const next = [...prev];
+                                  next[exIdx] = { ...next[exIdx], supersetTag: val };
+                                  return next;
+                                });
+                              }}
+                              className="bg-transparent text-stone-300 font-mono text-[11px] font-bold focus:outline-none cursor-pointer"
+                              title="Link exercise into a Superset (performed back-to-back with zero rest)"
+                            >
+                              <option value="" className="bg-stone-900 text-stone-400">Solo (No Superset)</option>
+                              <option value="A1" className="bg-stone-900 text-cyan-300">Superset A1</option>
+                              <option value="A2" className="bg-stone-900 text-cyan-300">Superset A2</option>
+                              <option value="B1" className="bg-stone-900 text-amber-300">Superset B1</option>
+                              <option value="B2" className="bg-stone-900 text-amber-300">Superset B2</option>
+                              <option value="C1" className="bg-stone-900 text-emerald-300">Superset C1</option>
+                              <option value="C2" className="bg-stone-900 text-emerald-300">Superset C2</option>
+                            </select>
+                          </div>
+
                           {/* Exercise Resequencing Up / Down */}
                           <div className="flex items-center gap-0.5 bg-stone-950 px-1 py-1 rounded-xl border border-stone-800">
                             <button
@@ -2448,9 +2641,14 @@ export default function ExerciseTracker() {
                           <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-stone-400 uppercase tracking-wider px-2 pb-1 border-b border-stone-800">
                             <div className="col-span-1 text-center">Set</div>
                             <div className="col-span-2">Type</div>
-                            <div className="col-span-4 text-center">Weight ({unit})</div>
+                            <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} text-center`}>Weight ({unit})</div>
                             <div className="col-span-3 text-center">Reps ({repsUnit})</div>
-                            <div className="col-span-2 text-right">Log / Copy</div>
+                            {showRpeColumn && (
+                              <div className="col-span-2 text-center" title="Rate of Perceived Exertion / Reps In Reserve">
+                                RPE / RIR
+                              </div>
+                            )}
+                            <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} text-right`}>Log</div>
                           </div>
 
                           {activeEx.sets.map((set, sIdx) => {
@@ -2501,7 +2699,7 @@ export default function ExerciseTracker() {
                                 </div>
 
                                 {/* Individual Set Weight Adjuster */}
-                                <div className="col-span-4 flex flex-col items-center justify-center">
+                                <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} flex flex-col items-center justify-center`}>
                                   <div className="flex items-center justify-center gap-1 w-full">
                                     <button
                                       type="button"
@@ -2522,7 +2720,7 @@ export default function ExerciseTracker() {
                                           return next;
                                         });
                                       }}
-                                      className="w-16 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
+                                      className="w-14 sm:w-16 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
                                     />
                                     <button
                                       type="button"
@@ -2609,38 +2807,77 @@ export default function ExerciseTracker() {
                                   </div>
                                 </div>
 
-                              {/* Complete Checkmark & Clone */}
-                              <div className="col-span-2 flex items-center justify-end gap-1.5">
-                                <button
-                                  onClick={() => cloneSet(exIdx, sIdx)}
-                                  className="p-1.5 rounded-lg text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition"
-                                  title="Duplicate Set"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-
-                                <button
-                                  onClick={() => toggleSetCompleted(exIdx, sIdx)}
-                                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition font-bold ${
-                                    set.completed 
-                                      ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30' 
-                                      : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-white'
-                                  }`}
-                                  title={set.completed ? 'Mark Incomplete' : 'Complete Set & Start Rest'}
-                                >
-                                  <Check className="w-4 h-4 stroke-[3]" />
-                                </button>
-
-                                {activeEx.sets.length > 1 && (
-                                  <button
-                                    onClick={() => removeSet(exIdx, sIdx)}
-                                    className="p-1 rounded text-stone-600 hover:text-red-400 transition"
-                                    title="Delete Set"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                {/* RPE / RIR Dropdown (When RPE is ON) */}
+                                {showRpeColumn && (
+                                  <div className="col-span-2 flex flex-col items-center justify-center">
+                                    <select
+                                      value={set.rpe ?? ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
+                                        setActiveExercises(prev => {
+                                          const next = [...prev];
+                                          next[exIdx].sets[sIdx].rpe = val;
+                                          return next;
+                                        });
+                                      }}
+                                      className={`w-full bg-stone-900 border text-[10px] font-mono font-bold rounded px-1 py-1 focus:outline-none transition ${
+                                        set.rpe === 10
+                                          ? 'border-red-500/80 text-red-400 bg-red-950/20'
+                                          : set.rpe && set.rpe >= 9
+                                          ? 'border-amber-500/80 text-amber-400 bg-amber-950/20'
+                                          : set.rpe && set.rpe >= 8
+                                          ? 'border-emerald-500/80 text-emerald-400 bg-emerald-950/20'
+                                          : 'border-stone-700 text-stone-400'
+                                      }`}
+                                      title="Rate of Perceived Exertion (RPE / RIR)"
+                                    >
+                                      <option value="" className="bg-stone-900 text-stone-500">- RIR</option>
+                                      <option value="6" className="bg-stone-900 text-cyan-300">@ 6 (4+ RIR)</option>
+                                      <option value="7" className="bg-stone-900 text-cyan-300">@ 7 (3 RIR)</option>
+                                      <option value="7.5" className="bg-stone-900 text-cyan-300">@ 7.5 (2.5 RIR)</option>
+                                      <option value="8" className="bg-stone-900 text-emerald-300">@ 8 (2 RIR)</option>
+                                      <option value="8.5" className="bg-stone-900 text-emerald-300">@ 8.5 (1.5 RIR)</option>
+                                      <option value="9" className="bg-stone-900 text-amber-300">@ 9 (1 RIR)</option>
+                                      <option value="9.5" className="bg-stone-900 text-amber-300">@ 9.5 (0.5 RIR)</option>
+                                      <option value="10" className="bg-stone-900 text-red-400">@ 10 (0 RIR)</option>
+                                    </select>
+                                  </div>
                                 )}
-                              </div>
+
+                                {/* Complete Checkmark & Clone */}
+                                <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} flex items-center justify-end gap-1.5`}>
+                                  {!showRpeColumn && (
+                                    <button
+                                      onClick={() => cloneSet(exIdx, sIdx)}
+                                      className="p-1.5 rounded-lg text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition"
+                                      title="Duplicate Set"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => toggleSetCompleted(exIdx, sIdx)}
+                                    className={`w-7 h-7 rounded-lg flex items-center justify-center transition font-bold shrink-0 ${
+                                      set.completed 
+                                        ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30' 
+                                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-white'
+                                    }`}
+                                    title={set.completed ? 'Mark Incomplete' : 'Complete Set & Start Rest'}
+                                  >
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  </button>
+
+                                  {activeEx.sets.length > 1 && !showRpeColumn && (
+                                    <button
+                                      onClick={() => removeSet(exIdx, sIdx)}
+                                      className="p-1 rounded text-stone-600 hover:text-red-400 transition"
+                                      title="Delete Set"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                             </div>
                           );
                         })}
@@ -3322,6 +3559,212 @@ export default function ExerciseTracker() {
                 />
               </div>
             </div>
+
+            {/* Exercise 1RM & Overload Progression Curve Analytics */}
+            {history.length > 0 && (() => {
+              // Gather all unique exercises that have completed sets
+              const exerciseMap = new Map<string, { id: string; name: string; count: number }>();
+              history.forEach(w => {
+                w.exercises.forEach(ex => {
+                  if (ex.sets.some(s => s.completed)) {
+                    const exItem = exerciseMap.get(ex.name);
+                    if (exItem) {
+                      exItem.count += 1;
+                    } else {
+                      exerciseMap.set(ex.name, { id: ex.id, name: ex.name, count: 1 });
+                    }
+                  }
+                });
+              });
+              const uniqueList = Array.from(exerciseMap.values()).sort((a, b) => b.count - a.count);
+              if (uniqueList.length === 0) return null;
+
+              const activeExName = historyAnalyticsExercise || uniqueList[0].name;
+              
+              // Find all sessions for this exercise chronologically
+              const chronWorkouts = [...history].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+              const sessions = chronWorkouts
+                .map(w => {
+                  const match = w.exercises.find(e => e.name.toLowerCase() === activeExName.toLowerCase());
+                  if (!match) return null;
+                  const comp = match.sets.filter(s => s.completed && s.weight > 0);
+                  if (comp.length === 0) return null;
+                  const maxWeight = Math.max(...comp.map(s => s.weight));
+                  const bestE1RM = Math.max(...comp.map(s => calculateE1RM(s.weight, s.reps)));
+                  const vol = comp.reduce((sum, s) => sum + (s.weight * s.reps), 0);
+                  return {
+                    date: w.date,
+                    workoutTitle: w.title,
+                    maxWeight,
+                    bestE1RM,
+                    vol,
+                    sets: comp
+                  };
+                })
+                .filter(Boolean) as { date: string; workoutTitle: string; maxWeight: number; bestE1RM: number; vol: number; sets: { weight: number; reps: number; rpe?: number }[] }[];
+
+              if (sessions.length === 0) return null;
+
+              const allTimeMaxWeight = Math.max(...sessions.map(s => s.maxWeight));
+              const allTimeBestE1RM = Math.max(...sessions.map(s => s.bestE1RM));
+              const totalLifetimeVol = sessions.reduce((sum, s) => sum + s.vol, 0);
+              const firstSessionE1RM = sessions[0].bestE1RM;
+              const latestSessionE1RM = sessions[sessions.length - 1].bestE1RM;
+              const deltaE1RM = latestSessionE1RM - firstSessionE1RM;
+
+              // Compute SVG points
+              const minVal = Math.min(...sessions.map(s => s.bestE1RM)) * 0.9;
+              const maxVal = Math.max(...sessions.map(s => s.bestE1RM)) * 1.05 || 100;
+              const range = maxVal - minVal || 1;
+              const svgWidth = 600;
+              const svgHeight = 160;
+              const padX = 40;
+              const padY = 25;
+              const chartW = svgWidth - padX * 2;
+              const chartH = svgHeight - padY * 2;
+
+              const points = sessions.map((s, idx) => {
+                const x = sessions.length === 1 
+                  ? svgWidth / 2 
+                  : padX + (idx / (sessions.length - 1)) * chartW;
+                const y = padY + chartH - ((s.bestE1RM - minVal) / range) * chartH;
+                return { x, y, ...s };
+              });
+
+              const pathD = points.length === 1
+                ? `M ${points[0].x} ${points[0].y}`
+                : points.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
+
+              const areaD = points.length > 1
+                ? `${pathD} L ${points[points.length - 1].x} ${svgHeight - padY} L ${points[0].x} ${svgHeight - padY} Z`
+                : '';
+
+              return (
+                <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-5 space-y-4 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                        <TrendingUp className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white text-base flex items-center gap-2">
+                          <span>Exercise 1RM & Overload Progression Curve</span>
+                        </h3>
+                        <p className="text-xs text-stone-400">
+                          Track your estimated 1-Rep Max (e1RM) and strength adaptation across logged workouts
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-stone-400">Select Movement:</span>
+                      <select
+                        value={activeExName}
+                        onChange={(e) => setHistoryAnalyticsExercise(e.target.value)}
+                        className="bg-stone-950 border border-stone-700 text-amber-400 font-bold text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-amber-500"
+                      >
+                        {uniqueList.map(u => (
+                          <option key={u.name} value={u.name} className="bg-stone-900 text-stone-200">
+                            {u.name} ({u.count} {u.count === 1 ? 'session' : 'sessions'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Stats */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800/80">
+                      <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">ALL-TIME BEST e1RM</div>
+                      <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">{allTimeBestE1RM} {unit}</div>
+                      <div className="text-[10px] text-stone-500">Based on highest completed set</div>
+                    </div>
+                    <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800/80">
+                      <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">PEAK LOAD LIFTED</div>
+                      <div className="text-xl font-bold font-mono text-cyan-400 mt-0.5">{allTimeMaxWeight} {unit}</div>
+                      <div className="text-[10px] text-stone-500">Maximum working set weight</div>
+                    </div>
+                    <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800/80">
+                      <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">TOTAL LIFETIME VOLUME</div>
+                      <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">{totalLifetimeVol.toLocaleString()} {unit}</div>
+                      <div className="text-[10px] text-stone-500">{sessions.length} sessions recorded</div>
+                    </div>
+                    <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800/80">
+                      <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">STRENGTH DELTA</div>
+                      <div className={`text-xl font-bold font-mono mt-0.5 flex items-center gap-1 ${
+                        deltaE1RM > 0 ? 'text-emerald-400' : deltaE1RM < 0 ? 'text-red-400' : 'text-stone-300'
+                      }`}>
+                        {deltaE1RM > 0 ? `+${deltaE1RM} ${unit}` : `${deltaE1RM} ${unit}`}
+                        <span className="text-xs">({deltaE1RM > 0 ? `+${((deltaE1RM / firstSessionE1RM) * 100).toFixed(1)}%` : '0%'})</span>
+                      </div>
+                      <div className="text-[10px] text-stone-500">Since first logged session</div>
+                    </div>
+                  </div>
+
+                  {/* Responsive SVG Progression Curve */}
+                  <div className="bg-stone-950/90 p-4 rounded-xl border border-stone-800/80 overflow-x-auto">
+                    <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-44 overflow-visible">
+                      <defs>
+                        <linearGradient id="curveAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.28" />
+                          <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Horizontal Gridlines */}
+                      <line x1={padX} y1={padY} x2={svgWidth - padX} y2={padY} stroke="#292524" strokeDasharray="3 3" />
+                      <line x1={padX} y1={padY + chartH / 2} x2={svgWidth - padX} y2={padY + chartH / 2} stroke="#292524" strokeDasharray="3 3" />
+                      <line x1={padX} y1={svgHeight - padY} x2={svgWidth - padX} y2={svgHeight - padY} stroke="#44403c" />
+
+                      {/* Area Fill */}
+                      {areaD && <path d={areaD} fill="url(#curveAreaGrad)" />}
+
+                      {/* Main Progression Line */}
+                      {pathD && (
+                        <path 
+                          d={pathD} 
+                          fill="none" 
+                          stroke="#f59e0b" 
+                          strokeWidth="3" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                        />
+                      )}
+
+                      {/* Session Data Points */}
+                      {points.map((p, i) => (
+                        <g key={i} className="group cursor-pointer">
+                          <circle
+                            cx={p.x}
+                            cy={p.y}
+                            r="5"
+                            className="fill-amber-400 stroke-stone-950 stroke-2 group-hover:r-7 transition-all"
+                          />
+                          {/* e1RM Value Label */}
+                          <text
+                            x={p.x}
+                            y={p.y - 10}
+                            textAnchor="middle"
+                            className="fill-stone-300 text-[10px] font-mono font-bold"
+                          >
+                            {p.bestE1RM}
+                          </text>
+                          {/* Date Label */}
+                          <text
+                            x={p.x}
+                            y={svgHeight - padY + 14}
+                            textAnchor="middle"
+                            className="fill-stone-500 text-[9px] font-mono"
+                          >
+                            {new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+                </div>
+              );
+            })()}
 
             {history.length === 0 ? (
               <div className="text-center py-12 text-stone-500">
@@ -4687,6 +5130,260 @@ export default function ExerciseTracker() {
           </div>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* MODAL: EXERCISE HISTORY DRAWER & PROGRESSION CURVE             */}
+      {/* ============================================================== */}
+      {historyDrawerExercise && (() => {
+        // Collect all previous sessions for this exercise chronologically
+        const chronWorkouts = [...history].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const sessions = chronWorkouts
+          .map(w => {
+            const match = w.exercises.find(e => 
+              e.id === historyDrawerExercise.id || 
+              e.name.toLowerCase() === historyDrawerExercise.name.toLowerCase()
+            );
+            if (!match) return null;
+            const comp = match.sets.filter(s => s.completed && s.weight > 0);
+            if (comp.length === 0) return null;
+            const maxWeight = Math.max(...comp.map(s => s.weight));
+            const bestE1RM = Math.max(...comp.map(s => calculateE1RM(s.weight, s.reps)));
+            const vol = comp.reduce((sum, s) => sum + (s.weight * s.reps), 0);
+            return {
+              id: w.id,
+              date: w.date,
+              workoutTitle: w.title,
+              equipment: match.equipment,
+              maxWeight,
+              bestE1RM,
+              vol,
+              sets: comp
+            };
+          })
+          .filter(Boolean) as { id: string; date: string; workoutTitle: string; equipment: string; maxWeight: number; bestE1RM: number; vol: number; sets: { weight: number; reps: number; completed: boolean; type: string; rpe?: number }[] }[];
+
+        const allTimeMax = sessions.length > 0 ? Math.max(...sessions.map(s => s.maxWeight)) : 0;
+        const allTimeE1RM = sessions.length > 0 ? Math.max(...sessions.map(s => s.bestE1RM)) : 0;
+        const totalVolEver = sessions.reduce((sum, s) => sum + s.vol, 0);
+
+        const svgWidth = 540;
+        const svgHeight = 140;
+        const padX = 35;
+        const padY = 20;
+        const chartW = svgWidth - padX * 2;
+        const chartH = svgHeight - padY * 2;
+
+        const minVal = sessions.length > 0 ? Math.min(...sessions.map(s => s.bestE1RM)) * 0.9 : 0;
+        const maxVal = sessions.length > 0 ? Math.max(...sessions.map(s => s.bestE1RM)) * 1.05 : 100;
+        const range = maxVal - minVal || 1;
+
+        const points = sessions.map((s, idx) => {
+          const x = sessions.length === 1 ? svgWidth / 2 : padX + (idx / (sessions.length - 1)) * chartW;
+          const y = padY + chartH - ((s.bestE1RM - minVal) / range) * chartH;
+          return { x, y, ...s };
+        });
+
+        const pathD = points.length === 1
+          ? `M ${points[0].x} ${points[0].y}`
+          : points.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, '');
+
+        const areaD = points.length > 1
+          ? `${pathD} L ${points[points.length - 1].x} ${svgHeight - padY} L ${points[0].x} ${svgHeight - padY} Z`
+          : '';
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>{historyDrawerExercise.name}</span>
+                    </h3>
+                    <p className="text-xs text-stone-400">
+                      Performance history, sets log, and estimated 1-Rep Max progression
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoryDrawerExercise(null)}
+                  className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content Area */}
+              <div className="overflow-y-auto space-y-4 flex-1 pr-1 text-xs">
+                {sessions.length === 0 ? (
+                  <div className="text-center py-12 text-stone-500 space-y-2">
+                    <Dumbbell className="w-10 h-10 mx-auto text-stone-600" />
+                    <p className="text-sm font-semibold text-stone-300">No past sessions recorded for this movement</p>
+                    <p className="text-xs text-stone-500 max-w-md mx-auto">
+                      Log your sets in today's workout and finish the session. Mit2Fit will automatically plot your strength curve and overload milestones!
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Metrics Bar */}
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 text-center">
+                        <div className="text-[10px] text-stone-400 font-mono font-bold uppercase">BEST e1RM</div>
+                        <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">{allTimeE1RM} {unit}</div>
+                      </div>
+                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 text-center">
+                        <div className="text-[10px] text-stone-400 font-mono font-bold uppercase">MAX LOAD</div>
+                        <div className="text-lg font-bold font-mono text-cyan-400 mt-0.5">{allTimeMax} {unit}</div>
+                      </div>
+                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 text-center">
+                        <div className="text-[10px] text-stone-400 font-mono font-bold uppercase">TOTAL TONNAGE</div>
+                        <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">{totalVolEver.toLocaleString()} {unit}</div>
+                      </div>
+                    </div>
+
+                    {/* Progression Sparkline Chart */}
+                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800">
+                      <div className="text-[11px] font-bold text-stone-300 mb-2 flex items-center justify-between">
+                        <span>Strength Curve (e1RM Over Time)</span>
+                        <span className="font-mono text-amber-400 text-[10px]">{sessions.length} recorded workouts</span>
+                      </div>
+                      <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-32 overflow-visible">
+                        <defs>
+                          <linearGradient id="drawerAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+                            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <line x1={padX} y1={padY} x2={svgWidth - padX} y2={padY} stroke="#292524" strokeDasharray="3 3" />
+                        <line x1={padX} y1={svgHeight - padY} x2={svgWidth - padX} y2={svgHeight - padY} stroke="#44403c" />
+                        {areaD && <path d={areaD} fill="url(#drawerAreaGrad)" />}
+                        {pathD && <path d={pathD} fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+                        {points.map((p, i) => (
+                          <g key={i}>
+                            <circle cx={p.x} cy={p.y} r="4.5" className="fill-amber-400 stroke-stone-950 stroke-2" />
+                            <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-stone-300 text-[9px] font-mono font-bold">{p.bestE1RM}</text>
+                            <text x={p.x} y={svgHeight - padY + 12} textAnchor="middle" className="fill-stone-500 text-[8px] font-mono">
+                              {new Date(p.date).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+
+                    {/* Timeline of Past Sessions */}
+                    <div className="space-y-2">
+                      <div className="font-bold text-stone-300 text-xs uppercase tracking-wider">Session Breakdown</div>
+                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                        {[...sessions].reverse().map((s) => (
+                          <div key={s.id + s.date} className="bg-stone-950/80 p-3 rounded-xl border border-stone-800 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="font-semibold text-white text-xs flex items-center gap-2">
+                                <span>{new Date(s.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                <span className="text-[10px] text-stone-500">• {s.workoutTitle}</span>
+                              </div>
+                              <span className="font-mono text-amber-400 font-bold text-xs">Peak e1RM: {s.bestE1RM} {unit}</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              {s.sets.map((set, sIdx) => (
+                                <span key={sIdx} className="px-2 py-0.5 rounded bg-stone-900 border border-stone-700 font-mono text-[11px] text-stone-200">
+                                  {set.weight} {unit} × {set.reps} {set.rpe ? `@ RPE ${set.rpe}` : ''}
+                                </span>
+                              ))}
+                              <span className="text-[10px] text-stone-500 ml-auto font-mono">Vol: {s.vol.toLocaleString()} {unit}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-stone-800 pt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setHistoryDrawerExercise(null)}
+                  className="px-5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-white text-xs font-semibold transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      </div>
+
+      {/* ============================================================== */}
+      {/* DEDICATED PRINTABLE GYM LOG SHEET (Visible ONLY when printing)  */}
+      {/* ============================================================== */}
+      <div className="hidden print:block text-black bg-white p-6 font-sans">
+        <div className="border-b-2 border-black pb-3 mb-4 flex justify-between items-end">
+          <div>
+            <h1 className="text-2xl font-black uppercase tracking-wider">MIT2FIT WORKOUT LOG</h1>
+            <p className="text-sm font-bold text-gray-800">{sessionTitle || 'Active Training Session'}</p>
+          </div>
+          <div className="text-right text-xs space-y-1">
+            <div>Date: ________________________</div>
+            <div>Bodyweight: ________ {unit}</div>
+            <div>Duration: __________________</div>
+          </div>
+        </div>
+
+        <table className="w-full text-left border-collapse border border-gray-400 text-xs mb-6">
+          <thead>
+            <tr className="bg-gray-100 border-b border-gray-400 text-[11px] uppercase">
+              <th className="p-2 border-r border-gray-400 w-10 text-center">#</th>
+              <th className="p-2 border-r border-gray-400">Exercise & Target</th>
+              <th className="p-2 border-r border-gray-400">Set 1</th>
+              <th className="p-2 border-r border-gray-400">Set 2</th>
+              <th className="p-2 border-r border-gray-400">Set 3</th>
+              <th className="p-2 border-r border-gray-400">Set 4</th>
+              <th className="p-2">Notes / RPE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeExercises.map((ex, i) => (
+              <tr key={ex.instanceId} className="border-b border-gray-300">
+                <td className="p-2 font-bold border-r border-gray-400 text-center">{i + 1}</td>
+                <td className="p-2 font-bold border-r border-gray-400">
+                  <div>{ex.exercise.name} {ex.supersetTag ? `[⚡ ${ex.supersetTag}]` : ''}</div>
+                  <div className="text-[10px] text-gray-600 font-normal">
+                    {ex.equipment} • {ex.targetSets} sets × {ex.minReps}–{ex.maxReps} reps
+                  </div>
+                </td>
+                <td className="p-2 border-r border-gray-400 font-mono text-[10px]">
+                  ____ {unit} × ____ [ ]
+                </td>
+                <td className="p-2 border-r border-gray-400 font-mono text-[10px]">
+                  ____ {unit} × ____ [ ]
+                </td>
+                <td className="p-2 border-r border-gray-400 font-mono text-[10px]">
+                  ____ {unit} × ____ [ ]
+                </td>
+                <td className="p-2 border-r border-gray-400 font-mono text-[10px]">
+                  ____ {unit} × ____ [ ]
+                </td>
+                <td className="p-2 text-[10px] text-gray-500">
+                  {ex.notes || '__________________'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="border-t border-gray-300 pt-2 text-[10px] text-gray-500 flex justify-between">
+          <span>Mit2Fit Hypertrophy & Overload System</span>
+          <span>Consistent progressive overload is the driver of muscular adaptation.</span>
+        </div>
+      </div>
 
     </div>
   );

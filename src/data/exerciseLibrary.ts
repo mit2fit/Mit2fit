@@ -1089,6 +1089,7 @@ export interface RoutineExerciseConfig {
   targetReps: number;
   targetWeight: number;
   equipment?: string;
+  supersetTag?: string;
 }
 
 export interface RoutineTemplate {

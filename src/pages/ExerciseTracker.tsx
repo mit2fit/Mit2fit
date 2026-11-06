@@ -4743,7 +4743,7 @@ export default function ExerciseTracker() {
                 <p className="text-xs text-stone-400 mt-0.5">
                   {isCustomMode 
                     ? 'Define dynamic splits, target sets, reps, and custom equipment' 
-                    : 'Choose from 26 calibrated routine movements'}
+                    : `Choose from ${EXERCISE_DATABASE.length} calibrated routine movements`}
                 </p>
               </div>
 

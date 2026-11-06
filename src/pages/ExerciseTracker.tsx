@@ -714,7 +714,20 @@ export default function ExerciseTracker() {
 
   // Rest Timer State
   const [restSecondsLeft, setRestSecondsLeft] = useState<number | null>(null);
-  const [restInitialSeconds, setRestInitialSeconds] = useState(90);
+  const [restInitialSeconds, setRestInitialSeconds] = useState<number>(() => {
+    try {
+      return parseInt(localStorage.getItem('mit2fit_default_rest') || '90', 10);
+    } catch {
+      return 90;
+    }
+  });
+  const [autoRestTimerEnabled, setAutoRestTimerEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mit2fit_autorest_enabled') !== 'false';
+    } catch {
+      return true;
+    }
+  });
 
   // Modals & Popups
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1395,7 +1408,9 @@ export default function ExerciseTracker() {
       next[exIdx].sets[setIdx] = { ...targetSet, completed: willBeCompleted };
       
       if (willBeCompleted) {
-        setRestSecondsLeft(restInitialSeconds);
+        if (autoRestTimerEnabled) {
+          setRestSecondsLeft(restInitialSeconds);
+        }
 
         // Instant PR detection for completed working sets
         if (targetSet.type !== 'Warmup' && targetSet.weight > 0 && targetSet.reps > 0) {
@@ -2042,6 +2057,18 @@ export default function ExerciseTracker() {
                   <span>{isTimerRunning ? 'Pause' : 'Resume'}</span>
                 </button>
 
+                {restSecondsLeft === null && (
+                  <button
+                    type="button"
+                    onClick={() => setRestSecondsLeft(restInitialSeconds)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 transition whitespace-nowrap"
+                    title={`Start ${restInitialSeconds}s Rest Timer`}
+                  >
+                    <Timer className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Rest ({restInitialSeconds}s)</span>
+                  </button>
+                )}
+
                 <button
                   onClick={handleFinishWorkout}
                   disabled={totalCompletedSets === 0}
@@ -2124,10 +2151,15 @@ export default function ExerciseTracker() {
                 {[60, 90, 120, 180].map(s => (
                   <button
                     key={s}
-                    onClick={() => setRestSecondsLeft(s)}
+                    onClick={() => {
+                      setRestSecondsLeft(s);
+                      setRestInitialSeconds(s);
+                      try { localStorage.setItem('mit2fit_default_rest', String(s)); } catch {}
+                    }}
                     className={`px-2 py-0.5 rounded text-[11px] font-mono ${
                       restSecondsLeft === s ? 'bg-amber-500 text-stone-950 font-bold' : 'bg-stone-800 text-stone-400 hover:text-white'
                     }`}
+                    title={`Set countdown to ${s}s (saves as default)`}
                   >
                     {s}s
                   </button>
@@ -2144,6 +2176,25 @@ export default function ExerciseTracker() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAutoRestTimerEnabled(prev => {
+                    const next = !prev;
+                    try { localStorage.setItem('mit2fit_autorest_enabled', String(next)); } catch {}
+                    return next;
+                  });
+                }}
+                className={`p-1 rounded flex items-center gap-1 text-[11px] px-2 transition border ${
+                  autoRestTimerEnabled
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-semibold'
+                    : 'bg-stone-800/80 border-stone-700 text-stone-400'
+                }`}
+                title="Automatically launch rest timer when a set is completed"
+              >
+                <span>Auto: {autoRestTimerEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsRestSoundEnabled(!isRestSoundEnabled)}
@@ -2514,6 +2565,56 @@ export default function ExerciseTracker() {
                 />
               </div>
             </div>
+
+            {/* Real-time Session Muscle Coverage & Volume Distribution */}
+            {(() => {
+              const map: Record<string, { total: number; completed: number; vol: number }> = {};
+              activeExercises.forEach(ex => {
+                const key = ex.exercise.subCategory || ex.exercise.split;
+                if (!map[key]) map[key] = { total: 0, completed: 0, vol: 0 };
+                map[key].total += ex.sets.length;
+                map[key].completed += ex.sets.filter(s => s.completed).length;
+                map[key].vol += ex.sets.filter(s => s.completed).reduce((sum, s) => sum + (s.weight * s.reps), 0);
+              });
+              const muscleList = Object.entries(map).filter(([_, data]) => data.total > 0);
+              if (muscleList.length === 0) return null;
+
+              return (
+                <div className="bg-stone-900/50 p-3 sm:p-3.5 rounded-2xl border border-stone-800 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                  <div className="flex items-center gap-2 text-stone-300 font-bold text-[11px] uppercase tracking-wider">
+                    <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Active Muscle Coverage:</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {muscleList.map(([muscle, data]) => {
+                      const isComplete = data.completed >= data.total && data.total > 0;
+                      return (
+                        <div
+                          key={muscle}
+                          className={`px-2.5 py-1 rounded-xl text-[11px] font-mono flex items-center gap-1.5 border transition ${
+                            isComplete
+                              ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
+                              : data.completed > 0
+                              ? 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                              : 'bg-stone-950/80 border-stone-800 text-stone-400'
+                          }`}
+                        >
+                          <span className="font-sans font-semibold text-stone-300">{muscle}</span>
+                          <span className={isComplete ? 'text-emerald-400 font-bold' : data.completed > 0 ? 'text-amber-400 font-bold' : 'text-stone-500'}>
+                            {data.completed}/{data.total}
+                          </span>
+                          {data.vol > 0 && (
+                            <span className="text-[10px] text-stone-500 border-l border-stone-700/60 pl-1.5 ml-0.5">
+                              {data.vol.toLocaleString()} {unit}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Exercise Cards List */}
             {activeExercises.length === 0 ? (
@@ -2986,6 +3087,18 @@ export default function ExerciseTracker() {
                                       title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                                     >
                                       +{unit === 'lbs' ? '5' : '2.5'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPlateModal({
+                                        isOpen: true,
+                                        exerciseName: activeEx.exercise.name,
+                                        weight: set.weight || activeEx.targetWeight || 135
+                                      })}
+                                      className="p-1 rounded text-stone-500 hover:text-cyan-400 hover:bg-stone-800 transition shrink-0 hidden sm:inline-flex"
+                                      title="Barbell plate breakdown for this weight"
+                                    >
+                                      <Disc className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
                                   <div className="flex items-center gap-1 mt-0.5">
@@ -4240,6 +4353,23 @@ export default function ExerciseTracker() {
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-bold text-white text-base">{workout.title}</h3>
+                          {(() => {
+                            const prevHist = history.filter(w => new Date(w.date).getTime() < new Date(workout.date).getTime());
+                            const hasPR = workout.exercises.some(ex => {
+                              const pr = getExerciseAllTimePR(ex.id, ex.name, prevHist);
+                              return ex.sets.some(s => {
+                                if (!s.completed || s.type === 'Warmup' || s.weight <= 0 || s.reps <= 0) return false;
+                                const e1rm = calculateE1RM(s.weight, s.reps);
+                                return (pr.maxWeight > 0 && s.weight > pr.maxWeight) || (pr.bestE1RM > 0 && e1rm > pr.bestE1RM);
+                              });
+                            });
+                            if (!hasPR) return null;
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                🏆 PR Achieved
+                              </span>
+                            );
+                          })()}
                           {workout.energyRating && (
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
                               workout.energyRating === 'High' 
@@ -5767,6 +5897,36 @@ export default function ExerciseTracker() {
                         ))}
                       </svg>
                     </div>
+
+                    {/* 1RM Scientific Rep-Max Load Projections */}
+                    {allTimeE1RM > 0 && (
+                      <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-stone-300">
+                          <span className="flex items-center gap-1.5">
+                            <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Scientific Rep-Max Load Projections (Best e1RM: {allTimeE1RM} {unit})</span>
+                          </span>
+                          <span className="text-[10px] text-stone-500 font-mono">Brzycki Formula</span>
+                        </div>
+                        <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 text-center">
+                          {[
+                            { reps: '1RM', pct: '100%', weight: Math.round(allTimeE1RM) },
+                            { reps: '2RM', pct: '95%', weight: Math.round(allTimeE1RM * 0.95) },
+                            { reps: '3RM', pct: '92.5%', weight: Math.round(allTimeE1RM * 0.925) },
+                            { reps: '5RM', pct: '87.5%', weight: Math.round(allTimeE1RM * 0.875) },
+                            { reps: '8RM', pct: '80%', weight: Math.round(allTimeE1RM * 0.80) },
+                            { reps: '10RM', pct: '75%', weight: Math.round(allTimeE1RM * 0.75) },
+                            { reps: '12RM', pct: '70%', weight: Math.round(allTimeE1RM * 0.70) }
+                          ].map(col => (
+                            <div key={col.reps} className="bg-stone-900/90 p-1.5 rounded-lg border border-stone-800/80">
+                              <div className="text-[10px] font-bold text-amber-400 font-mono">{col.reps}</div>
+                              <div className="text-xs font-bold text-white font-mono mt-0.5">{col.weight} <span className="text-[9px] text-stone-400 font-normal">{unit}</span></div>
+                              <div className="text-[9px] text-stone-500 font-mono">{col.pct}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Timeline of Past Sessions */}
                     <div className="space-y-2">

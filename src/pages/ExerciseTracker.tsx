@@ -52,7 +52,10 @@ import {
   BellRing,
   Link2,
   Unlink,
-  Gauge
+  Gauge,
+  FileText,
+  Calendar,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -104,6 +107,8 @@ interface CompletedWorkout {
   totalSets: number;
   totalReps: number;
   unit: 'lbs' | 'kg';
+  sessionNotes?: string;
+  energyRating?: 'High' | 'Solid' | 'Fatigued';
   exercises: {
     id: string;
     name: string;
@@ -566,17 +571,19 @@ function formatWeeklyText(weekNum: number, workouts: CompletedWorkout[], totalVo
   return txt;
 }
 
-// Helper: Export history as CSV spreadsheet with full metadata (RPE, e1RM, Set Type)
+// Helper: Export history as CSV spreadsheet with full metadata (RPE, e1RM, Set Type, Energy, Notes)
 function exportCSV(workouts: CompletedWorkout[]) {
-  let csv = 'Date,Week,Workout Title,Exercise,Equipment,Superset,Set Number,Type,Weight,Reps,RPE,e1RM,Completed\n';
+  let csv = 'Date,Week,Workout Title,Energy,Notes,Exercise,Equipment,Superset,Set Number,Type,Weight,Reps,RPE,e1RM,Completed\n';
   workouts.forEach(w => {
     const date = new Date(w.date).toISOString().split('T')[0];
+    const energyStr = w.energyRating || 'Solid';
+    const notesStr = (w.sessionNotes || '').replace(/"/g, '""');
     w.exercises.forEach(ex => {
       ex.sets.forEach((s, idx) => {
         const e1rm = s.weight > 0 && s.reps > 0 ? Math.round(s.weight * (1 + s.reps / 30)) : 0;
         const rpeStr = s.rpe ? s.rpe.toString() : '';
         const supersetStr = ex.supersetTag || '';
-        csv += `"${date}",${w.weekNumber},"${w.title}","${ex.name}","${ex.equipment}","${supersetStr}",${idx + 1},"${s.type || 'Working'}",${s.weight},${s.reps},"${rpeStr}",${e1rm},${s.completed ? 'Yes' : 'No'}\n`;
+        csv += `"${date}",${w.weekNumber},"${w.title}","${energyStr}","${notesStr}","${ex.name}","${ex.equipment}","${supersetStr}",${idx + 1},"${s.type || 'Working'}",${s.weight},${s.reps},"${rpeStr}",${e1rm},${s.completed ? 'Yes' : 'No'}\n`;
       });
     });
   });
@@ -765,6 +772,45 @@ export default function ExerciseTracker() {
 
   // History Tab: Selected Exercise for e1RM Progression Analytics
   const [historyAnalyticsExercise, setHistoryAnalyticsExercise] = useState<string>('');
+
+  // Session Notes & Subjective Energy Rating
+  const [sessionNotes, setSessionNotes] = useState('');
+  const [sessionEnergy, setSessionEnergy] = useState<'High' | 'Solid' | 'Fatigued'>('Solid');
+
+  // Deload Week Protocol State
+  const [isDeloadActive, setIsDeloadActive] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mit2fit_deload_active') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleDeloadMode = (enable?: boolean) => {
+    const nextState = enable !== undefined ? enable : !isDeloadActive;
+    setIsDeloadActive(nextState);
+    try {
+      localStorage.setItem('mit2fit_deload_active', String(nextState));
+    } catch (e) {
+      console.error(e);
+    }
+    if (nextState) {
+      // Scale active exercises: keep 2 working sets instead of 3 or 4 to drop ~40% volume while keeping load
+      setActiveExercises(prev => prev.map(ex => {
+        if (ex.sets.length > 2) {
+          return {
+            ...ex,
+            sets: ex.sets.slice(0, 2)
+          };
+        }
+        return ex;
+      }));
+      setAlertNotice('🌿 Deload Protocol Activated: Volume reduced by ~40% (2 heavy working sets per lift). Focus on pristine form and recovery!');
+    } else {
+      setAlertNotice('⚡ Standard Overload Protocol Restored: Full volume and progressive overload active.');
+    }
+    setTimeout(() => setAlertNotice(null), 4000);
+  };
 
   // Hidden file input for importing workout data
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1611,6 +1657,8 @@ export default function ExerciseTracker() {
         return sum + ex.sets.reduce((setSum, s) => s.completed ? setSum + s.reps : setSum, 0);
       }, 0),
       unit,
+      sessionNotes: sessionNotes.trim() || undefined,
+      energyRating: sessionEnergy,
       exercises: activeExercises.map(ex => ({
         id: ex.exercise.id,
         name: ex.exercise.name,
@@ -1635,6 +1683,7 @@ export default function ExerciseTracker() {
     setIsTimerRunning(false);
     setHasStartedWorkout(false);
     setElapsedSeconds(0);
+    setSessionNotes('');
     setActiveExercises(prev => prev.map(ex => ({
       ...ex,
       sets: ex.sets.map(s => ({ ...s, completed: false }))
@@ -1783,6 +1832,140 @@ export default function ExerciseTracker() {
   const volumeGrowthPercent = lastWeekVolume > 0 
     ? Math.round(((thisWeekVolume - lastWeekVolume) / lastWeekVolume) * 100) 
     : 100;
+
+  // Deload Fatigue & Recommendation Metrics
+  const deloadMetrics = useMemo(() => {
+    const distinctWeeks = new Set(history.map(w => `${w.year}-W${w.weekNumber}`)).size;
+    const isHighFatigue = distinctWeeks >= 4 || thisWeekSets >= 55;
+    return {
+      isHighFatigue,
+      distinctWeeks,
+      statusText: isHighFatigue 
+        ? 'Deload Recommended (Accumulated Volume Fatigue)' 
+        : 'Optimal Overload Phase (Fatigue In Check)',
+      statusBadgeColor: isHighFatigue 
+        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
+        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+    };
+  }, [history, thisWeekSets]);
+
+  // 12-Week Consistency Heatmap & Streak Tracker Analytics
+  const consistencyStats = useMemo(() => {
+    const days: {
+      date: Date;
+      dateStr: string;
+      dayOfWeek: number;
+      workouts: CompletedWorkout[];
+      count: number;
+      volume: number;
+      sets: number;
+      isToday: boolean;
+      weekIndex: number;
+      dayIndex: number;
+    }[] = [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Align to 12 weeks ending on the current week's Sunday
+    const dayOfWeek = today.getDay(); // 0 is Sunday, 1 is Monday...
+    const daysToSunday = (7 - dayOfWeek) % 7;
+    const endOfWeek = new Date(today);
+    endOfWeek.setDate(today.getDate() + daysToSunday);
+
+    const startDate = new Date(endOfWeek);
+    startDate.setDate(endOfWeek.getDate() - (12 * 7 - 1));
+
+    // Map workouts by local date key YYYY-MM-DD
+    const workoutMap = new Map<string, CompletedWorkout[]>();
+    history.forEach(w => {
+      const d = new Date(w.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const list = workoutMap.get(key) || [];
+      list.push(w);
+      workoutMap.set(key, list);
+    });
+
+    for (let i = 0; i < 84; i++) {
+      const curr = new Date(startDate);
+      curr.setDate(startDate.getDate() + i);
+      const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}-${String(curr.getDate()).padStart(2, '0')}`;
+      const wList = workoutMap.get(key) || [];
+      const isToday = curr.getTime() === today.getTime();
+      const rawDay = curr.getDay(); // 0 Sun, 1 Mon...
+      const monToSunDay = (rawDay + 6) % 7; // 0 Mon ... 6 Sun
+      const weekIdx = Math.floor(i / 7);
+
+      days.push({
+        date: curr,
+        dateStr: key,
+        dayOfWeek: rawDay,
+        workouts: wList,
+        count: wList.length,
+        volume: wList.reduce((sum, w) => sum + w.totalVolume, 0),
+        sets: wList.reduce((sum, w) => sum + w.totalSets, 0),
+        isToday,
+        weekIndex: weekIdx,
+        dayIndex: monToSunDay
+      });
+    }
+
+    // Active Streak (consecutive days with workout, checking today or yesterday backwards)
+    let currentStreak = 0;
+    let checkDate: Date | null = new Date(today);
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const hasWorkoutToday = (workoutMap.get(todayKey) || []).length > 0;
+
+    if (!hasWorkoutToday) {
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const yKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      if ((workoutMap.get(yKey) || []).length > 0) {
+        checkDate = yesterday;
+      } else {
+        checkDate = null;
+      }
+    }
+
+    if (checkDate) {
+      while (checkDate) {
+        const key = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
+        if ((workoutMap.get(key) || []).length > 0) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    // Active weeks count
+    let activeWeeksCount = 0;
+    for (let w = 0; w < 12; w++) {
+      const weekDays = days.filter(d => d.weekIndex === w);
+      if (weekDays.some(d => d.count > 0)) {
+        activeWeeksCount++;
+      }
+    }
+    const weeklyAdherencePct = Math.round((activeWeeksCount / 12) * 100);
+
+    // Workouts this month
+    const thisMonth = today.getMonth();
+    const thisYear = today.getFullYear();
+    const thisMonthWorkouts = history.filter(w => {
+      const d = new Date(w.date);
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    }).length;
+
+    return {
+      days,
+      currentStreak,
+      activeWeeksCount,
+      weeklyAdherencePct,
+      thisMonthWorkouts,
+      totalWorkouts: history.length
+    };
+  }, [history]);
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 pt-20 pb-28 print:pt-0 print:pb-0 print:bg-white print:text-black">
@@ -2231,6 +2414,19 @@ export default function ExerciseTracker() {
                   <Gauge className="w-3.5 h-3.5 text-amber-400" />
                   <span>RPE: {showRpeColumn ? 'ON' : 'OFF'}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => toggleDeloadMode()}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 border ${
+                    isDeloadActive
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                      : 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                  }`}
+                  title="Deload Protocol reduces sets by ~40% while preserving working load to recover central nervous system and connective tissues"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Deload: {isDeloadActive ? 'ON' : 'OFF'}</span>
+                </button>
                 {(hasStartedWorkout || totalCompletedSets > 0 || elapsedSeconds > 0) && (
                   <button
                     onClick={handleResetActiveRoutine}
@@ -2257,6 +2453,65 @@ export default function ExerciseTracker() {
                   <Check className="w-4 h-4 stroke-[3]" />
                   Finish Workout
                 </button>
+              </div>
+            </div>
+
+            {/* Active Deload Week Notification Banner */}
+            {isDeloadActive && (
+              <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-200">
+                <div className="flex items-center gap-3">
+                  <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold shrink-0">🌿</span>
+                  <div>
+                    <span className="font-bold text-white text-sm">Deload Protocol Active:</span>
+                    <p className="text-stone-300 text-xs mt-0.5">
+                      Working sets scaled down to 2 sets per lift with identical working load (2–3 RIR). Systemic fatigue clearing in progress.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleDeloadMode(false)}
+                  className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white rounded-lg text-xs font-medium border border-stone-700 self-end sm:self-center transition"
+                >
+                  Restore Full Volume
+                </button>
+              </div>
+            )}
+
+            {/* Session Readiness & Workout Notes Strip */}
+            <div className="bg-stone-900/40 p-3 sm:p-4 rounded-2xl border border-stone-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-stone-400 font-bold uppercase tracking-wider text-[10px]">Readiness / Energy:</span>
+                <div className="flex items-center gap-1.5">
+                  {(['High', 'Solid', 'Fatigued'] as const).map(level => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setSessionEnergy(level)}
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition ${
+                        sessionEnergy === level
+                          ? level === 'High' 
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm' 
+                            : level === 'Solid'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
+                          : 'bg-stone-950 text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                      title={`Log session feeling: ${level}`}
+                    >
+                      {level === 'High' ? '⚡ High Energy' : level === 'Solid' ? '💪 Solid' : '🥱 Fatigued'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 max-w-lg">
+                <input
+                  type="text"
+                  placeholder="Session notes (e.g. Felt explosive on bench, shoulders 100%)..."
+                  value={sessionNotes}
+                  onChange={(e) => setSessionNotes(e.target.value)}
+                  className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-3 py-1.5 text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500 text-xs"
+                />
               </div>
             </div>
 
@@ -2711,7 +2966,8 @@ export default function ExerciseTracker() {
                                     </button>
                                     <input
                                       type="number"
-                                      value={set.weight}
+                                      value={set.weight === 0 ? '' : set.weight}
+                                      placeholder={prevSet ? String(prevSet.weight) : String(activeEx.targetWeight || 135)}
                                       onChange={(e) => {
                                         const val = parseFloat(e.target.value) || 0;
                                         setActiveExercises(prev => {
@@ -2720,7 +2976,8 @@ export default function ExerciseTracker() {
                                           return next;
                                         });
                                       }}
-                                      className="w-14 sm:w-16 bg-stone-900 border border-stone-700 text-center text-white font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
+                                      className="w-14 sm:w-16 bg-stone-900 border border-stone-700 text-center text-white placeholder-stone-500 font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500"
+                                      title={prevSet ? `Previous session: ${prevSet.weight} ${unit}` : `Target: ${activeEx.targetWeight} ${unit}`}
                                     />
                                     <button
                                       type="button"
@@ -2771,7 +3028,8 @@ export default function ExerciseTracker() {
                                     </button>
                                     <input
                                       type="number"
-                                      value={set.reps}
+                                      value={set.reps === 0 ? '' : set.reps}
+                                      placeholder={prevSet ? String(prevSet.reps) : String(activeEx.targetReps || 10)}
                                       onChange={(e) => {
                                         const val = parseInt(e.target.value) || 0;
                                         setActiveExercises(prev => {
@@ -2780,9 +3038,10 @@ export default function ExerciseTracker() {
                                           return next;
                                         });
                                       }}
-                                      className={`w-12 bg-stone-900 border text-center font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500 ${
+                                      className={`w-12 bg-stone-900 border text-center font-mono font-bold text-xs rounded py-1 placeholder-stone-500 focus:outline-none focus:border-amber-500 ${
                                         set.reps >= activeEx.targetReps ? 'text-emerald-400 border-emerald-500/50' : 'text-white border-stone-700'
                                       }`}
+                                      title={prevSet ? `Previous session: ${prevSet.reps} reps` : `Target: ${activeEx.targetReps} reps`}
                                     />
                                     <button
                                       type="button"
@@ -2900,6 +3159,19 @@ export default function ExerciseTracker() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Superset Visual Bridge / Connector */}
+                      {exIdx < activeExercises.length - 1 && 
+                       Boolean(activeEx.supersetTag) && 
+                       Boolean(activeExercises[exIdx + 1]?.supersetTag) && 
+                       activeEx.supersetTag?.slice(0, 1) === activeExercises[exIdx + 1]?.supersetTag?.slice(0, 1) && (
+                        <div className="flex items-center justify-center my-2 z-10 relative">
+                          <div className="bg-stone-950 border border-cyan-500/50 rounded-full px-4 py-1 flex items-center gap-2 text-[11px] font-bold text-cyan-300 shadow-lg shadow-cyan-950/60">
+                            <Link2 className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                            <span>SUPERSET LINK: Move immediately to {activeExercises[exIdx + 1].exercise.name} with 0s rest</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3050,6 +3322,65 @@ export default function ExerciseTracker() {
                       {volumeGrowthPercent >= 0 ? `+${volumeGrowthPercent}%` : `${volumeGrowthPercent}%`}
                     </strong>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Scientific Deload Advisor & Volume Scaler Card */}
+            <div className={`p-6 rounded-3xl border transition-all ${
+              isDeloadActive
+                ? 'bg-emerald-950/30 border-emerald-500/40 shadow-sm'
+                : deloadMetrics.isHighFatigue
+                ? 'bg-amber-950/20 border-amber-500/40'
+                : 'bg-stone-900/60 border-stone-800'
+            }`}>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
+                      isDeloadActive 
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                        : deloadMetrics.statusBadgeColor
+                    }`}>
+                      {isDeloadActive ? '🌿 DELOAD PROTOCOL ACTIVE' : deloadMetrics.statusText}
+                    </span>
+                    <span className="text-xs text-stone-400 font-mono">
+                      {deloadMetrics.distinctWeeks} Mesocycle Weeks Logged
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-emerald-400" />
+                    Deload Week Advisor & Volume Scaler
+                  </h3>
+                  <p className="text-xs text-stone-300 max-w-2xl leading-relaxed">
+                    {isDeloadActive ? (
+                      <>
+                        <strong>Deload protocol in progress:</strong> Target working sets are scaled to 2 sets per exercise while maintaining heavy working load. This flushes neuromuscular fatigue, protects tendons, and resensitizes androgen receptors without losing lean tissue.
+                      </>
+                    ) : deloadMetrics.isHighFatigue ? (
+                      <>
+                        <strong>Fatigue accumulation detected:</strong> You have logged sustained heavy volume across multiple weeks ({thisWeekSets} working sets this week). We advise a 1-week deload (-40% volume, keep weight heavy, leave 2–3 reps in reserve) to avoid overuse plateaus.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Systemic fatigue in green zone:</strong> Your cumulative volume is within optimal adaptive limits. Run standard double progression overload. If joint soreness or bar deceleration arises, trigger a deload below.
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => toggleDeloadMode()}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm ${
+                      isDeloadActive
+                        ? 'bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-600'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    }`}
+                  >
+                    <ShieldAlert className="w-4 h-4 text-emerald-300" />
+                    <span>{isDeloadActive ? 'Exit Deload (Restore Full Sets)' : 'Apply Deload Week (-40% Volume)'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -3560,6 +3891,134 @@ export default function ExerciseTracker() {
               </div>
             </div>
 
+            {/* 12-Week Workout Consistency Heatmap & Streak Tracker */}
+            <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-800 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-emerald-400" />
+                    <h3 className="font-bold text-white text-base">
+                      12-Week Workout Consistency Heatmap
+                    </h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                      {consistencyStats.weeklyAdherencePct}% Adherence
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-400">
+                    Visual log of every training session across the last 84 days. Consistency drives hypertrophy and strength adaptation.
+                  </p>
+                </div>
+
+                {/* Micro Stat Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="bg-stone-950/80 px-3 py-2 rounded-xl border border-stone-800/80 text-center">
+                    <div className="text-[10px] text-stone-400 uppercase font-mono font-bold flex items-center justify-center gap-1">
+                      <Flame className="w-3 h-3 text-amber-500" />
+                      <span>Streak</span>
+                    </div>
+                    <div className="text-base font-bold font-mono text-amber-400">
+                      {consistencyStats.currentStreak} {consistencyStats.currentStreak === 1 ? 'Day' : 'Days'}
+                    </div>
+                  </div>
+
+                  <div className="bg-stone-950/80 px-3 py-2 rounded-xl border border-stone-800/80 text-center">
+                    <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">ACTIVE WEEKS</div>
+                    <div className="text-base font-bold font-mono text-emerald-400">
+                      {consistencyStats.activeWeeksCount} / 12
+                    </div>
+                  </div>
+
+                  <div className="bg-stone-950/80 px-3 py-2 rounded-xl border border-stone-800/80 text-center">
+                    <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">THIS MONTH</div>
+                    <div className="text-base font-bold font-mono text-cyan-400">
+                      {consistencyStats.thisMonthWorkouts} Sessions
+                    </div>
+                  </div>
+
+                  <div className="bg-stone-950/80 px-3 py-2 rounded-xl border border-stone-800/80 text-center">
+                    <div className="text-[10px] text-stone-400 uppercase font-mono font-bold">TOTAL LOGS</div>
+                    <div className="text-base font-bold font-mono text-purple-400">
+                      {consistencyStats.totalWorkouts} Workouts
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Heatmap Grid (12 Columns x 7 Rows) */}
+              <div className="overflow-x-auto pb-1">
+                <div className="min-w-[620px] space-y-2">
+                  {/* Grid of Days */}
+                  <div className="flex gap-2">
+                    {/* Day-of-week labels */}
+                    <div className="flex flex-col justify-between py-0.5 text-[10px] font-mono text-stone-500 w-7 shrink-0 select-none">
+                      <span>Mon</span>
+                      <span className="invisible">Tue</span>
+                      <span>Wed</span>
+                      <span className="invisible">Thu</span>
+                      <span>Fri</span>
+                      <span className="invisible">Sat</span>
+                      <span>Sun</span>
+                    </div>
+
+                    {/* 12 Week Columns */}
+                    <div className="grid grid-cols-12 gap-1.5 flex-grow">
+                      {Array.from({ length: 12 }).map((_, weekIdx) => {
+                        const weekDays = consistencyStats.days.filter(d => d.weekIndex === weekIdx);
+                        return (
+                          <div key={weekIdx} className="flex flex-col gap-1.5">
+                            {weekDays.map(day => {
+                              const hasWorkout = day.count > 0;
+                              const isMulti = day.count > 1;
+                              const tooltipText = `${day.dateStr}${day.isToday ? ' (Today)' : ''}: ${
+                                day.count === 0 
+                                  ? 'Rest / No workouts logged' 
+                                  : `${day.count} workout${day.count > 1 ? 's' : ''} (${day.workouts.map(w => w.title).join(', ')} • ${day.volume.toLocaleString()} ${unit})`
+                              }`;
+
+                              return (
+                                <div
+                                  key={day.dateStr}
+                                  title={tooltipText}
+                                  className={`h-5 rounded-md transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] font-bold ${
+                                    day.isToday ? 'ring-2 ring-amber-400' : ''
+                                  } ${
+                                    isMulti
+                                      ? 'bg-emerald-400 text-stone-950 shadow-sm'
+                                      : hasWorkout
+                                      ? 'bg-emerald-600/80 text-white'
+                                      : 'bg-stone-950/80 border border-stone-800/80 hover:border-stone-700'
+                                  }`}
+                                >
+                                  {hasWorkout ? (isMulti ? '2+' : '✓') : ''}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Week Labels & Heatmap Legend */}
+                  <div className="flex items-center justify-between text-[10px] text-stone-500 pt-2 border-t border-stone-800/60 font-mono">
+                    <div className="flex items-center gap-4">
+                      <span>12 Weeks Ago</span>
+                      <span>&rarr;</span>
+                      <span className="text-amber-400 font-bold">This Week</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span>Less</span>
+                      <span className="w-3.5 h-3.5 rounded bg-stone-950 border border-stone-800" title="0 workouts" />
+                      <span className="w-3.5 h-3.5 rounded bg-emerald-600/80 flex items-center justify-center text-[8px] text-white" title="1 workout">✓</span>
+                      <span className="w-3.5 h-3.5 rounded bg-emerald-400 flex items-center justify-center text-[8px] text-stone-950 font-bold" title="2+ workouts">2+</span>
+                      <span>More</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Exercise 1RM & Overload Progression Curve Analytics */}
             {history.length > 0 && (() => {
               // Gather all unique exercises that have completed sets
@@ -3779,7 +4238,20 @@ export default function ExerciseTracker() {
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
                       <div>
-                        <h3 className="font-bold text-white text-base">{workout.title}</h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-bold text-white text-base">{workout.title}</h3>
+                          {workout.energyRating && (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                              workout.energyRating === 'High' 
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
+                                : workout.energyRating === 'Solid' 
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                                : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            }`}>
+                              {workout.energyRating === 'High' ? '⚡ High Energy' : workout.energyRating === 'Solid' ? '💪 Solid Energy' : '🥱 Fatigued'}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-3 text-xs text-stone-400 mt-0.5">
                           <span>{new Date(workout.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
                           <span>•</span>
@@ -3844,16 +4316,37 @@ export default function ExerciseTracker() {
                       </div>
                     </div>
 
+                    {/* Session Notes Strip if logged */}
+                    {workout.sessionNotes && (
+                      <div className="bg-stone-950/80 px-3.5 py-2.5 rounded-xl border border-stone-800/80 text-xs text-stone-300 flex items-start gap-2">
+                        <FileText className="w-4 h-4 text-amber-500/80 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <div className="text-[10px] uppercase font-mono font-bold text-stone-500">SESSION NOTES</div>
+                          <p className="italic text-stone-200">"{workout.sessionNotes}"</p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Exercise Breakdown */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                       {workout.exercises.map((ex, i) => (
                         <div key={i} className="bg-stone-950 p-3 rounded-xl border border-stone-800/80 text-xs space-y-1">
-                          <div className="font-bold text-stone-200">{ex.name}</div>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-bold text-stone-200 truncate">{ex.name}</span>
+                            {ex.supersetTag && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono font-bold border border-cyan-500/30 shrink-0">
+                                ⚡ {ex.supersetTag}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-stone-400 text-[11px]">{ex.split} • {ex.equipment}</div>
-                          <div className="font-mono text-stone-400 pt-1 text-[11px]">
+                          <div className="font-mono text-stone-400 pt-1 text-[11px] flex flex-wrap gap-x-2 gap-y-1">
                             {ex.sets.map((s, idx) => (
-                              <span key={idx} className="mr-2">
-                                Set {idx + 1}: {s.weight}{workout.unit} × {s.reps}
+                              <span key={idx} className="bg-stone-900/80 px-1.5 py-0.5 rounded border border-stone-800/60">
+                                S{idx + 1}: <strong className="text-white">{s.weight}{workout.unit}</strong> × {s.reps}
+                                {s.rpe !== undefined && s.rpe > 0 && (
+                                  <span className="text-amber-400 ml-1">@{s.rpe}</span>
+                                )}
                               </span>
                             ))}
                           </div>

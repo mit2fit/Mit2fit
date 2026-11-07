@@ -55,7 +55,8 @@ import {
   Gauge,
   FileText,
   Calendar,
-  ShieldAlert
+  ShieldAlert,
+  ArrowLeftRight
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -767,11 +768,23 @@ export default function ExerciseTracker() {
     weight: number;
   } | null>(null);
 
-  // Exercise Substitute Modal State
+  // Exercise Substitute Modal State (Active Workout)
   const [substituteModal, setSubstituteModal] = useState<{
     isOpen: boolean;
     exIdx: number;
     exercise: ExerciseDefinition;
+    search?: string;
+    filterMode?: 'SameMuscle' | 'SameSplit' | 'All';
+    updateRoutineTemplate?: boolean;
+  } | null>(null);
+
+  // Routine In-Place Exercise Replacement State (Routine Builder / Editor)
+  const [routineReplaceModal, setRoutineReplaceModal] = useState<{
+    isOpen: boolean;
+    cfgIdx: number;
+    currentExercise: ExerciseDefinition;
+    search: string;
+    filterMode: 'SameMuscle' | 'SameSplit' | 'All';
   } | null>(null);
 
   // In-App Confirmation Modal (Sandbox & iFrame safe - eliminates window.confirm)
@@ -1592,9 +1605,56 @@ export default function ExerciseTracker() {
       };
       return next;
     });
+
+    if (substituteModal?.updateRoutineTemplate) {
+      setRoutines(prev => prev.map(r => {
+        if (r.id !== activeTemplateId) return r;
+        const newIds = [...r.exerciseIds];
+        newIds[exIdx] = newExercise.id;
+        const newConfigs = r.exerciseConfigs ? [...r.exerciseConfigs] : [];
+        const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
+        const newWeight = prevPerf ? prevPerf.maxWeight : (newExercise.defaultTarget?.defaultWeight || 45);
+        const newReps = prevPerf ? prevPerf.targetReps : (newExercise.defaultTarget?.targetReps || 10);
+        if (newConfigs[exIdx]) {
+          newConfigs[exIdx] = {
+            ...newConfigs[exIdx],
+            exerciseId: newExercise.id,
+            equipment: newExercise.defaultEquipment,
+            targetWeight: newWeight,
+            targetReps: newReps
+          };
+        }
+        return {
+          ...r,
+          exerciseIds: newIds,
+          exerciseConfigs: newConfigs
+        };
+      }));
+    }
+
     setSubstituteModal(null);
-    setAlertNotice(`Swapped to ${newExercise.name}!`);
+    setAlertNotice(`Swapped to ${newExercise.name}!${substituteModal?.updateRoutineTemplate ? ' (Routine template updated)' : ''}`);
     setTimeout(() => setAlertNotice(null), 3500);
+  };
+
+  // Swap / Replace Exercise in Routine Editor (Preserves position/slot in routine)
+  const handleSwapRoutineExercise = (cfgIdx: number, newExercise: ExerciseDefinition) => {
+    if (!routineModal) return;
+    const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
+    const existingCfg = routineModal.exerciseConfigs[cfgIdx];
+    const newConfig = {
+      exerciseId: newExercise.id,
+      targetSets: existingCfg?.targetSets || 3,
+      targetReps: existingCfg?.targetReps || 10,
+      targetWeight: prevPerf?.maxWeight || newExercise.defaultTarget?.defaultWeight || 45,
+      equipment: newExercise.defaultEquipment
+    };
+    const updated = [...routineModal.exerciseConfigs];
+    updated[cfgIdx] = newConfig;
+    setRoutineModal({ ...routineModal, exerciseConfigs: updated });
+    setRoutineReplaceModal(null);
+    setAlertNotice(`Swapped slot #${cfgIdx + 1} to ${newExercise.name}!`);
+    setTimeout(() => setAlertNotice(null), 3000);
   };
 
   const addExerciseToWorkout = (exercise: ExerciseDefinition, equipment: string) => {
@@ -5435,36 +5495,99 @@ export default function ExerciseTracker() {
               </button>
             </div>
 
-            <div className="text-xs text-stone-400 bg-stone-950 p-3 rounded-xl border border-stone-800 flex items-center justify-between">
-              <span>Matching Muscle Group:</span>
-              <span className="font-bold text-amber-400 font-mono">{substituteModal.exercise.primaryMuscle} ({substituteModal.exercise.subCategory})</span>
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-stone-500 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search movements (e.g. Incline, Cable, Dumbbell)..."
+                value={substituteModal.search || ''}
+                onChange={(e) => setSubstituteModal({ ...substituteModal, search: e.target.value })}
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
             </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-0.5">
+              {(['SameMuscle', 'SameSplit', 'All'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSubstituteModal({ ...substituteModal, filterMode: mode })}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                    (substituteModal.filterMode || 'SameMuscle') === mode
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
+                  }`}
+                >
+                  {mode === 'SameMuscle' 
+                    ? `Same Muscle (${substituteModal.exercise.subCategory})` 
+                    : mode === 'SameSplit'
+                    ? `Same Split (${substituteModal.exercise.split})`
+                    : 'All 76 Exercises'}
+                </button>
+              ))}
+            </div>
+
+            {/* Routine Template Update Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer bg-stone-950/80 p-2.5 rounded-xl border border-stone-800 hover:border-stone-700 transition">
+              <input
+                type="checkbox"
+                checked={!!substituteModal.updateRoutineTemplate}
+                onChange={(e) => setSubstituteModal({ ...substituteModal, updateRoutineTemplate: e.target.checked })}
+                className="w-4 h-4 rounded text-emerald-500 bg-stone-900 border-stone-700 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+              />
+              <span className="text-xs text-stone-300">
+                Also update in active routine template (<strong className="text-amber-400">{sessionTitle}</strong>)
+              </span>
+            </label>
 
             {/* List of Alternate Movements */}
             <div className="overflow-y-auto space-y-2 flex-1 pr-1 divide-y divide-stone-800/40">
               {EXERCISE_DATABASE
-                .filter(ex => 
-                  ex.id !== substituteModal.exercise.id &&
-                  (ex.subCategory === substituteModal.exercise.subCategory || ex.split === substituteModal.exercise.split)
-                )
+                .filter(ex => {
+                  if (ex.id === substituteModal.exercise.id) return false;
+                  const query = (substituteModal.search || '').trim().toLowerCase();
+                  const matchesSearch = !query ||
+                    ex.name.toLowerCase().includes(query) ||
+                    ex.primaryMuscle.toLowerCase().includes(query) ||
+                    ex.subCategory.toLowerCase().includes(query);
+
+                  const mode = substituteModal.filterMode || 'SameMuscle';
+                  if (mode === 'SameMuscle') {
+                    return matchesSearch && ex.subCategory === substituteModal.exercise.subCategory;
+                  }
+                  if (mode === 'SameSplit') {
+                    return matchesSearch && ex.split === substituteModal.exercise.split;
+                  }
+                  return matchesSearch;
+                })
                 .map(altEx => {
                   const prevPerf = getPreviousExercisePerformance(altEx.id, altEx.name, history);
+                  const isSameMuscle = altEx.subCategory === substituteModal.exercise.subCategory;
                   return (
                     <div
                       key={altEx.id}
                       className="pt-2 flex items-center justify-between p-3 rounded-xl hover:bg-stone-950 transition border border-transparent hover:border-stone-800"
                     >
-                      <div className="space-y-1">
+                      <div className="space-y-1 min-w-0 pr-3">
                         <div className="font-bold text-white text-xs flex items-center gap-2">
-                          <span>{altEx.name}</span>
-                          <span className="text-[10px] font-mono text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40">
+                          <span className="truncate">{altEx.name}</span>
+                          <span className="text-[10px] font-mono text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40 shrink-0">
                             {altEx.defaultEquipment}
                           </span>
+                          {isSameMuscle && (
+                            <span className="text-[9px] font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30 shrink-0">
+                              Recommended
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-stone-400 flex items-center gap-2">
+                          <span>{altEx.subCategory}</span>
+                          <span>•</span>
                           <span>{altEx.primaryMuscle}</span>
                           {prevPerf && (
-                            <span className="text-amber-400 font-mono">
+                            <span className="text-amber-400 font-mono hidden sm:inline">
                               • Last logged: {prevPerf.maxWeight} {unit} × {prevPerf.targetReps}
                             </span>
                           )}
@@ -5473,9 +5596,10 @@ export default function ExerciseTracker() {
                       <button
                         type="button"
                         onClick={() => handleSubstituteExercise(substituteModal.exIdx, altEx)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm shrink-0 flex items-center gap-1.5"
                       >
-                        Select
+                        <ArrowLeftRight className="w-3 h-3" />
+                        <span>Swap</span>
                       </button>
                     </div>
                   );
@@ -5824,6 +5948,25 @@ export default function ExerciseTracker() {
                               </button>
                             </div>
 
+                            {/* Swap / Replace in Place */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRoutineReplaceModal({
+                                  isOpen: true,
+                                  cfgIdx,
+                                  currentExercise: def,
+                                  search: '',
+                                  filterMode: 'SameMuscle'
+                                });
+                              }}
+                              className="px-2 py-1 rounded bg-stone-900 hover:bg-emerald-950/60 text-stone-400 hover:text-emerald-400 border border-stone-800 hover:border-emerald-500/40 transition flex items-center gap-1 text-[11px]"
+                              title="Swap / Replace this exercise in place (keeps slot & target sets/reps)"
+                            >
+                              <ArrowLeftRight className="w-3 h-3 text-emerald-400" />
+                              <span className="font-semibold text-[10px]">Swap</span>
+                            </button>
+
                             {/* Remove */}
                             <button
                               type="button"
@@ -5881,6 +6024,153 @@ export default function ExerciseTracker() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL: SWAP / REPLACE EXERCISE IN ROUTINE TEMPLATE             */}
+      {/* ============================================================== */}
+      {routineReplaceModal && routineReplaceModal.isOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl max-h-[88vh] flex flex-col">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                  <ArrowLeftRight className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>Replace Exercise #{routineReplaceModal.cfgIdx + 1}</span>
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Swapping <strong className="text-stone-200">{routineReplaceModal.currentExercise.name}</strong> • Slot position and target sets/reps are preserved
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoutineReplaceModal(null)}
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-stone-500 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search 76 movements (e.g. Incline, Cable, Dumbbell)..."
+                value={routineReplaceModal.search}
+                onChange={(e) => setRoutineReplaceModal({ ...routineReplaceModal, search: e.target.value })}
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-0.5">
+              {(['SameMuscle', 'SameSplit', 'All'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setRoutineReplaceModal({ ...routineReplaceModal, filterMode: mode })}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                    routineReplaceModal.filterMode === mode
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
+                  }`}
+                >
+                  {mode === 'SameMuscle'
+                    ? `Same Muscle (${routineReplaceModal.currentExercise.subCategory})`
+                    : mode === 'SameSplit'
+                    ? `Same Split (${routineReplaceModal.currentExercise.split})`
+                    : 'All 76 Exercises'}
+                </button>
+              ))}
+            </div>
+
+            {/* Candidate List */}
+            <div className="overflow-y-auto space-y-2 flex-1 pr-1 divide-y divide-stone-800/40">
+              {EXERCISE_DATABASE
+                .filter(ex => {
+                  if (ex.id === routineReplaceModal.currentExercise.id) return false;
+                  const query = routineReplaceModal.search.trim().toLowerCase();
+                  const matchesSearch = !query ||
+                    ex.name.toLowerCase().includes(query) ||
+                    ex.primaryMuscle.toLowerCase().includes(query) ||
+                    ex.subCategory.toLowerCase().includes(query);
+                  
+                  if (routineReplaceModal.filterMode === 'SameMuscle') {
+                    return matchesSearch && ex.subCategory === routineReplaceModal.currentExercise.subCategory;
+                  }
+                  if (routineReplaceModal.filterMode === 'SameSplit') {
+                    return matchesSearch && ex.split === routineReplaceModal.currentExercise.split;
+                  }
+                  return matchesSearch;
+                })
+                .map(altEx => {
+                  const isAlreadyInRoutine = routineModal?.exerciseConfigs.some(
+                    (c, idx) => idx !== routineReplaceModal.cfgIdx && c.exerciseId === altEx.id
+                  );
+                  const prevPerf = getPreviousExercisePerformance(altEx.id, altEx.name, history);
+                  const isSameMuscle = altEx.subCategory === routineReplaceModal.currentExercise.subCategory;
+
+                  return (
+                    <div
+                      key={altEx.id}
+                      className="pt-2 flex items-center justify-between p-3 rounded-xl hover:bg-stone-950 transition border border-transparent hover:border-stone-800"
+                    >
+                      <div className="space-y-1 min-w-0 pr-3">
+                        <div className="font-bold text-white text-xs flex items-center gap-2">
+                          <span className="truncate">{altEx.name}</span>
+                          <span className="text-[10px] font-mono text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40 shrink-0">
+                            {altEx.defaultEquipment}
+                          </span>
+                          {isSameMuscle && (
+                            <span className="text-[9px] font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30 shrink-0">
+                              Recommended
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-stone-400 flex items-center gap-2">
+                          <span>{altEx.subCategory}</span>
+                          <span>•</span>
+                          <span>{altEx.primaryMuscle}</span>
+                          {prevPerf && (
+                            <span className="text-amber-400 font-mono hidden sm:inline">
+                              • Last: {prevPerf.summary} {unit}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isAlreadyInRoutine}
+                        onClick={() => handleSwapRoutineExercise(routineReplaceModal.cfgIdx, altEx)}
+                        className={`px-3 py-1.5 rounded-lg font-bold text-xs transition shadow-sm shrink-0 flex items-center gap-1.5 ${
+                          isAlreadyInRoutine
+                            ? 'bg-stone-800 text-stone-500 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        }`}
+                      >
+                        <ArrowLeftRight className="w-3 h-3" />
+                        <span>{isAlreadyInRoutine ? 'In Routine' : 'Swap into Slot'}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRoutineReplaceModal(null)}
+              className="w-full py-2.5 rounded-xl border border-stone-700 hover:bg-stone-800 text-stone-300 font-semibold text-xs transition"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

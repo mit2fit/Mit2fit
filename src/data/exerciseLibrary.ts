@@ -2866,6 +2866,43 @@ export const EXERCISE_DATABASE: ExerciseDefinition[] = [
       defaultWeight: 75,
       repsUnit: 'reps'
     }
+  },
+  {
+    id: 'standing-leg-curl',
+    name: 'Standing Leg Curl',
+    split: 'Lower Body',
+    subCategory: 'Hamstrings & Glutes',
+    category: 'Legs',
+    defaultEquipment: 'Machine',
+    supportedEquipment: ['Machine', 'Cable', 'Resistance Band'],
+    primaryMuscle: 'Hamstrings (Unilateral Knee Flexion)',
+    secondaryMuscles: ['Gastrocnemius', 'Gluteus Medius'],
+    animationType: 'squat',
+    cues: [
+      'Anchor torso firmly against chest pad and brace core with hips square',
+      'Curl single heel upward toward glute without hyperextending lower back',
+      'Pause peak contraction for 1 second, then control eccentric descent for 3 seconds'
+    ],
+    openSourceLink: {
+      label: 'MuscleWiki - Standing Leg Curl',
+      url: 'https://musclewiki.com/machine/male/hamstrings/standing-leg-curl',
+      source: 'MuscleWiki'
+    },
+    instructions: [
+      'Stand on footplate facing machine with front pad against torso and roller pad positioned just below lower calf.',
+      'Brace core and grip stability handles to keep pelvis aligned and prevent lumbar swinging.',
+      'Flex single knee to curl roller upward toward glute under strict control.',
+      'Squeeze hamstring peak contraction, then lower slowly through full range of motion.',
+      'Perform all prescribed reps before repeating on the opposite leg.'
+    ],
+    defaultTarget: {
+      targetSets: 3,
+      targetReps: 12,
+      minReps: 10,
+      maxReps: 15,
+      defaultWeight: 45,
+      repsUnit: 'reps'
+    }
   }
 ];
 

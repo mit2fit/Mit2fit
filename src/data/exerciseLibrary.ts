@@ -2870,6 +2870,8 @@ export const EXERCISE_DATABASE: ExerciseDefinition[] = [
 ];
 
 // Preset split routine templates for 1-click loading
+export type ExperienceLevel = 'Beginner' | 'Intermediate' | 'Advanced';
+
 export interface RoutineExerciseConfig {
   exerciseId: string;
   targetSets: number;
@@ -2883,6 +2885,9 @@ export interface RoutineTemplate {
   id: string;
   name: string;
   split: SplitCategory;
+  level: ExperienceLevel;
+  daysPerWeek?: string;
+  durationMin?: number;
   description: string;
   exerciseIds: string[];
   exerciseConfigs?: RoutineExerciseConfig[];
@@ -2893,15 +2898,173 @@ export interface WorkoutTemplate {
   id: string;
   name: string;
   split: SplitCategory;
+  level: ExperienceLevel;
+  daysPerWeek?: string;
+  durationMin?: number;
   description: string;
   exerciseIds: string[];
+  exerciseConfigs?: RoutineExerciseConfig[];
 }
 
 export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
+  // ==========================================
+  // BEGINNER ROUTINES (3 Days/Week • Motor Learning & Safe Loading)
+  // ==========================================
+  {
+    id: 'beginner-full-body-a',
+    name: 'Beginner Full Body A (Foundations)',
+    split: 'Full Circuit',
+    level: 'Beginner',
+    daysPerWeek: '3 days / week',
+    durationMin: 45,
+    description: 'Core multi-joint foundations: goblet squats, horizontal bench pressing, lat pulldowns, dumbbell hinges, and core brace.',
+    exerciseIds: [
+      'goblet-front-squat',
+      'bench-press',
+      'lat-pulldown',
+      'dumbbell-romanian-deadlift',
+      'side-plank'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'goblet-front-squat', targetSets: 3, targetReps: 10, targetWeight: 35, equipment: 'Dumbbell' },
+      { exerciseId: 'bench-press', targetSets: 3, targetReps: 8, targetWeight: 95, equipment: 'Barbell' },
+      { exerciseId: 'lat-pulldown', targetSets: 3, targetReps: 10, targetWeight: 85, equipment: 'Cable' },
+      { exerciseId: 'dumbbell-romanian-deadlift', targetSets: 3, targetReps: 10, targetWeight: 30, equipment: 'Dumbbell' },
+      { exerciseId: 'side-plank', targetSets: 3, targetReps: 45, targetWeight: 0, equipment: 'Bodyweight' }
+    ]
+  },
+  {
+    id: 'beginner-full-body-b',
+    name: 'Beginner Full Body B (Machine & DB Stability)',
+    split: 'Full Circuit',
+    level: 'Beginner',
+    daysPerWeek: '3 days / week',
+    durationMin: 45,
+    description: 'Guided knee flexion, overhead shoulder press mechanics, chest-supported rows, and functional carry.',
+    exerciseIds: [
+      'squat-or-leg-press',
+      'dumbbell-shoulder-press',
+      'chest-supported-row',
+      'leg-curl',
+      'farmers-walk'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'squat-or-leg-press', targetSets: 3, targetReps: 10, targetWeight: 140, equipment: 'Machine' },
+      { exerciseId: 'dumbbell-shoulder-press', targetSets: 3, targetReps: 10, targetWeight: 25, equipment: 'Dumbbell' },
+      { exerciseId: 'chest-supported-row', targetSets: 3, targetReps: 10, targetWeight: 70, equipment: 'Dumbbell' },
+      { exerciseId: 'leg-curl', targetSets: 3, targetReps: 12, targetWeight: 65, equipment: 'Machine' },
+      { exerciseId: 'farmers-walk', targetSets: 3, targetReps: 40, targetWeight: 35, equipment: 'Dumbbell' }
+    ]
+  },
+  {
+    id: 'beginner-upper-primer',
+    name: 'Beginner Upper Body Primer',
+    split: 'Upper Body',
+    level: 'Beginner',
+    daysPerWeek: '2-3 days / week',
+    durationMin: 40,
+    description: 'Balanced push-pull mechanics for upper body hypertrophy with minimal joint stress.',
+    exerciseIds: [
+      'push-ups-or-cable-chest-fly',
+      'seated-cable-row',
+      'dumbbell-lateral-raise',
+      'hammer-curl',
+      'triceps-rope-pushdown'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'push-ups-or-cable-chest-fly', targetSets: 3, targetReps: 12, targetWeight: 40, equipment: 'Cable' },
+      { exerciseId: 'seated-cable-row', targetSets: 3, targetReps: 10, targetWeight: 80, equipment: 'Cable' },
+      { exerciseId: 'dumbbell-lateral-raise', targetSets: 3, targetReps: 12, targetWeight: 15, equipment: 'Dumbbell' },
+      { exerciseId: 'hammer-curl', targetSets: 3, targetReps: 12, targetWeight: 20, equipment: 'Dumbbell' },
+      { exerciseId: 'triceps-rope-pushdown', targetSets: 3, targetReps: 12, targetWeight: 40, equipment: 'Cable' }
+    ]
+  },
+
+  // ==========================================
+  // INTERMEDIATE ROUTINES (4-5 Days/Week • Progressive Overload & Hypertrophy)
+  // ==========================================
+  {
+    id: 'intermediate-upper-power',
+    name: 'Intermediate Upper Power & Hypertrophy',
+    split: 'Upper Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
+    description: 'Heavy barbell bench & bent-over rows paired with incline pressing, close-grip lat pulldowns, lateral raises, and skull crushers.',
+    exerciseIds: [
+      'bench-press',
+      'barbell-bent-over-row',
+      'incline-dumbbell-press',
+      'close-grip-lat-pulldown',
+      'cable-lateral-raise',
+      'skull-crushers'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'bench-press', targetSets: 4, targetReps: 6, targetWeight: 165, equipment: 'Barbell' },
+      { exerciseId: 'barbell-bent-over-row', targetSets: 4, targetReps: 8, targetWeight: 135, equipment: 'Barbell' },
+      { exerciseId: 'incline-dumbbell-press', targetSets: 3, targetReps: 10, targetWeight: 55, equipment: 'Dumbbell' },
+      { exerciseId: 'close-grip-lat-pulldown', targetSets: 3, targetReps: 10, targetWeight: 120, equipment: 'Cable' },
+      { exerciseId: 'cable-lateral-raise', targetSets: 4, targetReps: 12, targetWeight: 20, equipment: 'Cable' },
+      { exerciseId: 'skull-crushers', targetSets: 3, targetReps: 10, targetWeight: 65, equipment: 'Barbell' }
+    ]
+  },
+  {
+    id: 'intermediate-lower-hypertrophy',
+    name: 'Intermediate Lower Quad & Posterior Chain',
+    split: 'Lower Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
+    description: 'Back squat strength progression followed by Romanian deadlifts, Bulgarian split squats, knee extensions, and calves.',
+    exerciseIds: [
+      'barbell-back-squat',
+      'romanian-deadlift',
+      'bulgarian-split-squat',
+      'leg-extension',
+      'seated-calf-raise',
+      'hanging-knee-raise'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'barbell-back-squat', targetSets: 4, targetReps: 6, targetWeight: 205, equipment: 'Barbell' },
+      { exerciseId: 'romanian-deadlift', targetSets: 3, targetReps: 8, targetWeight: 185, equipment: 'Barbell' },
+      { exerciseId: 'bulgarian-split-squat', targetSets: 3, targetReps: 10, targetWeight: 40, equipment: 'Dumbbell' },
+      { exerciseId: 'leg-extension', targetSets: 3, targetReps: 12, targetWeight: 110, equipment: 'Machine' },
+      { exerciseId: 'seated-calf-raise', targetSets: 4, targetReps: 12, targetWeight: 90, equipment: 'Machine' },
+      { exerciseId: 'hanging-knee-raise', targetSets: 3, targetReps: 12, targetWeight: 0, equipment: 'Bodyweight' }
+    ]
+  },
+  {
+    id: 'intermediate-push-pull-hybrid',
+    name: 'Intermediate Push / Pull Hybrid',
+    split: 'Upper Body',
+    level: 'Intermediate',
+    daysPerWeek: '4-5 days / week',
+    durationMin: 50,
+    description: 'Overhead barbell press, weighted dips, T-bar rowing, vertical pulls, face pulls, and EZ-bar curls.',
+    exerciseIds: [
+      'barbell-overhead-press',
+      'pull-up-or-lat-pulldown',
+      'weighted-chest-dips',
+      't-bar-row',
+      'face-pull-rear-delt-fly',
+      'ez-bar-biceps-curl'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'barbell-overhead-press', targetSets: 4, targetReps: 6, targetWeight: 105, equipment: 'Barbell' },
+      { exerciseId: 'pull-up-or-lat-pulldown', targetSets: 4, targetReps: 8, targetWeight: 130, equipment: 'Cable' },
+      { exerciseId: 'weighted-chest-dips', targetSets: 3, targetReps: 10, targetWeight: 25, equipment: 'Bodyweight' },
+      { exerciseId: 't-bar-row', targetSets: 3, targetReps: 10, targetWeight: 90, equipment: 'Barbell' },
+      { exerciseId: 'face-pull-rear-delt-fly', targetSets: 3, targetReps: 15, targetWeight: 45, equipment: 'Cable' },
+      { exerciseId: 'ez-bar-biceps-curl', targetSets: 3, targetReps: 10, targetWeight: 60, equipment: 'Barbell' }
+    ]
+  },
   {
     id: 'upper-day-a',
-    name: 'Upper Day A (Hypertrophy & Strength)',
+    name: 'Upper Day A (Classic Hypertrophy)',
     split: 'Upper Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
     description: 'Bench press, Chest-supported row, Incline DB press, Lat pulldown, Lateral raise, Triceps pushdown',
     exerciseIds: [
       'bench-press',
@@ -2910,12 +3073,23 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
       'lat-pulldown',
       'dumbbell-lateral-raise',
       'triceps-rope-pushdown'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'bench-press', targetSets: 3, targetReps: 10, targetWeight: 155, equipment: 'Barbell' },
+      { exerciseId: 'chest-supported-row', targetSets: 3, targetReps: 10, targetWeight: 75, equipment: 'Dumbbell' },
+      { exerciseId: 'incline-dumbbell-press', targetSets: 3, targetReps: 10, targetWeight: 50, equipment: 'Dumbbell' },
+      { exerciseId: 'lat-pulldown', targetSets: 3, targetReps: 10, targetWeight: 110, equipment: 'Cable' },
+      { exerciseId: 'dumbbell-lateral-raise', targetSets: 3, targetReps: 12, targetWeight: 20, equipment: 'Dumbbell' },
+      { exerciseId: 'triceps-rope-pushdown', targetSets: 3, targetReps: 12, targetWeight: 45, equipment: 'Cable' }
     ]
   },
   {
     id: 'lower-day-a',
     name: 'Lower Day A (Squat & Hamstring Focus)',
     split: 'Lower Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
     description: 'Squat/Leg press, Romanian deadlift, Bulgarian split squat, Leg curl, Standing calf raise, Cable crunch',
     exerciseIds: [
       'squat-or-leg-press',
@@ -2924,12 +3098,23 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
       'leg-curl',
       'standing-calf-raise',
       'cable-crunch'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'squat-or-leg-press', targetSets: 4, targetReps: 8, targetWeight: 185, equipment: 'Barbell' },
+      { exerciseId: 'romanian-deadlift', targetSets: 3, targetReps: 8, targetWeight: 175, equipment: 'Barbell' },
+      { exerciseId: 'bulgarian-split-squat', targetSets: 3, targetReps: 10, targetWeight: 35, equipment: 'Dumbbell' },
+      { exerciseId: 'leg-curl', targetSets: 3, targetReps: 12, targetWeight: 80, equipment: 'Machine' },
+      { exerciseId: 'standing-calf-raise', targetSets: 4, targetReps: 15, targetWeight: 135, equipment: 'Barbell' },
+      { exerciseId: 'cable-crunch', targetSets: 3, targetReps: 15, targetWeight: 60, equipment: 'Cable' }
     ]
   },
   {
     id: 'upper-day-b',
     name: 'Upper Day B (Vertical Pull & Overhead Focus)',
     split: 'Upper Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
     description: 'Pull-up/Lat pulldown, DB shoulder press, Seated cable row, Push-ups/Fly, Face pull, Hammer curl, Overhead triceps',
     exerciseIds: [
       'pull-up-or-lat-pulldown',
@@ -2939,12 +3124,24 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
       'face-pull-rear-delt-fly',
       'hammer-curl',
       'overhead-triceps-extension'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'pull-up-or-lat-pulldown', targetSets: 3, targetReps: 8, targetWeight: 120, equipment: 'Cable' },
+      { exerciseId: 'dumbbell-shoulder-press', targetSets: 3, targetReps: 10, targetWeight: 45, equipment: 'Dumbbell' },
+      { exerciseId: 'seated-cable-row', targetSets: 3, targetReps: 10, targetWeight: 95, equipment: 'Cable' },
+      { exerciseId: 'push-ups-or-cable-chest-fly', targetSets: 3, targetReps: 12, targetWeight: 45, equipment: 'Cable' },
+      { exerciseId: 'face-pull-rear-delt-fly', targetSets: 3, targetReps: 15, targetWeight: 40, equipment: 'Cable' },
+      { exerciseId: 'hammer-curl', targetSets: 3, targetReps: 12, targetWeight: 25, equipment: 'Dumbbell' },
+      { exerciseId: 'overhead-triceps-extension', targetSets: 3, targetReps: 12, targetWeight: 40, equipment: 'Dumbbell' }
     ]
   },
   {
     id: 'lower-day-b',
     name: 'Lower Day B (Posterior Chain & Unilateral Focus)',
     split: 'Lower Body',
+    level: 'Intermediate',
+    daysPerWeek: '4 days / week',
+    durationMin: 55,
     description: 'Hip thrust/Trap-bar, Goblet/Front squat, Reverse lunge, Seated leg curl, Seated calf raise, Hanging knee raise, Side plank',
     exerciseIds: [
       'hip-thrust-or-trap-bar-deadlift',
@@ -2954,6 +3151,119 @@ export const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
       'seated-calf-raise',
       'hanging-knee-raise',
       'side-plank'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'hip-thrust-or-trap-bar-deadlift', targetSets: 4, targetReps: 8, targetWeight: 185, equipment: 'Barbell' },
+      { exerciseId: 'goblet-front-squat', targetSets: 3, targetReps: 10, targetWeight: 50, equipment: 'Dumbbell' },
+      { exerciseId: 'reverse-lunge', targetSets: 3, targetReps: 10, targetWeight: 35, equipment: 'Dumbbell' },
+      { exerciseId: 'seated-leg-curl', targetSets: 3, targetReps: 12, targetWeight: 75, equipment: 'Machine' },
+      { exerciseId: 'seated-calf-raise', targetSets: 4, targetReps: 12, targetWeight: 80, equipment: 'Machine' },
+      { exerciseId: 'hanging-knee-raise', targetSets: 3, targetReps: 12, targetWeight: 0, equipment: 'Bodyweight' },
+      { exerciseId: 'side-plank', targetSets: 3, targetReps: 45, targetWeight: 0, equipment: 'Bodyweight' }
+    ]
+  },
+
+  // ==========================================
+  // ADVANCED ROUTINES (5-6 Days/Week • High-Threshold Specialization & Density)
+  // ==========================================
+  {
+    id: 'advanced-push-specialization',
+    name: 'Advanced Push (Heavy Chest & Delts)',
+    split: 'Upper Body',
+    level: 'Advanced',
+    daysPerWeek: '5-6 days / week',
+    durationMin: 70,
+    description: 'Heavy mechanical tension barbell benching, incline pressing, weighted chest dips, cable crossovers, and rope triceps extensions.',
+    exerciseIds: [
+      'bench-press',
+      'incline-barbell-bench-press',
+      'weighted-chest-dips',
+      'cable-chest-crossover',
+      'cable-lateral-raise',
+      'cable-overhead-triceps-rope'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'bench-press', targetSets: 5, targetReps: 5, targetWeight: 225, equipment: 'Barbell' },
+      { exerciseId: 'incline-barbell-bench-press', targetSets: 4, targetReps: 8, targetWeight: 175, equipment: 'Barbell' },
+      { exerciseId: 'weighted-chest-dips', targetSets: 4, targetReps: 8, targetWeight: 45, equipment: 'Bodyweight' },
+      { exerciseId: 'cable-chest-crossover', targetSets: 3, targetReps: 12, targetWeight: 30, equipment: 'Cable' },
+      { exerciseId: 'cable-lateral-raise', targetSets: 5, targetReps: 12, targetWeight: 25, equipment: 'Cable' },
+      { exerciseId: 'cable-overhead-triceps-rope', targetSets: 4, targetReps: 12, targetWeight: 55, equipment: 'Cable' }
+    ]
+  },
+  {
+    id: 'advanced-pull-specialization',
+    name: 'Advanced Pull (Deadlift & Lat Density)',
+    split: 'Upper Body',
+    level: 'Advanced',
+    daysPerWeek: '5-6 days / week',
+    durationMin: 70,
+    description: 'Heavy conventional deadlift strength, weighted chin-ups, T-bar rowing, straight-arm lat pushdowns, reverse pec deck, and incline curls.',
+    exerciseIds: [
+      'barbell-deadlift',
+      'chin-ups',
+      't-bar-row',
+      'straight-arm-lat-pushdown',
+      'reverse-pec-deck-fly',
+      'incline-dumbbell-biceps-curl'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'barbell-deadlift', targetSets: 4, targetReps: 4, targetWeight: 315, equipment: 'Barbell' },
+      { exerciseId: 'chin-ups', targetSets: 4, targetReps: 8, targetWeight: 25, equipment: 'Bodyweight' },
+      { exerciseId: 't-bar-row', targetSets: 4, targetReps: 8, targetWeight: 135, equipment: 'Barbell' },
+      { exerciseId: 'straight-arm-lat-pushdown', targetSets: 3, targetReps: 12, targetWeight: 50, equipment: 'Cable' },
+      { exerciseId: 'reverse-pec-deck-fly', targetSets: 4, targetReps: 15, targetWeight: 85, equipment: 'Machine' },
+      { exerciseId: 'incline-dumbbell-biceps-curl', targetSets: 4, targetReps: 10, targetWeight: 35, equipment: 'Dumbbell' }
+    ]
+  },
+  {
+    id: 'advanced-lower-overload',
+    name: 'Advanced Lower (Squat & Glute Peak Tension)',
+    split: 'Lower Body',
+    level: 'Advanced',
+    daysPerWeek: '5-6 days / week',
+    durationMin: 75,
+    description: 'Heavy Olympic back squats, heavy barbell hip thrusts, hack squats, Romanian deadlifts, calf extensions, and ab wheel rollouts.',
+    exerciseIds: [
+      'barbell-back-squat',
+      'barbell-hip-thrust',
+      'hack-squat',
+      'romanian-deadlift',
+      'leg-press-calf-raise',
+      'ab-wheel-rollout'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'barbell-back-squat', targetSets: 5, targetReps: 5, targetWeight: 275, equipment: 'Barbell' },
+      { exerciseId: 'barbell-hip-thrust', targetSets: 4, targetReps: 8, targetWeight: 245, equipment: 'Barbell' },
+      { exerciseId: 'hack-squat', targetSets: 4, targetReps: 10, targetWeight: 200, equipment: 'Machine' },
+      { exerciseId: 'romanian-deadlift', targetSets: 4, targetReps: 8, targetWeight: 225, equipment: 'Barbell' },
+      { exerciseId: 'leg-press-calf-raise', targetSets: 5, targetReps: 15, targetWeight: 220, equipment: 'Machine' },
+      { exerciseId: 'ab-wheel-rollout', targetSets: 4, targetReps: 12, targetWeight: 0, equipment: 'Bodyweight' }
+    ]
+  },
+  {
+    id: 'advanced-functional-conditioning',
+    name: 'Advanced Kettlebell & Athletic Conditioning',
+    split: 'Full Circuit',
+    level: 'Advanced',
+    daysPerWeek: '4-5 days / week',
+    durationMin: 55,
+    description: 'Multi-planar kinetic power: thrusters, clean & press, hardstyle swings, Turkish get-ups, anti-rotation cable presses, and heavy carries.',
+    exerciseIds: [
+      'barbell-thruster',
+      'kettlebell-clean-and-press',
+      'kettlebell-swing',
+      'kettlebell-turkish-get-up',
+      'cable-pallof-press',
+      'farmers-walk'
+    ],
+    exerciseConfigs: [
+      { exerciseId: 'barbell-thruster', targetSets: 4, targetReps: 8, targetWeight: 115, equipment: 'Barbell' },
+      { exerciseId: 'kettlebell-clean-and-press', targetSets: 4, targetReps: 6, targetWeight: 53, equipment: 'Kettlebell' },
+      { exerciseId: 'kettlebell-swing', targetSets: 5, targetReps: 15, targetWeight: 70, equipment: 'Kettlebell' },
+      { exerciseId: 'kettlebell-turkish-get-up', targetSets: 3, targetReps: 3, targetWeight: 44, equipment: 'Kettlebell' },
+      { exerciseId: 'cable-pallof-press', targetSets: 3, targetReps: 12, targetWeight: 40, equipment: 'Cable' },
+      { exerciseId: 'farmers-walk', targetSets: 4, targetReps: 45, targetWeight: 70, equipment: 'Dumbbell' }
     ]
   }
 ];

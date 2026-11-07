@@ -69,7 +69,8 @@ import {
   ExerciseDefinition,
   WorkoutTemplate,
   RoutineTemplate,
-  RoutineExerciseConfig
+  RoutineExerciseConfig,
+  ExperienceLevel
 } from '../data/exerciseLibrary';
 
 interface WorkoutSet {
@@ -372,10 +373,13 @@ export function getDefaultRoutines(): RoutineTemplate[] {
     id: tpl.id,
     name: tpl.name,
     split: tpl.split,
+    level: tpl.level,
+    daysPerWeek: tpl.daysPerWeek,
+    durationMin: tpl.durationMin,
     description: tpl.description,
     exerciseIds: tpl.exerciseIds,
     isCustom: false,
-    exerciseConfigs: tpl.exerciseIds.map(exId => {
+    exerciseConfigs: tpl.exerciseConfigs || tpl.exerciseIds.map(exId => {
       const def = EXERCISE_DATABASE.find(e => e.id === exId);
       return {
         exerciseId: exId,
@@ -640,16 +644,27 @@ function loadInitialHistory(): CompletedWorkout[] {
 }
 
 function loadInitialRoutines(): RoutineTemplate[] {
-  const saved = localStorage.getItem('mit2fit_workout_routines_v3');
+  const defaults = getDefaultRoutines();
+  const saved = localStorage.getItem('mit2fit_workout_routines_v4') || localStorage.getItem('mit2fit_workout_routines_v3');
   if (saved) {
     try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      const parsed: RoutineTemplate[] = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const customRoutines = parsed
+          .filter(r => r.isCustom)
+          .map(r => ({
+            ...r,
+            level: r.level || 'Intermediate'
+          }));
+        const defaultIds = new Set(defaults.map(d => d.id));
+        const userCustom = customRoutines.filter(r => !defaultIds.has(r.id));
+        return [...defaults, ...userCustom];
+      }
     } catch (e) {
       console.error('Failed to parse saved routines', e);
     }
   }
-  return getDefaultRoutines();
+  return defaults;
 }
 
 export default function ExerciseTracker() {
@@ -668,12 +683,15 @@ export default function ExerciseTracker() {
 
   // Sync routines to localStorage
   useEffect(() => {
-    localStorage.setItem('mit2fit_workout_routines_v3', JSON.stringify(routines));
+    localStorage.setItem('mit2fit_workout_routines_v4', JSON.stringify(routines));
   }, [routines]);
+
+  // Experience level filter for routine library
+  const [selectedRoutineLevel, setSelectedRoutineLevel] = useState<'All' | ExperienceLevel>('All');
 
   const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
-  const [sessionTitle, setSessionTitle] = useState(initialSession?.sessionTitle || 'Upper Day A (Hypertrophy & Strength)');
+  const [sessionTitle, setSessionTitle] = useState(initialSession?.sessionTitle || 'Upper Day A (Classic Hypertrophy)');
   const [activeTemplateId, setActiveTemplateId] = useState<string>(initialSession?.activeTemplateId || 'upper-day-a');
   
   // Stopwatch State: NEVER auto-starts, user initiates via "Start Workout"
@@ -699,6 +717,9 @@ export default function ExerciseTracker() {
     routineId?: string;
     name: string;
     split: SplitCategory;
+    level: ExperienceLevel;
+    daysPerWeek?: string;
+    durationMin?: number;
     description: string;
     exerciseConfigs: {
       exerciseId: string;
@@ -1017,6 +1038,9 @@ export default function ExerciseTracker() {
       mode: 'create',
       name: '',
       split: 'Upper Body',
+      level: 'Intermediate',
+      daysPerWeek: '4 days / week',
+      durationMin: 55,
       description: '',
       exerciseConfigs: [],
       isPickerOpen: false,
@@ -1046,6 +1070,9 @@ export default function ExerciseTracker() {
       routineId: routine.id,
       name: routine.name,
       split: routine.split,
+      level: routine.level || 'Intermediate',
+      daysPerWeek: routine.daysPerWeek,
+      durationMin: routine.durationMin,
       description: routine.description,
       exerciseConfigs: configs,
       isPickerOpen: false,
@@ -1069,6 +1096,9 @@ export default function ExerciseTracker() {
       mode: 'save_active',
       name: sessionTitle.includes('Custom') ? sessionTitle : `${sessionTitle} (Custom)`,
       split: activeExercises[0]?.exercise.split || 'Upper Body',
+      level: 'Intermediate',
+      daysPerWeek: '4 days / week',
+      durationMin: 55,
       description: `Custom routine with ${activeExercises.length} exercises`,
       exerciseConfigs: configs,
       isPickerOpen: false,
@@ -1123,6 +1153,9 @@ export default function ExerciseTracker() {
         id: newId,
         name: trimmedName,
         split: routineModal.split,
+        level: routineModal.level,
+        daysPerWeek: routineModal.daysPerWeek,
+        durationMin: routineModal.durationMin,
         description: routineModal.description || `${routineModal.exerciseConfigs.length} exercises (${routineModal.split})`,
         exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
         exerciseConfigs: routineModal.exerciseConfigs,
@@ -1136,10 +1169,14 @@ export default function ExerciseTracker() {
       }
       setAlertNotice(`Routine "${trimmedName}" created and loaded!`);
     } else if (routineModal.mode === 'edit' && routineModal.routineId) {
+      const existing = routines.find(r => r.id === routineModal.routineId);
       const updatedRoutine: RoutineTemplate = {
         id: routineModal.routineId,
         name: trimmedName,
         split: routineModal.split,
+        level: routineModal.level,
+        daysPerWeek: routineModal.daysPerWeek || existing?.daysPerWeek,
+        durationMin: routineModal.durationMin || existing?.durationMin,
         description: routineModal.description,
         exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
         exerciseConfigs: routineModal.exerciseConfigs,
@@ -1191,8 +1228,8 @@ export default function ExerciseTracker() {
   const handleRestoreDefaultRoutines = () => {
     setConfirmModal({
       isOpen: true,
-      title: 'Reset to Factory Routines?',
-      message: 'This will restore the 4 default MIT2FIT split templates. Your workout history will remain unaffected.',
+      title: 'Reset to Calibrated Routines?',
+      message: 'This will restore the full suite of calibrated MIT2FIT Beginner, Intermediate, and Advanced routine templates. Your workout history will remain unaffected.',
       confirmText: 'Restore Defaults',
       isDanger: false,
       onConfirm: () => {
@@ -2340,67 +2377,147 @@ export default function ExerciseTracker() {
                 </div>
               </div>
 
-              {/* Routine Cards Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {routines.map(tpl => {
-                  const isActive = activeTemplateId === tpl.id;
-                  return (
-                    <div
-                      key={tpl.id}
-                      className={`relative group p-3 rounded-xl border text-xs transition flex flex-col justify-between gap-2 ${
-                        isActive 
-                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-sm' 
-                          : 'bg-stone-950/60 border-stone-800 text-stone-400 hover:text-white hover:border-stone-700'
-                      }`}
-                    >
+              {/* Experience Level Filter Pills */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-800/60">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  {(['All', 'Beginner', 'Intermediate', 'Advanced'] as const).map(lvl => {
+                    const isSelected = selectedRoutineLevel === lvl;
+                    const count = lvl === 'All' ? routines.length : routines.filter(r => r.level === lvl).length;
+                    return (
                       <button
-                        onClick={() => handleLoadRoutine(tpl.id)}
-                        className="text-left w-full flex-grow flex flex-col justify-between gap-1 pr-14"
+                        key={lvl}
+                        onClick={() => setSelectedRoutineLevel(lvl)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                          isSelected
+                            ? lvl === 'Beginner'
+                              ? 'bg-emerald-500 text-stone-950 shadow-sm shadow-emerald-500/20'
+                              : lvl === 'Intermediate'
+                              ? 'bg-sky-500 text-stone-950 shadow-sm shadow-sky-500/20'
+                              : lvl === 'Advanced'
+                              ? 'bg-purple-500 text-white shadow-sm shadow-purple-500/20'
+                              : 'bg-amber-500 text-stone-950 shadow-sm shadow-amber-500/20'
+                            : 'bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800'
+                        }`}
                       >
-                        <div className="font-bold flex items-center justify-between gap-1">
-                          <span className="truncate">{tpl.name}</span>
-                          {isActive && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-stone-500">
-                          <span>{tpl.exerciseIds.length} Exercises</span>
-                          <span>•</span>
-                          <span className="text-stone-400">{tpl.split}</span>
-                          {tpl.isCustom && (
-                            <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 rounded font-semibold">
-                              Custom
-                            </span>
-                          )}
-                        </div>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          lvl === 'Beginner' 
+                            ? 'bg-emerald-400' 
+                            : lvl === 'Intermediate' 
+                            ? 'bg-sky-400' 
+                            : lvl === 'Advanced' 
+                            ? 'bg-purple-400' 
+                            : 'bg-amber-400'
+                        }`} />
+                        <span>{lvl}</span>
+                        <span className={`text-[10px] px-1 py-0.2 rounded-full font-mono ${
+                          isSelected 
+                            ? 'bg-black/20 text-current font-bold' 
+                            : 'bg-stone-800 text-stone-400'
+                        }`}>
+                          {count}
+                        </span>
                       </button>
+                    );
+                  })}
+                </div>
 
-                      {/* Card Edit & Delete Actions */}
-                      <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                <span className="text-[11px] text-stone-400 hidden sm:inline">
+                  Showing {routines.filter(r => selectedRoutineLevel === 'All' || r.level === selectedRoutineLevel).length} routines
+                </span>
+              </div>
+
+              {/* Routine Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                {routines
+                  .filter(r => selectedRoutineLevel === 'All' || r.level === selectedRoutineLevel)
+                  .map(tpl => {
+                    const isActive = activeTemplateId === tpl.id;
+                    const level = tpl.level || 'Intermediate';
+                    return (
+                      <div
+                        key={tpl.id}
+                        className={`relative group p-3.5 rounded-xl border text-xs transition flex flex-col justify-between gap-2.5 ${
+                          isActive 
+                            ? 'bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm shadow-amber-500/10' 
+                            : 'bg-stone-950/70 border-stone-800 text-stone-400 hover:text-white hover:border-stone-700'
+                        }`}
+                      >
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenEditRoutine(tpl);
-                          }}
-                          className="p-1 rounded bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition"
-                          title="Modify and save routine"
+                          onClick={() => handleLoadRoutine(tpl.id)}
+                          className="text-left w-full flex-grow flex flex-col justify-between gap-1.5 pr-14"
                         >
-                          <Edit3 className="w-3 h-3" />
+                          <div className="font-bold flex items-center justify-between gap-1">
+                            <span className="truncate text-[13px] text-white group-hover:text-amber-400 transition">
+                              {tpl.name}
+                            </span>
+                            {isActive && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                            {/* Tier Badge */}
+                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] border tracking-wider uppercase ${
+                              level === 'Beginner'
+                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                : level === 'Advanced'
+                                ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                                : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                            }`}>
+                              {level}
+                            </span>
+
+                            {tpl.daysPerWeek && (
+                              <span className="text-stone-300 bg-stone-900 border border-stone-800 px-1.5 py-0.5 rounded text-[10px]">
+                                {tpl.daysPerWeek.replace(' days / week', 'x/wk')}
+                              </span>
+                            )}
+
+                            {tpl.durationMin && (
+                              <span className="text-stone-400">~{tpl.durationMin}m</span>
+                            )}
+
+                            <span className="text-stone-600">•</span>
+                            <span className="text-stone-400 font-medium">{tpl.exerciseIds.length} Moves</span>
+
+                            {tpl.isCustom && (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-semibold border border-amber-500/30">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-stone-400 line-clamp-1">
+                            {tpl.description}
+                          </p>
                         </button>
-                        {tpl.isCustom && (
+
+                        {/* Card Edit & Delete Actions */}
+                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteRoutine(tpl.id);
+                              handleOpenEditRoutine(tpl);
                             }}
-                            className="p-1 rounded bg-stone-900/80 hover:bg-red-950/80 text-stone-500 hover:text-red-400 border border-stone-800 transition"
-                            title="Delete custom routine"
+                            className="p-1.5 rounded-lg bg-stone-900/90 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition"
+                            title="Modify and save routine"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Edit3 className="w-3.5 h-3.5" />
                           </button>
-                        )}
+                          {tpl.isCustom && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRoutine(tpl.id);
+                              }}
+                              className="p-1.5 rounded-lg bg-stone-900/90 hover:bg-red-950/80 text-stone-500 hover:text-red-400 border border-stone-800 transition"
+                              title="Delete custom routine"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             </div>
 
@@ -5413,7 +5530,7 @@ export default function ExerciseTracker() {
             {/* Modal Content Scroll Area */}
             <div className="p-5 overflow-y-auto space-y-5 text-xs">
               {/* Routine Meta Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-stone-400 font-bold mb-1 uppercase tracking-wider text-[10px]">
                     Routine Name <span className="text-amber-400">*</span>
@@ -5438,6 +5555,20 @@ export default function ExerciseTracker() {
                     {SPLIT_OPTIONS.map(s => (
                       <option key={s} value={s}>{s}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-stone-400 font-bold mb-1 uppercase tracking-wider text-[10px]">
+                    Experience Tier
+                  </label>
+                  <select
+                    value={routineModal.level || 'Intermediate'}
+                    onChange={(e) => setRoutineModal({ ...routineModal, level: e.target.value as ExperienceLevel })}
+                    className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 text-xs"
+                  >
+                    <option value="Beginner">Beginner (Foundations)</option>
+                    <option value="Intermediate">Intermediate (Overload)</option>
+                    <option value="Advanced">Advanced (Specialization)</option>
                   </select>
                 </div>
               </div>

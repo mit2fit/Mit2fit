@@ -73,6 +73,14 @@ import {
   RoutineExerciseConfig,
   ExperienceLevel
 } from '../data/exerciseLibrary';
+import {
+  ROUTINE_DEFINITIONS,
+  ROUTINE_TIER_LOOKUP,
+  buildParametricRoutine,
+  getAllParametricRoutines,
+  RoutineDefinition,
+  RoutineSlotPrescription
+} from '../data/routineLookupTable';
 
 interface WorkoutSet {
   id: string;
@@ -368,29 +376,9 @@ export function generateWarmupSets(targetWeight: number, unit: 'lbs' | 'kg'): Wo
   return warmupSets;
 }
 
-// Factory for default routines
+// Factory for default routines generated from relational lookup table
 export function getDefaultRoutines(): RoutineTemplate[] {
-  return WORKOUT_TEMPLATES.map(tpl => ({
-    id: tpl.id,
-    name: tpl.name,
-    split: tpl.split,
-    level: tpl.level,
-    daysPerWeek: tpl.daysPerWeek,
-    durationMin: tpl.durationMin,
-    description: tpl.description,
-    exerciseIds: tpl.exerciseIds,
-    isCustom: false,
-    exerciseConfigs: tpl.exerciseConfigs || tpl.exerciseIds.map(exId => {
-      const def = EXERCISE_DATABASE.find(e => e.id === exId);
-      return {
-        exerciseId: exId,
-        targetSets: def?.defaultTarget?.targetSets || 3,
-        targetReps: def?.defaultTarget?.targetReps || 10,
-        targetWeight: def?.defaultTarget?.defaultWeight || 45,
-        equipment: def?.defaultEquipment || 'Barbell'
-      };
-    })
-  }));
+  return getAllParametricRoutines();
 }
 
 // History-aware routine constructor: automatically pre-populates previous set weights and reps
@@ -689,6 +677,39 @@ export default function ExerciseTracker() {
 
   // Experience level filter for routine library
   const [selectedRoutineLevel, setSelectedRoutineLevel] = useState<'All' | ExperienceLevel>('All');
+  const [selectedRoutineSplitFilter, setSelectedRoutineSplitFilter] = useState<'All' | SplitCategory>('All');
+
+  // Relational Routine Tier Mapping (maps routineId -> selected ExperienceLevel)
+  const [routineTierMap, setRoutineTierMap] = useState<Record<string, ExperienceLevel>>(() => {
+    try {
+      const saved = localStorage.getItem('mit2fit_routine_tier_map');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      'full-body': 'Intermediate',
+      'upper-split': 'Intermediate',
+      'lower-split': 'Intermediate',
+      'push-split': 'Intermediate',
+      'pull-split': 'Intermediate',
+      'core-conditioning': 'Intermediate'
+    };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mit2fit_routine_tier_map', JSON.stringify(routineTierMap));
+    } catch {}
+  }, [routineTierMap]);
+
+  // Active Timed Hold State (for core holds, planks, etc.)
+  const [activeHoldTimer, setActiveHoldTimer] = useState<{
+    instanceId: string;
+    setIndex: number;
+    exerciseName: string;
+    initialSeconds: number;
+    secondsRemaining: number;
+    isRunning: boolean;
+  } | null>(null);
 
   const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
@@ -966,14 +987,140 @@ export default function ExerciseTracker() {
     return () => clearInterval(timer);
   }, [restSecondsLeft, isRestSoundEnabled]);
 
+  // Timed Hold Countdown with 3-2-1 Audio Ticks, Haptic Pulse, and Completion Chime
+  useEffect(() => {
+    if (!activeHoldTimer || !activeHoldTimer.isRunning) return;
+    const interval = setInterval(() => {
+      setActiveHoldTimer(prev => {
+        if (!prev || !prev.isRunning) return null;
+        if (prev.secondsRemaining <= 1) {
+          // Play triumphant double harmonic chime
+          try {
+            const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            const ctx = new AudioCtx();
+            const osc1 = ctx.createOscillator();
+            const gain1 = ctx.createGain();
+            osc1.type = 'triangle';
+            osc1.frequency.setValueAtTime(880, ctx.currentTime);
+            gain1.gain.setValueAtTime(0.18, ctx.currentTime);
+            gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+            osc1.connect(gain1);
+            gain1.connect(ctx.destination);
+            osc1.start();
+            osc1.stop(ctx.currentTime + 0.3);
+
+            const osc2 = ctx.createOscillator();
+            const gain2 = ctx.createGain();
+            osc2.type = 'triangle';
+            osc2.frequency.setValueAtTime(1174.66, ctx.currentTime + 0.16);
+            gain2.gain.setValueAtTime(0.20, ctx.currentTime + 0.16);
+            gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+            osc2.connect(gain2);
+            gain2.connect(ctx.destination);
+            osc2.start(ctx.currentTime + 0.16);
+            osc2.stop(ctx.currentTime + 0.55);
+          } catch {}
+
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try { navigator.vibrate([180, 90, 180]); } catch {}
+          }
+
+          // Auto-mark set completed and log exact hold duration
+          setActiveExercises(current => {
+            return current.map(ex => {
+              if (ex.instanceId === prev.instanceId) {
+                const updatedSets = [...ex.sets];
+                if (updatedSets[prev.setIndex]) {
+                  updatedSets[prev.setIndex] = {
+                    ...updatedSets[prev.setIndex],
+                    completed: true,
+                    reps: prev.initialSeconds
+                  };
+                }
+                return { ...ex, sets: updatedSets };
+              }
+              return ex;
+            });
+          });
+
+          // Trigger rest countdown if auto-rest is active
+          if (autoRestTimerEnabled) {
+            setRestSecondsLeft(restInitialSeconds);
+          }
+
+          setAlertNotice(`⏱️ Hold Complete (${prev.initialSeconds}s) for ${prev.exerciseName}! Rest started.`);
+          setTimeout(() => setAlertNotice(null), 3500);
+
+          return null;
+        }
+
+        // 3-2-1 countdown audio blip
+        if (prev.secondsRemaining <= 4 && prev.secondsRemaining >= 2) {
+          try {
+            const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+            const ctx = new AudioCtx();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+            gain.gain.setValueAtTime(0.10, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.12);
+          } catch {}
+        }
+
+        return {
+          ...prev,
+          secondsRemaining: prev.secondsRemaining - 1
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeHoldTimer?.isRunning, autoRestTimerEnabled, restInitialSeconds]);
+
+  // Timed Hold Actions
+  const handleStartHoldTimer = (instanceId: string, setIndex: number, exerciseName: string, initialSeconds: number) => {
+    const sec = Math.max(5, initialSeconds || 30);
+    setActiveHoldTimer({
+      instanceId,
+      setIndex,
+      exerciseName,
+      initialSeconds: sec,
+      secondsRemaining: sec,
+      isRunning: true
+    });
+    if (!hasStartedWorkout) {
+      setHasStartedWorkout(true);
+      setIsTimerRunning(true);
+    }
+  };
+
+  const handlePauseHoldTimer = () => {
+    setActiveHoldTimer(prev => prev ? { ...prev, isRunning: false } : null);
+  };
+
+  const handleResumeHoldTimer = () => {
+    setActiveHoldTimer(prev => prev ? { ...prev, isRunning: true } : null);
+  };
+
+  const handleCancelHoldTimer = () => {
+    setActiveHoldTimer(null);
+  };
+
   // Sync rest countdown to browser document title
   useEffect(() => {
-    if (restSecondsLeft !== null && restSecondsLeft > 0) {
+    if (activeHoldTimer && activeHoldTimer.isRunning) {
+      document.title = `⏱️ (${activeHoldTimer.secondsRemaining}s) ${activeHoldTimer.exerciseName} | Mit2Fit Tracker`;
+    } else if (restSecondsLeft !== null && restSecondsLeft > 0) {
       document.title = `⏱️ (${formatTime(restSecondsLeft)}) Rest | Mit2Fit Tracker`;
     } else {
       document.title = 'Mit2Fit | High-Performance Fitness & Hypertrophy Tracker';
     }
-  }, [restSecondsLeft]);
+  }, [restSecondsLeft, activeHoldTimer?.secondsRemaining, activeHoldTimer?.isRunning, activeHoldTimer?.exerciseName]);
 
   // Available Subcategories based on selected split (Dynamic Dual-Lens)
   const availableSubCategories = useMemo(() => {
@@ -1027,6 +1174,40 @@ export default function ExerciseTracker() {
   }, 0);
 
   const totalTargetSets = activeExercises.reduce((sum, ex) => sum + ex.targetSets, 0);
+
+  // Active parametric routine identification
+  const activeParametricDef = useMemo(() => {
+    return ROUTINE_DEFINITIONS.find(d => 
+      activeTemplateId === d.id || 
+      activeTemplateId.startsWith(`${d.id}-`)
+    );
+  }, [activeTemplateId]);
+
+  const activeRoutineTier: ExperienceLevel = useMemo(() => {
+    if (activeTemplateId.endsWith('-beginner')) return 'Beginner';
+    if (activeTemplateId.endsWith('-advanced')) return 'Advanced';
+    if (activeTemplateId.endsWith('-intermediate')) return 'Intermediate';
+    return (activeParametricDef && routineTierMap[activeParametricDef.id]) || 'Intermediate';
+  }, [activeTemplateId, activeParametricDef, routineTierMap]);
+
+  // Dynamic selection of parametric routines driven by relational lookup table
+  const handleSelectParametricRoutine = (defId: string, level: ExperienceLevel) => {
+    setRoutineTierMap(prev => ({ ...prev, [defId]: level }));
+    const routine = buildParametricRoutine(defId, level);
+    setActiveTemplateId(routine.id);
+    setSessionTitle(routine.name);
+    setActiveExercises(buildRoutineExercises(routine, history));
+    setElapsedSeconds(0);
+    setIsTimerRunning(false);
+    setHasStartedWorkout(false);
+    setAlertNotice(`Loaded "${routine.name}" (${level} tier)!`);
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  const handleSwitchActiveRoutineTier = (newTier: ExperienceLevel) => {
+    if (!activeParametricDef) return;
+    handleSelectParametricRoutine(activeParametricDef.id, newTier);
+  };
 
   // 1-Click Load Routine with Automatic History Auto-Adjustment
   const handleLoadRoutine = (routineId: string) => {
@@ -1458,7 +1639,19 @@ export default function ExerciseTracker() {
       next[exIdx].sets[setIdx] = { ...targetSet, completed: willBeCompleted };
       
       if (willBeCompleted) {
-        if (autoRestTimerEnabled) {
+        // Superset pairing flow: if this exercise is paired (e.g. A1) and followed by A2, transition with 0s rest
+        const currentEx = next[exIdx];
+        const nextEx = next[exIdx + 1];
+        const isSupersetFirstPart = 
+          Boolean(currentEx.supersetTag) && 
+          Boolean(nextEx?.supersetTag) && 
+          currentEx.supersetTag?.slice(0, 1) === nextEx?.supersetTag?.slice(0, 1) &&
+          currentEx.supersetTag?.endsWith('1');
+
+        if (isSupersetFirstPart) {
+          setAlertNotice(`⚡ SUPERSET TRANSITION: Move immediately to ${nextEx.exercise.name}! (0s rest between pairs)`);
+          setTimeout(() => setAlertNotice(null), 3500);
+        } else if (autoRestTimerEnabled) {
           setRestSecondsLeft(restInitialSeconds);
         }
 
@@ -2368,6 +2561,62 @@ export default function ExerciseTracker() {
           </div>
         )}
 
+        {/* Active Timed Hold Countdown Banner */}
+        {activeHoldTimer && (
+          <div className="bg-emerald-950/80 border-t border-emerald-500/50 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg shadow-emerald-950/50">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500 text-stone-950 flex items-center justify-center font-bold">
+                <Timer className="w-4 h-4 animate-spin" />
+              </div>
+              <div>
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <span>Hold Active: {activeHoldTimer.exerciseName}</span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    Set {activeHoldTimer.setIndex + 1}
+                  </span>
+                </span>
+                <span className="text-[11px] text-emerald-300/80 hidden sm:inline">
+                  Hold brace rigid. Chime & vibration will trigger at 0s.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="font-mono text-lg font-black text-emerald-400 px-2.5 py-0.5 bg-stone-950 rounded-lg border border-emerald-500/40">
+                {activeHoldTimer.secondsRemaining}s
+              </div>
+              {activeHoldTimer.isRunning ? (
+                <button
+                  type="button"
+                  onClick={handlePauseHoldTimer}
+                  className="px-2.5 py-1 bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-700 rounded-lg text-xs font-semibold flex items-center gap-1"
+                >
+                  <Pause className="w-3 h-3" />
+                  <span>Pause</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResumeHoldTimer}
+                  className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-400 text-stone-950 rounded-lg text-xs font-bold flex items-center gap-1"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Resume</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleCancelHoldTimer}
+                className="px-2 py-1 bg-stone-900 hover:bg-red-950/80 text-stone-400 hover:text-red-400 border border-stone-800 rounded-lg text-xs font-semibold flex items-center gap-1"
+                title="Cancel hold timer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Cancel</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Floating Notification / Confirmation Banner */}
         {alertNotice && (
           <div className="bg-emerald-950/90 border-t border-emerald-500/40 px-4 py-2 flex items-center justify-center gap-2 text-xs text-emerald-300 animate-in fade-in">
@@ -2437,154 +2686,327 @@ export default function ExerciseTracker() {
                 </div>
               </div>
 
-              {/* Experience Level Filter Pills */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-800/60">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                  {(['All', 'Beginner', 'Intermediate', 'Advanced'] as const).map(lvl => {
-                    const isSelected = selectedRoutineLevel === lvl;
-                    const count = lvl === 'All' ? routines.length : routines.filter(r => r.level === lvl).length;
-                    return (
-                      <button
-                        key={lvl}
-                        onClick={() => setSelectedRoutineLevel(lvl)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                          isSelected
-                            ? lvl === 'Beginner'
-                              ? 'bg-emerald-500 text-stone-950 shadow-sm shadow-emerald-500/20'
-                              : lvl === 'Intermediate'
-                              ? 'bg-sky-500 text-stone-950 shadow-sm shadow-sky-500/20'
-                              : lvl === 'Advanced'
-                              ? 'bg-purple-500 text-white shadow-sm shadow-purple-500/20'
-                              : 'bg-amber-500 text-stone-950 shadow-sm shadow-amber-500/20'
-                            : 'bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800'
-                        }`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          lvl === 'Beginner' 
-                            ? 'bg-emerald-400' 
-                            : lvl === 'Intermediate' 
-                            ? 'bg-sky-400' 
-                            : lvl === 'Advanced' 
-                            ? 'bg-purple-400' 
-                            : 'bg-amber-400'
-                        }`} />
-                        <span>{lvl}</span>
-                        <span className={`text-[10px] px-1 py-0.2 rounded-full font-mono ${
-                          isSelected 
-                            ? 'bg-black/20 text-current font-bold' 
-                            : 'bg-stone-800 text-stone-400'
-                        }`}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                            {/* Split & Experience Level Filter Bars */}
+              <div className="space-y-2 pt-1 border-t border-stone-800/60">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  {/* Split Category Filter Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Split:</span>
+                    {(["All", "Full Circuit", "Upper Body", "Lower Body", "Push", "Pull", "Core & Conditioning"] as const).map(split => {
+                      const isSelected = selectedRoutineSplitFilter === split;
+                      return (
+                        <button
+                          key={split}
+                          type="button"
+                          onClick={() => setSelectedRoutineSplitFilter(split)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+                            isSelected
+                              ? "bg-amber-500 text-stone-950 shadow-sm shadow-amber-500/20 font-bold"
+                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
+                          }`}
+                        >
+                          {split}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                <span className="text-[11px] text-stone-400 hidden sm:inline">
-                  Showing {routines.filter(r => selectedRoutineLevel === 'All' || r.level === selectedRoutineLevel).length} routines
-                </span>
+                  {/* Experience Level Filter Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Default Tier:</span>
+                    {(["All", "Beginner", "Intermediate", "Advanced"] as const).map(lvl => {
+                      const isSelected = selectedRoutineLevel === lvl;
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setSelectedRoutineLevel(lvl)}
+                          className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                            isSelected
+                              ? lvl === "Beginner"
+                                ? "bg-emerald-500 text-stone-950 shadow-sm"
+                                : lvl === "Intermediate"
+                                ? "bg-sky-500 text-stone-950 shadow-sm"
+                                : lvl === "Advanced"
+                                ? "bg-purple-500 text-white shadow-sm"
+                                : "bg-amber-500 text-stone-950 shadow-sm"
+                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
+                          }`}
+                        >
+                          <span>{lvl}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
-              {/* Routine Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                {routines
-                  .filter(r => selectedRoutineLevel === 'All' || r.level === selectedRoutineLevel)
-                  .map(tpl => {
-                    const isActive = activeTemplateId === tpl.id;
-                    const level = tpl.level || 'Intermediate';
+              {/* Core Relational Routine Cards Grid (Normalized 6-Split Architecture) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {ROUTINE_DEFINITIONS
+                  .filter(def => selectedRoutineSplitFilter === "All" || def.split === selectedRoutineSplitFilter)
+                  .map(def => {
+                    const cardTier: ExperienceLevel = 
+                      selectedRoutineLevel !== "All" 
+                        ? selectedRoutineLevel 
+                        : (routineTierMap[def.id] || "Intermediate");
+                    
+                    const lookup = ROUTINE_TIER_LOOKUP[def.id] || ROUTINE_TIER_LOOKUP["full-body"];
+                    const slotPrescriptions = lookup[cardTier] || lookup.Intermediate;
+                    const isActive = activeTemplateId === `${def.id}-${cardTier.toLowerCase()}` || 
+                      (activeTemplateId === def.id && activeRoutineTier === cardTier);
+
                     return (
                       <div
-                        key={tpl.id}
-                        className={`relative group p-3.5 rounded-xl border text-xs transition flex flex-col justify-between gap-2.5 ${
+                        key={def.id}
+                        className={`relative rounded-2xl border p-4 text-xs transition flex flex-col justify-between gap-3 shadow-lg ${
                           isActive 
-                            ? 'bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm shadow-amber-500/10' 
-                            : 'bg-stone-950/70 border-stone-800 text-stone-400 hover:text-white hover:border-stone-700'
+                            ? "bg-amber-950/20 border-amber-500/50 shadow-amber-500/10" 
+                            : "bg-stone-950/80 border-stone-800/90 hover:border-stone-700/80"
                         }`}
                       >
-                        <button
-                          onClick={() => handleLoadRoutine(tpl.id)}
-                          className="text-left w-full flex-grow flex flex-col justify-between gap-1.5 pr-14"
-                        >
-                          <div className="font-bold flex items-center justify-between gap-1">
-                            <span className="truncate text-[13px] text-white group-hover:text-amber-400 transition">
-                              {tpl.name}
-                            </span>
-                            {isActive && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                            {/* Tier Badge */}
-                            <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] border tracking-wider uppercase ${
-                              level === 'Beginner'
-                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                : level === 'Advanced'
-                                ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
-                                : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                        {/* Header: Split badge, duration, frequency */}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] tracking-wider uppercase border ${
+                              def.split === "Full Circuit"
+                                ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                : def.split === "Upper Body"
+                                ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                                : def.split === "Lower Body"
+                                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                : def.split === "Push"
+                                ? "bg-orange-500/15 text-orange-300 border-orange-500/30"
+                                : def.split === "Pull"
+                                ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
+                                : "bg-purple-500/15 text-purple-300 border-purple-500/30"
                             }`}>
-                              {level}
+                              {def.split}
                             </span>
-
-                            {tpl.daysPerWeek && (
-                              <span className="text-stone-300 bg-stone-900 border border-stone-800 px-1.5 py-0.5 rounded text-[10px]">
-                                {tpl.daysPerWeek.replace(' days / week', 'x/wk')}
-                              </span>
-                            )}
-
-                            {tpl.durationMin && (
-                              <span className="text-stone-400">~{tpl.durationMin}m</span>
-                            )}
-
-                            <span className="text-stone-600">•</span>
-                            <span className="text-stone-400 font-medium">{tpl.exerciseIds.length} Moves</span>
-
-                            {tpl.isCustom && (
-                              <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-semibold border border-amber-500/30">
-                                Custom
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5 text-[11px] text-stone-400 font-mono">
+                              <span>~{def.estimatedDurationMin}m</span>
+                              <span>•</span>
+                              <span>{def.targetFrequency}</span>
+                            </div>
                           </div>
 
-                          <p className="text-[11px] text-stone-400 line-clamp-1">
-                            {tpl.description}
-                          </p>
-                        </button>
+                          <div>
+                            <h3 className="text-sm font-bold text-white group-hover:text-amber-400 transition flex items-center justify-between">
+                              <span>{def.name}</span>
+                              {isActive && (
+                                <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1 font-mono">
+                                  <Check className="w-3.5 h-3.5" /> ACTIVE
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[11px] text-stone-400 mt-1 line-clamp-2 leading-relaxed">
+                              {def.description}
+                            </p>
+                          </div>
 
-                        {/* Card Edit & Delete Actions */}
-                        <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                          {/* Inline Tier Selector [ Beginner | Intermediate | Advanced ] */}
+                          <div className="flex items-center gap-1 bg-stone-900/90 p-1 rounded-xl border border-stone-800">
+                            {(["Beginner", "Intermediate", "Advanced"] as const).map(tier => {
+                              const isTierSelected = cardTier === tier;
+                              return (
+                                <button
+                                  key={tier}
+                                  type="button"
+                                  onClick={() => {
+                                    setRoutineTierMap(prev => ({ ...prev, [def.id]: tier }));
+                                    if (activeParametricDef?.id === def.id) {
+                                      handleSelectParametricRoutine(def.id, tier);
+                                    }
+                                  }}
+                                  className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold transition text-center flex items-center justify-center gap-1 ${
+                                    isTierSelected
+                                      ? tier === "Beginner"
+                                        ? "bg-emerald-500 text-stone-950 shadow-sm shadow-emerald-500/30"
+                                        : tier === "Advanced"
+                                        ? "bg-purple-500 text-white shadow-sm shadow-purple-500/30"
+                                        : "bg-sky-500 text-stone-950 shadow-sm shadow-sky-500/30"
+                                      : "text-stone-400 hover:text-white hover:bg-stone-800"
+                                  }`}
+                                  title={`Switch ${def.name} to ${tier} prescription tier`}
+                                >
+                                  <span>{tier}</span>
+                                  {isTierSelected && <span className="w-1 h-1 rounded-full bg-current" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Dynamic Prescribed Slots Preview */}
+                          <div className="bg-stone-900/50 rounded-xl p-2.5 border border-stone-800/70 space-y-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pb-1 border-b border-stone-800">
+                              <span className="uppercase font-semibold tracking-wider">
+                                {cardTier} Prescriptions ({slotPrescriptions.length} Moves)
+                              </span>
+                              <span>Target Sets × Reps</span>
+                            </div>
+
+                            <div className="space-y-1 max-h-36 overflow-y-auto no-scrollbar pr-0.5">
+                              {slotPrescriptions.map((slot, sIdx) => {
+                                const ex = EXERCISE_DATABASE.find(e => e.id === slot.exerciseId);
+                                const isTimed = slot.exerciseId === "side-plank" || slot.exerciseId === "farmers-walk";
+                                return (
+                                  <div
+                                    key={`${slot.slotNumber}-${slot.exerciseId}`}
+                                    className="flex items-center justify-between text-[11px] py-0.5 border-b border-stone-900/70 last:border-0"
+                                  >
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="font-mono text-[10px] text-stone-500 w-3.5 shrink-0">
+                                        {sIdx + 1}.
+                                      </span>
+                                      <span className="font-medium text-stone-200 truncate">
+                                        {ex?.name || slot.exerciseId}
+                                      </span>
+                                      {slot.blockType === "superset" && (
+                                        <span className="px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/30 shrink-0 flex items-center gap-0.5">
+                                          <Zap className="w-2.5 h-2.5 text-cyan-400" />
+                                          {slot.supersetGroup}{slot.supersetOrder}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                                      <span className="text-stone-300 font-semibold">
+                                        {slot.targetSets}×{slot.targetReps}{isTimed ? "s" : ""}
+                                      </span>
+                                      {slot.targetWeight > 0 ? (
+                                        <span className="text-amber-400/90 font-medium">@{slot.targetWeight}{unit}</span>
+                                      ) : (
+                                        <span className="text-stone-500">BW</span>
+                                      )}
+                                      {slot.targetRpe && (
+                                        <span className="text-emerald-400/80 font-medium">@{slot.targetRpe}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Actions: Customize & Load Routine */}
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-800/80">
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenEditRoutine(tpl);
-                            }}
-                            className="p-1.5 rounded-lg bg-stone-900/90 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition"
-                            title="Modify and save routine"
+                            type="button"
+                            onClick={() => handleOpenEditRoutine(buildParametricRoutine(def.id, cardTier))}
+                            className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition flex items-center gap-1.5 text-xs"
+                            title="Customize this tier in Routine Builder"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Customize</span>
                           </button>
-                          {tpl.isCustom && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteRoutine(tpl.id);
-                              }}
-                              className="p-1.5 rounded-lg bg-stone-900/90 hover:bg-red-950/80 text-stone-500 hover:text-red-400 border border-stone-800 transition"
-                              title="Delete custom routine"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleSelectParametricRoutine(def.id, cardTier)}
+                            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition ${
+                              isActive
+                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                                : "bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-md shadow-amber-500/20"
+                            }`}
+                          >
+                            {isActive ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Active Session</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>Load {cardTier} Routine</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
                     );
                   })}
               </div>
+
+              {/* Custom User Routines Section */}
+              {routines.filter(r => r.isCustom).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-stone-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                      <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Custom Created Routines ({routines.filter(r => r.isCustom).length})</span>
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {routines
+                      .filter(r => r.isCustom)
+                      .map(tpl => {
+                        const isActive = activeTemplateId === tpl.id;
+                        return (
+                          <div
+                            key={tpl.id}
+                            className={`p-3.5 rounded-xl border text-xs transition flex flex-col justify-between gap-2.5 ${
+                              isActive 
+                                ? "bg-amber-500/15 border-amber-500/50 text-amber-300" 
+                                : "bg-stone-950/70 border-stone-800 text-stone-400"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="font-bold text-white text-[13px]">{tpl.name}</span>
+                                <div className="flex items-center gap-1.5 text-[10px] text-stone-400 mt-0.5">
+                                  <span className="text-amber-400 font-semibold">{tpl.split}</span>
+                                  <span>•</span>
+                                  <span>{tpl.exerciseIds.length} Moves</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditRoutine(tpl)}
+                                  className="p-1 rounded bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300"
+                                  title="Edit custom routine"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRoutine(tpl.id)}
+                                  className="p-1 rounded bg-stone-900 hover:bg-red-950/80 text-stone-500 hover:text-red-400"
+                                  title="Delete custom routine"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <p className="text-[11px] text-stone-400 line-clamp-1">{tpl.description}</p>
+
+                            <button
+                              type="button"
+                              onClick={() => handleLoadRoutine(tpl.id)}
+                              className={`w-full py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                isActive 
+                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" 
+                                  : "bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-800"
+                              }`}
+                            >
+                              {isActive ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Play className="w-3 h-3 fill-current" />}
+                              <span>{isActive ? "Active Routine" : "Load Routine"}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Workout Controls Bar */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-stone-900/40 p-4 rounded-2xl border border-stone-800">
               <div className="space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <Activity className="w-5 h-5 text-amber-500" />
                     {sessionTitle}
@@ -2600,6 +3022,36 @@ export default function ExerciseTracker() {
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
+
+                  {/* Active Routine Tier Switcher (Dynamically adjusts active prescriptions) */}
+                  {activeParametricDef && (
+                    <div className="flex items-center gap-1 bg-stone-900/90 border border-stone-800 p-1 rounded-xl ml-1">
+                      <span className="text-[10px] text-stone-400 uppercase font-mono px-1 font-semibold">Tier:</span>
+                      {(['Beginner', 'Intermediate', 'Advanced'] as const).map(tier => {
+                        const isCurrent = activeRoutineTier === tier;
+                        return (
+                          <button
+                            key={tier}
+                            type="button"
+                            onClick={() => handleSwitchActiveRoutineTier(tier)}
+                            className={`px-2 py-0.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                              isCurrent
+                                ? tier === 'Beginner'
+                                  ? 'bg-emerald-500 text-stone-950 shadow-sm'
+                                  : tier === 'Advanced'
+                                  ? 'bg-purple-500 text-white shadow-sm'
+                                  : 'bg-sky-500 text-stone-950 shadow-sm'
+                                : 'text-stone-400 hover:text-white hover:bg-stone-800'
+                            }`}
+                            title={`Switch active routine prescription to ${tier}`}
+                          >
+                            <span>{tier}</span>
+                            {isCurrent && <Check className="w-3 h-3 stroke-[3]" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <p className="text-xs text-stone-400">
                   Target weights & reps automatically adjust from your past history. Tap + / - to adjust without retyping.
@@ -2816,6 +3268,15 @@ export default function ExerciseTracker() {
                   const completedWorkingCount = activeEx.sets.filter(s => s.completed && s.type === 'Working').length;
                   const targetHitCount = activeEx.sets.filter(s => s.completed && s.type === 'Working' && s.reps >= activeEx.targetReps).length;
                   const repsUnit = activeEx.exercise.defaultTarget?.repsUnit || 'reps';
+                  const isTimedHold = 
+                    activeEx.exercise.loadType === 'bodyweight_timed' || 
+                    repsUnit.includes('sec') || 
+                    activeEx.exercise.id === 'side-plank' || 
+                    activeEx.exercise.name.toLowerCase().includes('plank');
+                  const isBodyweight = 
+                    activeEx.exercise.defaultEquipment === 'Bodyweight' || 
+                    activeEx.exercise.loadType === 'bodyweight_reps' || 
+                    activeEx.exercise.loadType === 'bodyweight_timed';
                   const prevPerf = getPreviousExercisePerformance(activeEx.exercise.id, activeEx.exercise.name, history);
 
                   return (
@@ -2850,6 +3311,16 @@ export default function ExerciseTracker() {
                             <span className="text-[11px] font-mono text-cyan-400 px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40">
                               {activeEx.equipment}
                             </span>
+                            {isTimedHold ? (
+                              <span className="text-[11px] font-bold text-emerald-300 px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/40 flex items-center gap-1 font-mono">
+                                <Timer className="w-3 h-3 text-emerald-400" />
+                                Timed Hold ({repsUnit})
+                              </span>
+                            ) : isBodyweight ? (
+                              <span className="text-[11px] font-mono text-stone-300 px-2 py-0.5 rounded bg-stone-800 border border-stone-700">
+                                Bodyweight
+                              </span>
+                            ) : null}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
@@ -3174,14 +3645,20 @@ export default function ExerciseTracker() {
                           <div className="grid grid-cols-12 gap-2 text-[11px] font-bold text-stone-400 uppercase tracking-wider px-2 pb-1 border-b border-stone-800">
                             <div className="col-span-1 text-center">Set</div>
                             <div className="col-span-2">Type</div>
-                            <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} text-center`}>Weight ({unit})</div>
-                            <div className="col-span-3 text-center">Reps ({repsUnit})</div>
+                            <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} text-center`}>
+                              {isTimedHold ? `Load (+${unit})` : isBodyweight ? `Load (+${unit})` : `Weight (${unit})`}
+                            </div>
+                            <div className="col-span-3 text-center">
+                              {isTimedHold ? 'Hold (sec)' : `Reps (${repsUnit})`}
+                            </div>
                             {showRpeColumn && (
                               <div className="col-span-2 text-center" title="Rate of Perceived Exertion / Reps In Reserve">
                                 RPE / RIR
                               </div>
                             )}
-                            <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} text-right`}>Log</div>
+                            <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} text-right`}>
+                              {isTimedHold ? 'Hold / Log' : 'Log'}
+                            </div>
                           </div>
 
                           {activeEx.sets.map((set, sIdx) => {
@@ -3393,9 +3870,43 @@ export default function ExerciseTracker() {
                                   </div>
                                 )}
 
-                                {/* Complete Checkmark & Clone */}
-                                <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} flex items-center justify-end gap-1.5`}>
-                                  {!showRpeColumn && (
+                                {/* Complete Checkmark & Clone / Hold Button */}
+                                <div className={`${showRpeColumn ? "col-span-1" : "col-span-2"} flex items-center justify-end gap-1.5`}>
+                                  {isTimedHold && (
+                                    activeHoldTimer && activeHoldTimer.instanceId === activeEx.instanceId && activeHoldTimer.setIndex === sIdx ? (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={activeHoldTimer.isRunning ? handlePauseHoldTimer : handleResumeHoldTimer}
+                                          className="px-2 py-1 rounded bg-emerald-500 text-stone-950 font-mono font-bold text-[10px] animate-pulse flex items-center gap-1 shadow-sm shadow-emerald-500/40"
+                                          title="Tap to Pause/Resume Hold"
+                                        >
+                                          <Timer className="w-3 h-3 animate-spin" />
+                                          <span>{activeHoldTimer.secondsRemaining}s</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={handleCancelHoldTimer}
+                                          className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-red-400 text-[10px]"
+                                          title="Cancel hold timer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartHoldTimer(activeEx.instanceId, sIdx, activeEx.exercise.name, set.reps || activeEx.targetReps || 45)}
+                                        className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition shrink-0"
+                                        title={`Start ${set.reps || activeEx.targetReps || 45}s countdown hold`}
+                                      >
+                                        <Play className="w-2.5 h-2.5 fill-current" />
+                                        <span>Hold</span>
+                                      </button>
+                                    )
+                                  )}
+
+                                  {!showRpeColumn && !isTimedHold && (
                                     <button
                                       onClick={() => cloneSet(exIdx, sIdx)}
                                       className="p-1.5 rounded-lg text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition"
@@ -3409,10 +3920,10 @@ export default function ExerciseTracker() {
                                     onClick={() => toggleSetCompleted(exIdx, sIdx)}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center transition font-bold shrink-0 ${
                                       set.completed 
-                                        ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30' 
-                                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-white'
+                                        ? "bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30" 
+                                        : "bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-white"
                                     }`}
-                                    title={set.completed ? 'Mark Incomplete' : 'Complete Set & Start Rest'}
+                                    title={set.completed ? "Mark Incomplete" : "Complete Set & Start Rest"}
                                   >
                                     <Check className="w-4 h-4 stroke-[3]" />
                                   </button>

@@ -26,12 +26,15 @@ export interface ExerciseTarget {
   repsUnit?: string;  // 'reps' | 'per leg' | 'sec/side'
 }
 
+export type LoadType = 'weight_reps' | 'bodyweight_reps' | 'bodyweight_timed' | 'assisted';
+
 export interface ExerciseDefinition {
   id: string;
   name: string;
   split: SplitCategory;
   subCategory: MuscleSubCategory;
   category: 'Chest' | 'Back' | 'Legs' | 'Shoulders' | 'Arms' | 'Core' | 'Full Body'; // legacy/compatibility
+  loadType?: LoadType;
   defaultEquipment: 'Barbell' | 'Dumbbell' | 'Kettlebell' | 'Cable' | 'Machine' | 'Bodyweight' | 'Resistance Band' | 'Trap Bar';
   supportedEquipment: string[];
   primaryMuscle: string;

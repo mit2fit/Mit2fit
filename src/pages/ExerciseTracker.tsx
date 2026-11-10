@@ -63,7 +63,8 @@ import {
   SlidersHorizontal,
   Target,
   Scale,
-  Compass
+  Compass,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -385,6 +386,321 @@ export function generateWarmupSets(targetWeight: number, unit: 'lbs' | 'kg'): Wo
   }
 
   return warmupSets;
+}
+
+export interface FormFaultItem {
+  fault: string;
+  risk: string;
+  fix: string;
+  checkpoint: string;
+}
+
+export function getExerciseFormFaults(exercise: ExerciseDefinition): FormFaultItem[] {
+  const name = exercise.name.toLowerCase();
+  const pattern = exercise.movementPattern || 'isolation';
+
+  // Specific high-frequency lift breakdowns
+  if (name.includes('bench press') || name.includes('chest press') || name.includes('pushup')) {
+    return [
+      {
+        fault: '90° Flared Elbows (T-Position)',
+        risk: 'Subacromial impingement and anterior rotator cuff shear under load.',
+        fix: 'Tuck elbows at ~45° (Arrow shape). Drive shoulder blades into back pockets.',
+        checkpoint: 'Forearms remain completely vertical under the bar throughout descent.'
+      },
+      {
+        fault: 'Bouncing Bar Off Ribcage',
+        risk: 'Sternal bruising and loss of stretch-shortening muscular control.',
+        fix: 'Kiss the sternum gently, pause 1 full second at stretch, then explode upward.',
+        checkpoint: 'Control descent with lats; zero bounce or chest caving.'
+      },
+      {
+        fault: 'Lifting Butt Off Bench for Extra Drive',
+        risk: 'Excessive lumbar shear stress and disqualifying technical breakdown.',
+        fix: 'Drive heels through the floor (leg drive) into the bench, keeping glutes glued down.',
+        checkpoint: 'Head, upper back, glutes, and feet stay firmly locked in position.'
+      }
+    ];
+  }
+
+  if (name.includes('squat')) {
+    return [
+      {
+        fault: 'Knee Valgus (Knees Collapsing Inward)',
+        risk: 'Excessive lateral patellofemoral pressure and ACL shear strain.',
+        fix: 'Spread the floor with your feet. Track knees directly over your 2nd toe.',
+        checkpoint: 'Screw feet into ground clockwise/counter-clockwise before descent.'
+      },
+      {
+        fault: 'Good-Morning Squat (Hips Shoot Up First)',
+        risk: 'Shifts load entirely to lumbar erectors, bypassing quadriceps.',
+        fix: 'Drive traps upward into the bar simultaneously with foot pressure.',
+        checkpoint: 'Chest and hips rise at the exact same angle out of the hole.'
+      },
+      {
+        fault: 'Heels Rising Off Ground',
+        risk: 'Loss of posterior chain stability, excessive patellar tendon stress.',
+        fix: 'Tripod foot pressure: balance load over heel, big toe base, and pinky toe.',
+        checkpoint: 'Verify weight is planted over midfoot and heels throughout descent.'
+      }
+    ];
+  }
+
+  if (name.includes('deadlift') || name.includes('rdl') || name.includes('romanian')) {
+    return [
+      {
+        fault: 'Lumbar Spine Rounding (Cat Back)',
+        risk: 'Extreme anterior disc compression and shear forces under axial loading.',
+        fix: 'Engage lats ("crush oranges in armpits"). Pull slack out of the bar before pushing floor.',
+        checkpoint: 'Maintain proud chest and neutral cervical spine (eyes 10 feet ahead).'
+      },
+      {
+        fault: 'Squatting the Hinge (Knees Drift Forward)',
+        risk: 'Robs hamstrings and glutes of optimal eccentric stretch and tension.',
+        fix: 'Shins remain near-vertical. Push hips backward toward the wall behind you.',
+        checkpoint: 'Bar stays in continuous contact with thighs and shins throughout path.'
+      },
+      {
+        fault: 'Hyperextending Lumbar Spine at Lockout',
+        risk: 'Facet joint pinching and anterior pelvic tilt compression.',
+        fix: 'Lock out strictly by squeezing glutes hard. Stand tall in a straight vertical line.',
+        checkpoint: 'Glutes clamped, ribs locked down, no backward lean at top.'
+      }
+    ];
+  }
+
+  if (name.includes('overhead') || name.includes('shoulder press') || name.includes('arnold')) {
+    return [
+      {
+        fault: 'Leaning Back / Arching Lower Spine',
+        risk: 'Turns vertical press into dangerous incline press on lumbar vertebrae.',
+        fix: 'Squeeze glutes and pull ribcage down. Brace abs like anticipating a punch.',
+        checkpoint: 'Torso stays rigid as steel; legs straight and tight.'
+      },
+      {
+        fault: 'Pressing Forward in Front of Face',
+        risk: 'Excessive anterior shoulder strain and loss of vertical mechanical lever.',
+        fix: 'Pull chin back slightly on ascent, then push "head through the window" at lockout.',
+        checkpoint: 'Biceps align directly beside ears at top of the rep.'
+      }
+    ];
+  }
+
+  if (name.includes('row')) {
+    return [
+      {
+        fault: 'Jerking Torso Upward (Using Momentum)',
+        risk: 'Reduces lat activation; places sudden eccentric strain on lower back.',
+        fix: 'Lock torso strictly at 45°. Initiate pull from shoulder blades, not lumbar swing.',
+        checkpoint: 'Pause at contraction for 1 full second to prove zero momentum.'
+      },
+      {
+        fault: 'Shrugging Traps Toward Ears',
+        risk: 'Over-recruits upper traps and neck muscles while silencing the lats.',
+        fix: 'Keep shoulders depressed down. Drive elbows toward pants pockets.',
+        checkpoint: 'Space between earlobes and shoulders stays wide.'
+      }
+    ];
+  }
+
+  if (name.includes('pullup') || name.includes('chin') || name.includes('lat pulldown')) {
+    return [
+      {
+        fault: 'Pulling with Arms Without Scapular Depression',
+        risk: 'Over-relies on biceps, rounds shoulders forward at top.',
+        fix: 'Execute "Hang → Pack → Pull": depress shoulder blades first, then drive elbows down.',
+        checkpoint: 'Chest meets the bar or handle; elbows point to hip crests.'
+      },
+      {
+        fault: 'Swinging / Kicking Legs for Momentum',
+        risk: 'Diminishes hypertrophy stimulus by unloading the stretch position.',
+        fix: 'Cross ankles, lock knees, and maintain slight hollow-body core brace.',
+        checkpoint: 'Torso stays steady with zero sway.'
+      }
+    ];
+  }
+
+  if (name.includes('lunge') || name.includes('split squat') || name.includes('step')) {
+    return [
+      {
+        fault: 'Front Heel Lifting / Weight on Toes',
+        risk: 'Excessive shear across the patellar tendon.',
+        fix: 'Plant entire front foot firmly; drive 70% force through the front heel.',
+        checkpoint: 'Front shin stays perpendicular or slightly forward with solid heel ground contact.'
+      },
+      {
+        fault: 'Pelvis Tilting or Twisting Sideways',
+        risk: 'Uneven hip load and sacroiliac joint discomfort.',
+        fix: 'Keep both hip headlights pointing strictly forward throughout the descent.',
+        checkpoint: 'Squeeze glute of back leg to stabilize pelvic alignment.'
+      }
+    ];
+  }
+
+  if (name.includes('plank') || name.includes('wheel') || name.includes('leg raise') || name.includes('deadbug')) {
+    return [
+      {
+        fault: 'Sagging Lumbar Spine (Anterior Tilt)',
+        risk: 'Zero abdominal recruitment; transfers full load to lumbar vertebrae.',
+        fix: 'Tuck tailbone in posterior pelvic tilt. Knit lower ribs toward hip bones.',
+        checkpoint: 'Squeeze glutes and brace like taking a punch.'
+      }
+    ];
+  }
+
+  // Fallback by movement pattern
+  switch (pattern) {
+    case 'horizontal_push':
+      return [
+        { fault: 'Flaring Elbows Past 80°', risk: 'Rotator cuff impingement.', fix: 'Keep elbows tucked at ~45° from ribs.', checkpoint: 'Arrow profile from above.' },
+        { fault: 'Loss of Scapular Retraction', risk: 'Anterior shoulder strain.', fix: 'Pinch shoulder blades together throughout movement.', checkpoint: 'Chest stays open and broad.' }
+      ];
+    case 'vertical_push':
+      return [
+        { fault: 'Lumbar Hyperextension', risk: 'Spinal facet stress.', fix: 'Clench glutes and brace core down.', checkpoint: 'Vertical line from ear to hip.' }
+      ];
+    case 'squat':
+      return [
+        { fault: 'Knee Cave Inward', risk: 'Patellar tendon strain.', fix: 'Drive knees outward over middle toes.', checkpoint: 'Tripod foot contact.' },
+        { fault: 'Chest Collapsing Forward', risk: 'Lumbar overload.', fix: 'Keep thoracic spine extended and elbows under the load.', checkpoint: 'Proud chest.' }
+      ];
+    case 'hinge':
+      return [
+        { fault: 'Spinal Flexion', risk: 'Disc strain.', fix: 'Hinge back with neutral spine and tight lats.', checkpoint: 'Shin angle remains vertical.' }
+      ];
+    case 'horizontal_pull':
+    case 'vertical_pull':
+      return [
+        { fault: 'Initiating with Biceps', risk: 'Reduced lat stimulus.', fix: 'Drive elbows back and down; retract scapulae first.', checkpoint: 'Feel lats contract.' }
+      ];
+    default:
+      return [
+        { fault: 'Using Excessive Momentum', risk: 'Unloads target muscle and risks joint strain.', fix: 'Control 3-second eccentric cadence on every repetition.', checkpoint: 'Zero body swing.' },
+        { fault: 'Incomplete Range of Motion', risk: 'Misses high-tension stretch hypertrophy.', fix: 'Take each rep through full controlled stretch and peak contraction.', checkpoint: 'Full joint excursion.' }
+      ];
+  }
+}
+
+export function getRecommendedTempo(exercise: ExerciseDefinition): {
+  code: string;
+  eccentric: number;
+  pause: number;
+  concentric: number;
+  lockout: number;
+  description: string;
+} {
+  const name = exercise.name.toLowerCase();
+  const pattern = exercise.movementPattern || 'isolation';
+
+  if (exercise.loadType === 'bodyweight_timed') {
+    return {
+      code: 'Continuous Isometric',
+      eccentric: 0,
+      pause: 30,
+      concentric: 0,
+      lockout: 0,
+      description: 'Continuous maximal isometric tension. Clench glutes and brace anterior core without sagging.'
+    };
+  }
+
+  if (name.includes('deadlift') || pattern === 'hinge') {
+    return {
+      code: '2-1-1-0',
+      eccentric: 2,
+      pause: 1,
+      concentric: 1,
+      lockout: 0,
+      description: '2s lowering under lat control, 1s dead-stop reset on floor (no bouncing), 1s explosive pull.'
+    };
+  }
+
+  if (pattern === 'horizontal_pull' || pattern === 'vertical_pull') {
+    return {
+      code: '2-0-1-1',
+      eccentric: 2,
+      pause: 0,
+      concentric: 1,
+      lockout: 1,
+      description: '1s explosive pull, 1s hard squeeze contraction at chest/ribs, 2s smooth eccentric stretch.'
+    };
+  }
+
+  if (pattern === 'isolation') {
+    return {
+      code: '3-0-1-1',
+      eccentric: 3,
+      pause: 0,
+      concentric: 1,
+      lockout: 1,
+      description: '3s slow negative stretch, 1s concentric acceleration, 1s peak muscular squeeze.'
+    };
+  }
+
+  // Standard hypertrophy compound (Squat, Bench, Overhead Press, Dips)
+  return {
+    code: '3-1-1-0',
+    eccentric: 3,
+    pause: 1,
+    concentric: 1,
+    lockout: 0,
+    description: '3s controlled lowering, 1s paused stretch at inflection point (zero bounce), 1s explosive drive.'
+  };
+}
+
+export interface WarmupStageItem {
+  stage: string;
+  weight: number;
+  reps: number;
+  rpe: number;
+  pct: string;
+  label: string;
+}
+
+export function calculateWarmupPyramid(workingWeight: number, unit: 'lbs' | 'kg'): WarmupStageItem[] {
+  const barWeight = unit === 'lbs' ? 45 : 20;
+  const step = unit === 'lbs' ? 5 : 2.5;
+  const roundLoad = (w: number) => Math.max(barWeight, Math.round(w / step) * step);
+
+  if (workingWeight <= barWeight) {
+    return [
+      { stage: 'Stage 1: Mobility & Form', weight: workingWeight, reps: 10, rpe: 4, pct: '100%', label: 'Joint Lubrication & Pattern Groove' },
+      { stage: 'Stage 2: Moderate Primer', weight: workingWeight, reps: 8, rpe: 5, pct: '100%', label: 'Neuromuscular Potentiation' },
+      { stage: 'Stage 3: Working Set Ready', weight: workingWeight, reps: 5, rpe: 6, pct: '100%', label: 'Final Set Readiness' }
+    ];
+  }
+
+  const set1 = barWeight;
+  const set2 = roundLoad(workingWeight * 0.5);
+  const set3 = roundLoad(workingWeight * 0.7);
+  const set4 = roundLoad(workingWeight * 0.85);
+
+  const stages: WarmupStageItem[] = [
+    { stage: 'Stage 1: Base Barbell / Primer', weight: set1, reps: 10, rpe: 4, pct: `${Math.round((set1 / workingWeight) * 100)}%`, label: 'Joint Lubrication & Bar Path Groove' },
+    { stage: 'Stage 2: 50% Potentiation', weight: set2, reps: 5, rpe: 5, pct: '50%', label: 'Awaken Motor Units & Core Stability' },
+    { stage: 'Stage 3: 70% Movement Groove', weight: set3, reps: 3, rpe: 6, pct: '70%', label: 'Heavy Bar Speed & Technical Form Check' },
+  ];
+
+  if (set4 > set3 && set4 < workingWeight) {
+    stages.push({
+      stage: 'Stage 4: 85% CNS Activation',
+      weight: set4,
+      reps: 1,
+      rpe: 7,
+      pct: '85%',
+      label: 'Prime Nervous System (Zero Fatigue Primer Single)'
+    });
+  }
+
+  stages.push({
+    stage: 'Stage 5: Target Working Sets',
+    weight: workingWeight,
+    reps: 10,
+    rpe: 8,
+    pct: '100%',
+    label: 'Prescribed Adaptive Working Volume'
+  });
+
+  return stages;
 }
 
 // Factory for default routines generated from relational lookup table
@@ -792,6 +1108,21 @@ export default function ExerciseTracker() {
   // Modals & Popups
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedGuideExercise, setSelectedGuideExercise] = useState<ExerciseDefinition | null>(null);
+  const [guideActiveTab, setGuideActiveTab] = useState<'technique' | 'faults' | 'tempo' | 'warmup' | 'swaps'>('technique');
+  const [guideWarmupWeight, setGuideWarmupWeight] = useState<number>(135);
+  const [isGuideTempoRunning, setIsGuideTempoRunning] = useState<boolean>(false);
+  const [guideTempoPhase, setGuideTempoPhase] = useState<string>('Eccentric Lowering');
+  const [guideTempoCountdown, setGuideTempoCountdown] = useState<number>(3);
+
+  const openExerciseGuide = (exercise: ExerciseDefinition) => {
+    setSelectedGuideExercise(exercise);
+    setGuideActiveTab('technique');
+    setIsGuideTempoRunning(false);
+    const inWorkout = activeExercises.find(ae => ae.exercise.id === exercise.id || ae.exercise.name.toLowerCase() === exercise.name.toLowerCase());
+    const load = inWorkout?.targetWeight || inWorkout?.sets[0]?.weight || exercise.defaultTarget?.defaultWeight || (unit === 'kg' ? 60 : 135);
+    setGuideWarmupWeight(load > 0 ? load : (unit === 'kg' ? 60 : 135));
+  };
+
   const [completedModalData, setCompletedModalData] = useState<CompletedWorkout | null>(null);
   const [isDataPortalOpen, setIsDataPortalOpen] = useState(false);
   const [alertNotice, setAlertNotice] = useState<string | null>(null);
@@ -1163,6 +1494,74 @@ export default function ExerciseTracker() {
       }
     }
   }, [selectedSplit, selectedSubCategory]);
+
+  // Interactive Cadence & Tempo Metronome loop for Exercise Guide
+  useEffect(() => {
+    if (!isGuideTempoRunning || !selectedGuideExercise) return;
+
+    let phaseIndex = 0;
+    const tempoInfo = getRecommendedTempo(selectedGuideExercise);
+    const ecc = tempoInfo.eccentric > 0 ? tempoInfo.eccentric : 3;
+    const pause = tempoInfo.pause > 0 ? tempoInfo.pause : 1;
+    const con = tempoInfo.concentric > 0 ? tempoInfo.concentric : 1;
+    const lock = tempoInfo.lockout > 0 ? tempoInfo.lockout : 0;
+
+    const sequence: { phase: string; count: number; freq: number }[] = [];
+    for (let i = ecc; i >= 1; i--) {
+      sequence.push({ phase: 'Eccentric (Lowering)', count: i, freq: 440 });
+    }
+    if (pause > 0) {
+      for (let i = pause; i >= 1; i--) {
+        sequence.push({ phase: 'Stretch Inflection (Pause)', count: i, freq: 554.37 });
+      }
+    }
+    for (let i = con; i >= 1; i--) {
+      sequence.push({ phase: 'Concentric (Explode Up)', count: i, freq: 880 });
+    }
+    if (lock > 0) {
+      for (let i = lock; i >= 1; i--) {
+        sequence.push({ phase: 'Lockout (Peak Squeeze)', count: i, freq: 659.25 });
+      }
+    }
+
+    if (sequence.length === 0) return;
+
+    setGuideTempoPhase(sequence[0].phase);
+    setGuideTempoCountdown(sequence[0].count);
+
+    const playClick = (freq: number) => {
+      try {
+        if (!isRestSoundEnabled) return;
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.11);
+      } catch {
+        // autoplay restriction safe catch
+      }
+    };
+
+    playClick(sequence[0].freq);
+
+    const timer = setInterval(() => {
+      phaseIndex = (phaseIndex + 1) % sequence.length;
+      const stepItem = sequence[phaseIndex];
+      setGuideTempoPhase(stepItem.phase);
+      setGuideTempoCountdown(stepItem.count);
+      playClick(stepItem.freq);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isGuideTempoRunning, selectedGuideExercise, isRestSoundEnabled]);
 
   // Filtered exercises for Library & Add Modal
   const filteredExercises = useMemo(() => {
@@ -3488,7 +3887,7 @@ export default function ExerciseTracker() {
 
                           <button
                             type="button"
-                            onClick={() => setSelectedGuideExercise(activeEx.exercise)}
+                            onClick={() => openExerciseGuide(activeEx.exercise)}
                             className="px-2.5 py-1.5 rounded-xl border border-stone-700 bg-stone-800/80 text-xs text-stone-300 hover:text-amber-400 hover:border-amber-500/40 flex items-center gap-1.5 transition font-semibold"
                             title="Open form guide & biomechanics"
                           >
@@ -5577,7 +5976,7 @@ export default function ExerciseTracker() {
                       <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between gap-2">
                         <button
                           type="button"
-                          onClick={() => setSelectedGuideExercise(exercise)}
+                          onClick={() => openExerciseGuide(exercise)}
                           className="text-xs text-stone-300 hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 transition font-semibold"
                         >
                           <BookOpen className="w-3.5 h-3.5 text-amber-400" />
@@ -6282,110 +6681,684 @@ export default function ExerciseTracker() {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL 2: DEDICATED EXERCISE EXECUTION GUIDE & FORM CUES        */}
+      {/* MODAL 2: EXPANDED BIOMECHANICAL EXECUTION & TECHNIQUE GUIDE    */}
       {/* ============================================================== */}
-      {selectedGuideExercise && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between border-b border-stone-800 pb-4">
-              <div>
-                <h3 className="text-xl font-bold text-white">{selectedGuideExercise.name}</h3>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400 mt-1">
-                  <span className="text-amber-400 font-semibold">{selectedGuideExercise.split}</span>
-                  <span>•</span>
-                  <span>{selectedGuideExercise.subCategory}</span>
-                  <span>•</span>
-                  <span className="text-cyan-400 font-mono">{selectedGuideExercise.defaultEquipment}</span>
+      {selectedGuideExercise && (() => {
+        const faults = getExerciseFormFaults(selectedGuideExercise);
+        const tempo = getRecommendedTempo(selectedGuideExercise);
+        const warmupPyramid = calculateWarmupPyramid(guideWarmupWeight, unit);
+        const activeExInWorkout = activeExercises.find(
+          ae => ae.exercise.id === selectedGuideExercise.id || ae.exercise.name.toLowerCase() === selectedGuideExercise.name.toLowerCase()
+        );
+        const activeExIndex = activeExercises.findIndex(
+          ae => ae.exercise.id === selectedGuideExercise.id || ae.exercise.name.toLowerCase() === selectedGuideExercise.name.toLowerCase()
+        );
+
+        // Direct substitutes from exercise database
+        const directSubstitutes = (selectedGuideExercise.substituteIds || [])
+          .map(id => EXERCISE_DATABASE.find(e => e.id === id))
+          .filter((e): e is ExerciseDefinition => Boolean(e));
+
+        // Related variations by movement pattern & muscle subcategory
+        const relatedSubstitutes = directSubstitutes.length > 0
+          ? directSubstitutes
+          : EXERCISE_DATABASE.filter(e =>
+              e.id !== selectedGuideExercise.id &&
+              (e.movementPattern === selectedGuideExercise.movementPattern || e.subCategory === selectedGuideExercise.subCategory)
+            ).slice(0, 4);
+
+        const handleAddWarmupSetsToWorkout = (exercise: ExerciseDefinition, pyramid: WarmupStageItem[]) => {
+          const warmupOnly = pyramid.slice(0, pyramid.length - 1);
+          if (warmupOnly.length === 0) return;
+
+          setActiveExercises(prev => {
+            const existingIdx = prev.findIndex(ae => ae.exercise.id === exercise.id || ae.exercise.name.toLowerCase() === exercise.name.toLowerCase());
+            if (existingIdx !== -1) {
+              const next = [...prev];
+              const targetEx = next[existingIdx];
+              const existingWorkingSets = targetEx.sets.filter(s => s.type !== 'Warmup');
+              const newWarmupSets: WorkoutSet[] = warmupOnly.map((p, idx) => ({
+                id: `s-warmup-${Date.now()}-${idx + 1}`,
+                setNumber: idx + 1,
+                weight: p.weight,
+                reps: p.reps,
+                completed: false,
+                type: 'Warmup',
+                rpe: p.rpe
+              }));
+              const renumberedWorking = existingWorkingSets.map((s, idx) => ({
+                ...s,
+                setNumber: newWarmupSets.length + idx + 1
+              }));
+              next[existingIdx] = {
+                ...targetEx,
+                sets: [...newWarmupSets, ...renumberedWorking]
+              };
+              return next;
+            } else {
+              const targetSets = exercise.defaultTarget?.targetSets || 3;
+              const targetReps = exercise.defaultTarget?.targetReps || 10;
+              const targetWeight = guideWarmupWeight || exercise.defaultTarget?.defaultWeight || 45;
+              const newWarmupSets: WorkoutSet[] = warmupOnly.map((p, idx) => ({
+                id: `s-warmup-${Date.now()}-${idx + 1}`,
+                setNumber: idx + 1,
+                weight: p.weight,
+                reps: p.reps,
+                completed: false,
+                type: 'Warmup',
+                rpe: p.rpe
+              }));
+              const workingSets: WorkoutSet[] = Array.from({ length: targetSets }).map((_, sIdx) => ({
+                id: `s-${Date.now()}-${sIdx + 1}`,
+                setNumber: newWarmupSets.length + sIdx + 1,
+                weight: targetWeight,
+                reps: targetReps,
+                completed: false,
+                type: 'Working'
+              }));
+              return [
+                ...prev,
+                {
+                  instanceId: `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                  exercise,
+                  equipment: exercise.defaultEquipment,
+                  targetSets,
+                  targetReps,
+                  targetWeight,
+                  minReps: exercise.defaultTarget?.minReps || 8,
+                  maxReps: exercise.defaultTarget?.maxReps || 12,
+                  sets: [...newWarmupSets, ...workingSets]
+                }
+              ];
+            }
+          });
+
+          setAlertNotice(`Added ${warmupOnly.length} warmup ramp sets for ${exercise.name} into active workout!`);
+          setTimeout(() => setAlertNotice(null), 3500);
+          setSelectedGuideExercise(null);
+          setIsGuideTempoRunning(false);
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
+            <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-3xl w-full flex flex-col shadow-2xl max-h-[92vh] overflow-hidden">
+              {/* Modal Sticky Header */}
+              <div className="p-5 border-b border-stone-800 flex items-start justify-between gap-4 bg-stone-950/80">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold uppercase tracking-wider">
+                      Master Biomechanics Guide
+                    </span>
+                    {selectedGuideExercise.movementPattern && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                        {selectedGuideExercise.movementPattern.replace('_', ' ').toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                    {selectedGuideExercise.name}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
+                    <span className="text-amber-400 font-semibold">{selectedGuideExercise.split}</span>
+                    <span>·</span>
+                    <span className="text-stone-300">{selectedGuideExercise.subCategory}</span>
+                    <span>·</span>
+                    <span className="text-stone-400">{selectedGuideExercise.defaultEquipment}</span>
+                    <span>·</span>
+                    <span className="text-stone-400">Prime: <strong className="text-white">{selectedGuideExercise.primaryMuscle}</strong></span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGuideExercise(null);
+                    setIsGuideTempoRunning(false);
+                  }}
+                  className="p-2 text-stone-400 hover:text-white rounded-xl hover:bg-stone-800 transition"
+                  title="Close Guide"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* 5-Tab Navigation Bar */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-stone-800/80 bg-stone-950/50 px-4 py-2.5">
+                {[
+                  { id: 'technique', label: 'Technique & Setup', icon: CheckCircle2 },
+                  { id: 'faults', label: 'Form Faults & Fixes', icon: AlertTriangle, count: faults.length },
+                  { id: 'tempo', label: 'Tempo & Cadence', icon: Clock },
+                  { id: 'warmup', label: 'Warmup Pyramid', icon: Flame },
+                  { id: 'swaps', label: '1-to-1 Swaps', icon: ArrowLeftRight, count: relatedSubstitutes.length },
+                ].map(tab => {
+                  const Icon = tab.icon;
+                  const isActive = guideActiveTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setGuideActiveTab(tab.id as typeof guideActiveTab)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition shrink-0 ${
+                        isActive
+                          ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
+                          : 'bg-stone-900 text-stone-400 hover:text-white hover:bg-stone-800'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{tab.label}</span>
+                      {tab.count !== undefined && (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                          isActive ? 'bg-stone-950 text-amber-400' : 'bg-stone-800 text-stone-400'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Tab Contents Area */}
+              <div className="p-5 overflow-y-auto space-y-5 text-xs flex-1">
+                {/* ============================================================== */}
+                {/* TAB 1: TECHNIQUE & EXECUTION                                   */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'technique' && (
+                  <div className="space-y-5">
+                    {/* Prescribed Baseline Strip */}
+                    <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="text-stone-400 text-xs">Standard Hypertrophy Prescription:</div>
+                        <div className="text-base font-mono font-bold text-white mt-0.5">
+                          {selectedGuideExercise.defaultTarget.targetSets} sets × {selectedGuideExercise.defaultTarget.minReps}–{selectedGuideExercise.defaultTarget.maxReps} {selectedGuideExercise.defaultTarget.repsUnit || 'reps'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-stone-500 text-[11px] font-mono">Benchmark Load</div>
+                        <div className="text-base font-mono font-bold text-amber-400">
+                          {selectedGuideExercise.defaultTarget.defaultWeight > 0 ? `${selectedGuideExercise.defaultTarget.defaultWeight} ${unit}` : 'Bodyweight'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step-by-Step Execution */}
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        Step-by-Step Execution Sequence
+                      </h4>
+                      <ol className="space-y-2 bg-stone-950/60 p-4 rounded-2xl border border-stone-800/80 list-decimal list-inside">
+                        {selectedGuideExercise.instructions.map((inst, i) => (
+                          <li key={i} className="leading-relaxed text-stone-300 pl-1">
+                            <span className="text-stone-200 font-medium">{inst}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    {/* Biomechanical Cues */}
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                        <Info className="w-4 h-4 text-cyan-400" />
+                        Key Tactile Form Cues
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {selectedGuideExercise.cues.map((c, i) => (
+                          <div key={i} className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 flex items-start gap-2.5">
+                            <span className="p-1 rounded bg-amber-500/10 text-amber-400 font-mono text-[10px] font-bold shrink-0 mt-0.5">
+                              0{i + 1}
+                            </span>
+                            <span className="text-stone-300 leading-relaxed">{c}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Muscle Targeting Blueprint */}
+                    <div className="bg-stone-950/80 p-4 rounded-2xl border border-stone-800 space-y-3">
+                      <div className="text-xs font-bold text-stone-300 uppercase tracking-wider font-mono">
+                        Muscular Synergy & Articulation
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="p-3 rounded-xl bg-stone-900 border border-stone-800/80">
+                          <span className="text-stone-500 block text-[10px] font-mono uppercase">Primary Agonist</span>
+                          <strong className="text-emerald-400 text-sm">{selectedGuideExercise.primaryMuscle}</strong>
+                        </div>
+                        <div className="p-3 rounded-xl bg-stone-900 border border-stone-800/80">
+                          <span className="text-stone-500 block text-[10px] font-mono uppercase">Synergists</span>
+                          <strong className="text-stone-200 text-xs">
+                            {selectedGuideExercise.secondaryMuscles.length > 0 ? selectedGuideExercise.secondaryMuscles.join(', ') : 'Direct Isolation'}
+                          </strong>
+                        </div>
+                        <div className="p-3 rounded-xl bg-stone-900 border border-stone-800/80">
+                          <span className="text-stone-500 block text-[10px] font-mono uppercase">Symmetry / Type</span>
+                          <strong className="text-cyan-400 text-xs capitalize">
+                            {selectedGuideExercise.bilateralType || 'Bilateral'} · {selectedGuideExercise.loadType?.replace('_', ' ') || 'Weight & Reps'}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Open Source Verification Link */}
+                    {selectedGuideExercise.openSourceLink && (
+                      <div className="flex items-center justify-between p-3 rounded-xl bg-stone-950/50 border border-stone-800/60 text-xs">
+                        <span className="text-stone-400">Open source biomechanical entry:</span>
+                        <a
+                          href={selectedGuideExercise.openSourceLink.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold underline"
+                        >
+                          <span>{selectedGuideExercise.openSourceLink.label} ({selectedGuideExercise.openSourceLink.source})</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* TAB 2: COMMON FORM FAULTS & "FIX-IT" MATRIX                     */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'faults' && (
+                  <div className="space-y-4">
+                    <div className="bg-amber-950/20 border border-amber-500/30 p-4 rounded-2xl text-xs space-y-1">
+                      <div className="font-bold text-amber-400 flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-amber-400" />
+                        CSCS Injury Prevention & Form Correction Protocol
+                      </div>
+                      <p className="text-stone-300 text-[11px] leading-relaxed">
+                        Technical breakdowns under heavy loads create joint wear and steal tension from prime movers. Master these 3 critical form corrections before increasing load.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {faults.map((item, idx) => (
+                        <div key={idx} className="bg-stone-950/90 border border-stone-800 rounded-2xl p-4 space-y-3">
+                          {/* Fault & Risk Header */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-mono font-bold">
+                                FAULT #{idx + 1}
+                              </span>
+                              <h5 className="font-bold text-white text-sm">{item.fault}</h5>
+                            </div>
+                            <span className="text-[10px] font-mono text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 self-start sm:self-auto">
+                              ⚠️ {item.risk}
+                            </span>
+                          </div>
+
+                          {/* CSCS Fix & Tactile Checkpoint */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-xl space-y-1">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>The Coach Fix</span>
+                              </div>
+                              <p className="text-emerald-200 text-xs leading-relaxed font-medium">
+                                {item.fix}
+                              </p>
+                            </div>
+
+                            <div className="bg-stone-900/90 border border-stone-800 p-3 rounded-xl space-y-1">
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1 font-mono">
+                                <Target className="w-3.5 h-3.5" />
+                                <span>Tactile Checkpoint</span>
+                              </div>
+                              <p className="text-stone-300 text-xs leading-relaxed">
+                                {item.checkpoint}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* TAB 3: TEMPO & CADENCE CONTROLLER                              */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'tempo' && (
+                  <div className="space-y-5">
+                    <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-stone-400 text-xs">Scientific Cadence Notation:</span>
+                        <span className="text-base font-mono font-black text-amber-400 px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                          {tempo.code}
+                        </span>
+                      </div>
+                      <p className="text-stone-300 text-xs leading-relaxed">
+                        {tempo.description}
+                      </p>
+                    </div>
+
+                    {/* 4-Phase Breakdown Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 space-y-1 text-center">
+                        <span className="text-amber-400 font-mono font-extrabold text-2xl">{tempo.eccentric}s</span>
+                        <div className="text-xs font-bold text-white">Eccentric</div>
+                        <div className="text-[10px] text-stone-400">Controlled Lowering</div>
+                      </div>
+
+                      <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 space-y-1 text-center">
+                        <span className="text-cyan-400 font-mono font-extrabold text-2xl">{tempo.pause}s</span>
+                        <div className="text-xs font-bold text-white">Inflection Pause</div>
+                        <div className="text-[10px] text-stone-400">Deep Stretch Hold</div>
+                      </div>
+
+                      <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 space-y-1 text-center">
+                        <span className="text-emerald-400 font-mono font-extrabold text-2xl">{tempo.concentric}s</span>
+                        <div className="text-xs font-bold text-white">Concentric</div>
+                        <div className="text-[10px] text-stone-400">Explosive Drive Up</div>
+                      </div>
+
+                      <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 space-y-1 text-center">
+                        <span className="text-stone-300 font-mono font-extrabold text-2xl">{tempo.lockout}s</span>
+                        <div className="text-xs font-bold text-white">Lockout / Peak</div>
+                        <div className="text-[10px] text-stone-400">Squeeze & Smooth Reset</div>
+                      </div>
+                    </div>
+
+                    {/* Interactive Cadence Trainer & Audio Metronome */}
+                    <div className="bg-stone-950/80 p-5 rounded-2xl border border-stone-800 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h5 className="font-bold text-white text-sm flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-amber-400" />
+                            <span>Interactive Cadence Metronome</span>
+                          </h5>
+                          <p className="text-[11px] text-stone-400 mt-0.5">
+                            Practice real-time rep cadence with audio beeps and visual phase counters before stepping under the bar.
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsGuideTempoRunning(!isGuideTempoRunning)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
+                            isGuideTempoRunning
+                              ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                              : 'bg-amber-500 hover:bg-amber-400 text-stone-950'
+                          }`}
+                        >
+                          {isGuideTempoRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                          <span>{isGuideTempoRunning ? 'Pause Cadence' : 'Start Cadence Pacer'}</span>
+                        </button>
+                      </div>
+
+                      {/* Live Visual Pacer Meter */}
+                      <div className={`p-4 rounded-xl border transition-all ${
+                        isGuideTempoRunning 
+                          ? 'bg-stone-900 border-amber-500/50 shadow-lg' 
+                          : 'bg-stone-900/40 border-stone-800/80'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-stone-400 text-xs font-mono uppercase tracking-wider">Current Rep Phase:</span>
+                          <span className={`text-base font-extrabold font-mono ${
+                            isGuideTempoRunning ? 'text-amber-400' : 'text-stone-500'
+                          }`}>
+                            {isGuideTempoRunning ? `${guideTempoPhase} (${guideTempoCountdown}s)` : 'Metronome Idle'}
+                          </span>
+                        </div>
+
+                        <div className="w-full bg-stone-800 h-2.5 rounded-full overflow-hidden mt-3">
+                          <div 
+                            className={`h-full transition-all duration-300 ${
+                              guideTempoPhase.includes('Eccentric') 
+                                ? 'bg-amber-400' 
+                                : guideTempoPhase.includes('Stretch') 
+                                ? 'bg-cyan-400' 
+                                : guideTempoPhase.includes('Concentric') 
+                                ? 'bg-emerald-400' 
+                                : 'bg-purple-400'
+                            }`}
+                            style={{ 
+                              width: isGuideTempoRunning 
+                                ? `${Math.min(100, Math.max(15, (guideTempoCountdown / 3) * 100))}%` 
+                                : '0%' 
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* TAB 4: WARMUP PYRAMID CALCULATOR                               */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'warmup' && (
+                  <div className="space-y-5">
+                    {/* Weight Input Deck */}
+                    <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <div className="text-stone-400 text-xs font-bold">Target Working Weight:</div>
+                        <div className="text-[11px] text-stone-500">
+                          Warmup sets are mathematically scaled to awaken motor units without inducing muscular fatigue.
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setGuideWarmupWeight(Math.max(unit === 'lbs' ? 45 : 20, guideWarmupWeight - (unit === 'lbs' ? 10 : 5)))}
+                          className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-mono font-bold text-xs"
+                        >
+                          -{unit === 'lbs' ? 10 : 5}
+                        </button>
+                        <div className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-700 font-mono font-black text-amber-400 text-base min-w-[90px] text-center">
+                          {guideWarmupWeight} {unit}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setGuideWarmupWeight(guideWarmupWeight + (unit === 'lbs' ? 10 : 5))}
+                          className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-mono font-bold text-xs"
+                        >
+                          +{unit === 'lbs' ? 10 : 5}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Warmup Stages Table */}
+                    <div className="space-y-2">
+                      <div className="text-xs font-bold text-stone-300 uppercase tracking-wider font-mono">
+                        Calibrated Ramp-Up Sequence
+                      </div>
+
+                      <div className="space-y-2">
+                        {warmupPyramid.map((step, idx) => {
+                          const isWorkingSet = idx === warmupPyramid.length - 1;
+                          return (
+                            <div
+                              key={idx}
+                              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs transition ${
+                                isWorkingSet
+                                  ? 'bg-emerald-950/20 border-emerald-500/40'
+                                  : 'bg-stone-950/70 border-stone-800/80'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs ${
+                                  isWorkingSet ? 'bg-emerald-500/20 text-emerald-400' : 'bg-stone-800 text-stone-400'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                                <div>
+                                  <div className="font-bold text-white flex items-center gap-2">
+                                    <span>{step.stage}</span>
+                                    <span className="text-[10px] font-mono text-stone-500">({step.pct})</span>
+                                  </div>
+                                  <div className="text-[11px] text-stone-400">{step.label}</div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="font-mono font-bold text-sm text-white">
+                                  <span className={isWorkingSet ? 'text-emerald-400' : 'text-amber-400'}>
+                                    {step.weight} {unit}
+                                  </span>
+                                  <span className="text-stone-400"> × {step.reps} reps</span>
+                                </div>
+                                <div className="text-[10px] font-mono text-stone-500">RPE ~{step.rpe}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Action: Inject Warmup Sets into Active Workout */}
+                    <div className="bg-stone-950/90 p-4 rounded-2xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-white text-xs">Ready to warm up?</div>
+                        <div className="text-[11px] text-stone-400">
+                          Prepend these calibrated warmup sets directly before your working sets in Tab 1.
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddWarmupSetsToWorkout(selectedGuideExercise, warmupPyramid)}
+                        className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs transition flex items-center gap-2 shrink-0 shadow-md shadow-amber-500/20"
+                      >
+                        <Flame className="w-4 h-4" />
+                        <span>Add Warmup Sets to Workout</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* TAB 5: 1-TO-1 BIOMECHANICAL SWAPS                              */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'swaps' && (
+                  <div className="space-y-4">
+                    <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 space-y-1 text-xs">
+                      <div className="font-bold text-white flex items-center gap-2">
+                        <ArrowLeftRight className="w-4 h-4 text-emerald-400" />
+                        <span>Gym Floor Reality Swaps</span>
+                      </div>
+                      <p className="text-stone-400 text-[11px] leading-relaxed">
+                        If equipment is taken or joint discomfort arises, these movements replicate identical motor recruitment and hypertrophic tension.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {relatedSubstitutes.map(altEx => {
+                        const inWorkout = activeExercises.some(ae => ae.exercise.id === altEx.id);
+                        return (
+                          <div
+                            key={altEx.id}
+                            className="bg-stone-950/80 border border-stone-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-stone-700 transition"
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h5 className="font-bold text-white text-sm">{altEx.name}</h5>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-900 text-stone-300 border border-stone-800">
+                                  {altEx.defaultEquipment}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-400">
+                                <span className="text-amber-400 font-medium">{altEx.split}</span>
+                                <span>·</span>
+                                <span>{altEx.subCategory}</span>
+                                <span>·</span>
+                                <span>Prime: <strong className="text-stone-300">{altEx.primaryMuscle}</strong></span>
+                              </div>
+                              <p className="text-[11px] text-stone-500 mt-1 italic">
+                                {altEx.cues[0] || 'Biomechanical 1-to-1 substitute.'}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                              {activeExIndex !== -1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleSubstituteExercise(activeExIndex, altEx);
+                                    setAlertNotice(`Swapped ${selectedGuideExercise.name} for ${altEx.name}!`);
+                                    setTimeout(() => setAlertNotice(null), 3000);
+                                    setSelectedGuideExercise(null);
+                                    setIsGuideTempoRunning(false);
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                                  <span>Swap in Session</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    addExerciseToWorkout(altEx, altEx.defaultEquipment);
+                                    setAlertNotice(`Added ${altEx.name} to active workout!`);
+                                    setTimeout(() => setAlertNotice(null), 3000);
+                                    setSelectedGuideExercise(null);
+                                    setIsGuideTempoRunning(false);
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs transition flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Add to Session</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Action Footer */}
+              <div className="p-4 bg-stone-950 border-t border-stone-800 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  {activeExInWorkout ? (
+                    <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>Currently active in current workout session</span>
+                    </span>
+                  ) : (
+                    <span className="text-stone-400">
+                      Not currently in active workout session
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGuideExercise(null);
+                      setIsGuideTempoRunning(false);
+                    }}
+                    className="px-3.5 py-2 rounded-xl border border-stone-700 bg-stone-800 text-stone-300 hover:text-white font-semibold transition"
+                  >
+                    Close
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      addExerciseToWorkout(selectedGuideExercise, selectedGuideExercise.defaultEquipment);
+                      setAlertNotice(`Added ${selectedGuideExercise.name} to active workout session!`);
+                      setTimeout(() => setAlertNotice(null), 3000);
+                      setSelectedGuideExercise(null);
+                      setIsGuideTempoRunning(false);
+                    }}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl transition shadow-sm flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add to Routine</span>
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedGuideExercise(null)}
-                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 text-xs flex items-center justify-between">
-              <div>
-                <span className="text-stone-400">Prescribed Target:</span>
-                <strong className="text-white ml-2 font-mono">
-                  {selectedGuideExercise.defaultTarget.targetSets} sets × {selectedGuideExercise.defaultTarget.minReps}–{selectedGuideExercise.defaultTarget.maxReps} {selectedGuideExercise.defaultTarget.repsUnit || 'reps'}
-                </strong>
-              </div>
-              <div className="text-amber-400 font-mono font-bold">
-                {selectedGuideExercise.defaultTarget.defaultWeight} {unit}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Step-by-Step Execution
-              </h4>
-              <ol className="space-y-2 text-xs text-stone-300 list-decimal list-inside pl-1 bg-stone-950/50 p-3.5 rounded-xl border border-stone-800/80">
-                {selectedGuideExercise.instructions.map((inst, i) => (
-                  <li key={i} className="leading-relaxed">
-                    <span className="text-stone-200">{inst}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-cyan-400" />
-                Biomechanical Form Cues
-              </h4>
-              <ul className="space-y-2 text-xs text-stone-300 bg-stone-950/50 p-3.5 rounded-xl border border-stone-800/80">
-                {selectedGuideExercise.cues.map((c, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="text-amber-500 font-bold">•</span>
-                    <span className="leading-relaxed">{c}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950 p-3 rounded-xl border border-stone-800">
-              <div>
-                <span className="text-stone-500 block text-[11px]">Primary Target:</span>
-                <strong className="text-white">{selectedGuideExercise.primaryMuscle}</strong>
-              </div>
-              <div>
-                <span className="text-stone-500 block text-[11px]">Secondary Muscles:</span>
-                <strong className="text-stone-300">
-                  {selectedGuideExercise.secondaryMuscles.length > 0 ? selectedGuideExercise.secondaryMuscles.join(', ') : 'None'}
-                </strong>
-              </div>
-            </div>
-
-            <div className="pt-3 flex items-center justify-between border-t border-stone-800">
-              {selectedGuideExercise.openSourceLink && (
-                <a
-                  href={selectedGuideExercise.openSourceLink.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 underline"
-                >
-                  <span>Open {selectedGuideExercise.openSourceLink.source} Entry</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-
-              <button
-                onClick={() => {
-                  addExerciseToWorkout(selectedGuideExercise, selectedGuideExercise.defaultEquipment);
-                  setSelectedGuideExercise(null);
-                }}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition"
-              >
-                Add to Current Routine
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ============================================================== */}
       {/* MODAL 3: ADD EXERCISE / CUSTOM BUILDER                         */}
@@ -6610,7 +7583,7 @@ export default function ExerciseTracker() {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => setSelectedGuideExercise(ex)}
+                            onClick={() => openExerciseGuide(ex)}
                             className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-700"
                             title="View Guide & Form Cues"
                           >

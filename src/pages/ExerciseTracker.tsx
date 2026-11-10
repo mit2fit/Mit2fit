@@ -60,7 +60,10 @@ import {
   ChevronDown,
   ChevronUp,
   MoreHorizontal,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Target,
+  Scale,
+  Compass
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -867,6 +870,11 @@ export default function ExerciseTracker() {
       return false;
     }
   });
+
+  // Tab 2: Weekly Progression & Kinetic Balance Filters
+  const [weeklyFilterPattern, setWeeklyFilterPattern] = useState<string>('all');
+  const [weeklyOverloadStatusFilter, setWeeklyOverloadStatusFilter] = useState<'all' | 'ready_to_bump' | 'building' | 'tier_expansion'>('all');
+  const [weeklyExerciseSearch, setWeeklyExerciseSearch] = useState<string>('');
 
   const toggleDeloadMode = (enable?: boolean) => {
     const nextState = enable !== undefined ? enable : !isDeloadActive;
@@ -4321,52 +4329,394 @@ export default function ExerciseTracker() {
               </div>
             </div>
 
-            {/* Scientific Hypertrophy Volume Landmarks (MEV / MAV / MRV) */}
+            {/* ========================================================== */}
+            {/* 1. KINETIC MOVEMENT PATTERN BALANCE RADAR                   */}
+            {/* ========================================================== */}
+            {(() => {
+              // Aggregate sets by CSCS movement pattern across thisWeekWorkouts and in-progress activeExercises
+              const patternCounts: Record<MovementPattern, number> = {
+                horizontal_push: 0,
+                vertical_push: 0,
+                horizontal_pull: 0,
+                vertical_pull: 0,
+                squat: 0,
+                hinge: 0,
+                lunge: 0,
+                carry: 0,
+                anti_extension: 0,
+                anti_rotation: 0,
+                isolation: 0,
+              };
+
+              const patternExerciseNames: Record<MovementPattern, Set<string>> = {
+                horizontal_push: new Set(),
+                vertical_push: new Set(),
+                horizontal_pull: new Set(),
+                vertical_pull: new Set(),
+                squat: new Set(),
+                hinge: new Set(),
+                lunge: new Set(),
+                carry: new Set(),
+                anti_extension: new Set(),
+                anti_rotation: new Set(),
+                isolation: new Set(),
+              };
+
+              const tallyExercise = (exId: string, exName: string, completedCount: number) => {
+                if (completedCount <= 0) return;
+                const def = EXERCISE_DATABASE.find(e => e.id === exId || e.name.toLowerCase() === exName.toLowerCase());
+                const pattern: MovementPattern = def?.movementPattern || 'isolation';
+                patternCounts[pattern] = (patternCounts[pattern] || 0) + completedCount;
+                patternExerciseNames[pattern].add(def?.name || exName);
+              };
+
+              thisWeekWorkouts.forEach(workout => {
+                workout.exercises.forEach(ex => {
+                  const completedCount = ex.sets.filter(s => s.completed && s.type !== 'Warmup').length;
+                  tallyExercise(ex.id, ex.name, completedCount);
+                });
+              });
+
+              activeExercises.forEach(ae => {
+                const completedCount = ae.sets.filter(s => s.completed && s.type !== 'Warmup').length;
+                tallyExercise(ae.exercise.id, ae.exercise.name, completedCount);
+              });
+
+              // Fallback preview if fresh start with 0 sets logged yet: tally targetSets from active exercises so user sees planned balance
+              const totalLoggedSets = Object.values(patternCounts).reduce((a, b) => a + b, 0);
+              const isPreviewFromPlan = totalLoggedSets === 0;
+              if (isPreviewFromPlan) {
+                activeExercises.forEach(ae => {
+                  const targetCount = ae.targetSets || 3;
+                  const pattern: MovementPattern = ae.exercise.movementPattern || 'isolation';
+                  patternCounts[pattern] = (patternCounts[pattern] || 0) + targetCount;
+                  patternExerciseNames[pattern].add(ae.exercise.name);
+                });
+              }
+
+              const pushSets = patternCounts.horizontal_push + patternCounts.vertical_push;
+              const pullSets = patternCounts.horizontal_pull + patternCounts.vertical_pull;
+              const kneeSets = patternCounts.squat + patternCounts.lunge;
+              const hingeSets = patternCounts.hinge;
+              const coreSets = patternCounts.anti_extension + patternCounts.anti_rotation;
+              const carrySets = patternCounts.carry;
+              const isoSets = patternCounts.isolation;
+              const totalDisplaySets = Math.max(1, Object.values(patternCounts).reduce((a, b) => a + b, 0));
+
+              // Scapular Push:Pull Ratio (Ideal pull >= push, or pull:push between 1.0 and 1.4)
+              const pullToPushRatio = pushSets > 0 ? Math.round((pullSets / pushSets) * 100) / 100 : pullSets > 0 ? 1.5 : 1.0;
+              const scapularStatus = (pullSets === 0 && pushSets === 0)
+                ? { label: 'Calibrating Baseline', color: 'text-stone-400 bg-stone-800/80 border-stone-700', desc: 'Log push and pull movements to compute kinetic scapular balance.' }
+                : pullToPushRatio < 0.8
+                ? { label: 'Anterior Dominant (Impingement Risk)', color: 'text-amber-300 bg-amber-950/80 border-amber-500/40', desc: `Push volume (${pushSets} sets) exceeds pulls (${pullSets} sets). Add 2–3 sets of rows or face pulls to prevent anterior shoulder impingement.` }
+                : pullToPushRatio <= 1.4
+                ? { label: 'Optimal Scapular Health', color: 'text-emerald-300 bg-emerald-950/80 border-emerald-500/40', desc: `Pull-to-push volume (${pullSets} pull vs ${pushSets} push) is in the scientific golden ratio (1.0–1.4:1), stabilizing rotator cuffs and thoracic posture.` }
+                : { label: 'Posterior Pull Dominant', color: 'text-cyan-300 bg-cyan-950/80 border-cyan-500/40', desc: `Strong upper-back pulling foundation (${pullSets} sets). Scapular stability is fortified; safe to aggressively overload pressing lifts.` };
+
+              // Lower Chain Knee vs Hip (Squat/Lunge vs Hinge) (Ideal 0.8 to 1.3)
+              const kneeToHingeRatio = hingeSets > 0 ? Math.round((kneeSets / hingeSets) * 100) / 100 : kneeSets > 0 ? 2.0 : 1.0;
+              const lowerChainStatus = (kneeSets === 0 && hingeSets === 0)
+                ? { label: 'Calibrating Baseline', color: 'text-stone-400 bg-stone-800/80 border-stone-700', desc: 'Log squat, lunge, or hinge exercises to balance lower chain torque.' }
+                : kneeToHingeRatio > 1.6
+                ? { label: 'Quad / Patellar Dominant', color: 'text-amber-300 bg-amber-950/80 border-amber-500/40', desc: `High knee-flexion volume (${kneeSets} sets vs ${hingeSets} hinge). Add RDLs, hip thrusts, or hamstring curls to safeguard patellar tendons.` }
+                : kneeToHingeRatio >= 0.7 && kneeToHingeRatio <= 1.5
+                ? { label: 'Kinetic Lower Equilibrium', color: 'text-emerald-300 bg-emerald-950/80 border-emerald-500/40', desc: `Quadriceps (${kneeSets} sets) and posterior chain (${hingeSets} sets) are loaded in healthy biomechanical balance.` }
+                : { label: 'Posterior Chain Dominant', color: 'text-cyan-300 bg-cyan-950/80 border-cyan-500/40', desc: `Heavy hip hinge loading (${hingeSets} sets). Exceptional posterior chain development; maintain quad volume.` };
+
+              // Core Multi-Planar Stability Index
+              const coreStatus = coreSets >= 6
+                ? { label: 'Multi-Planar Rigid Core', color: 'text-emerald-300 bg-emerald-950/80 border-emerald-500/40', desc: `${coreSets} direct sets of anti-extension & anti-rotation are maintaining spinal stiffness under heavy loading.` }
+                : { label: 'Maintenance Core Volume', color: 'text-stone-300 bg-stone-800/80 border-stone-700', desc: `Add 2–3 sets of ab wheel, Pallof press, or deadbugs to reinforce bracing under heavy compound squats & presses.` };
+
+              const patternCards: {
+                id: MovementPattern;
+                label: string;
+                category: string;
+                sets: number;
+                exercises: string[];
+                color: string;
+                barColor: string;
+              }[] = [
+                { id: 'horizontal_push', label: 'Horizontal Push', category: 'Chest / Triceps', sets: patternCounts.horizontal_push, exercises: Array.from(patternExerciseNames.horizontal_push), color: 'text-amber-400 border-amber-500/30 bg-amber-500/10', barColor: 'bg-amber-400' },
+                { id: 'vertical_push', label: 'Vertical Push', category: 'Shoulders / Delts', sets: patternCounts.vertical_push, exercises: Array.from(patternExerciseNames.vertical_push), color: 'text-orange-400 border-orange-500/30 bg-orange-500/10', barColor: 'bg-orange-400' },
+                { id: 'horizontal_pull', label: 'Horizontal Pull', category: 'Mid-Back / Rhomboids', sets: patternCounts.horizontal_pull, exercises: Array.from(patternExerciseNames.horizontal_pull), color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10', barColor: 'bg-cyan-400' },
+                { id: 'vertical_pull', label: 'Vertical Pull', category: 'Lats / Upper Back', sets: patternCounts.vertical_pull, exercises: Array.from(patternExerciseNames.vertical_pull), color: 'text-sky-400 border-sky-500/30 bg-sky-500/10', barColor: 'bg-sky-400' },
+                { id: 'squat', label: 'Squat', category: 'Quads / Adductors', sets: patternCounts.squat, exercises: Array.from(patternExerciseNames.squat), color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10', barColor: 'bg-emerald-400' },
+                { id: 'hinge', label: 'Hip Hinge', category: 'Hamstrings / Glutes', sets: patternCounts.hinge, exercises: Array.from(patternExerciseNames.hinge), color: 'text-teal-400 border-teal-500/30 bg-teal-500/10', barColor: 'bg-teal-400' },
+                { id: 'lunge', label: 'Lunge / Split', category: 'Unilateral Stability', sets: patternCounts.lunge, exercises: Array.from(patternExerciseNames.lunge), color: 'text-lime-400 border-lime-500/30 bg-lime-500/10', barColor: 'bg-lime-400' },
+                { id: 'anti_extension', label: 'Anti-Extension', category: 'Sagittal Core / Abs', sets: patternCounts.anti_extension, exercises: Array.from(patternExerciseNames.anti_extension), color: 'text-purple-400 border-purple-500/30 bg-purple-500/10', barColor: 'bg-purple-400' },
+                { id: 'anti_rotation', label: 'Anti-Rotation', category: 'Transverse Core / Obliques', sets: patternCounts.anti_rotation, exercises: Array.from(patternExerciseNames.anti_rotation), color: 'text-pink-400 border-pink-500/30 bg-pink-500/10', barColor: 'bg-pink-400' },
+                { id: 'carry', label: 'Carry & Gait', category: 'Spinal Rigidity / Grip', sets: patternCounts.carry, exercises: Array.from(patternExerciseNames.carry), color: 'text-blue-400 border-blue-500/30 bg-blue-500/10', barColor: 'bg-blue-400' },
+                { id: 'isolation', label: 'Isolations', category: 'Arms / Calves / Shoulders', sets: patternCounts.isolation, exercises: Array.from(patternExerciseNames.isolation), color: 'text-stone-300 border-stone-700 bg-stone-800/60', barColor: 'bg-stone-400' }
+              ];
+
+              return (
+                <div className="bg-stone-900/60 border border-stone-800 rounded-3xl p-6 space-y-6">
+                  {/* Radar Header */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                        <Compass className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-white">Kinetic Movement Pattern Balance Radar</h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 font-mono border border-amber-500/20">
+                            CSCS Biomechanics
+                          </span>
+                        </div>
+                        <p className="text-xs text-stone-400 mt-0.5">
+                          Multi-planar volume distribution across the 115-exercise taxonomy to prevent postural imbalances and joint wear.
+                          {isPreviewFromPlan && <span className="text-amber-400 ml-1">(Displaying active routine baseline targets)</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs font-mono text-stone-400">
+                      <span>Total Active Sets:</span>
+                      <span className="font-bold text-amber-400">{totalLoggedSets > 0 ? totalLoggedSets : activeExercises.reduce((sum, ae) => sum + (ae.targetSets || 3), 0)}</span>
+                    </div>
+                  </div>
+
+                  {/* Kinetic Balance Key Ratios (Push:Pull & Lower Chain) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Ratio 1: Push vs Pull */}
+                    <div className="bg-stone-950/80 border border-stone-800/80 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-stone-300 flex items-center gap-1.5">
+                            <Scale className="w-3.5 h-3.5 text-cyan-400" />
+                            Scapular Push : Pull Ratio
+                          </span>
+                          <span className="font-mono font-bold text-white text-sm">
+                            {pullToPushRatio}:1
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-stone-400 font-mono">
+                          <span>{pushSets} Push Sets</span>
+                          <span>vs</span>
+                          <span>{pullSets} Pull Sets</span>
+                        </div>
+                      </div>
+
+                      {/* Visual Meter */}
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-stone-800/80 h-2 rounded-full overflow-hidden flex">
+                          <div
+                            className="bg-amber-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (pushSets / Math.max(1, pushSets + pullSets)) * 100)}%` }}
+                            title={`Push: ${pushSets} sets`}
+                          />
+                          <div
+                            className="bg-cyan-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (pullSets / Math.max(1, pushSets + pullSets)) * 100)}%` }}
+                            title={`Pull: ${pullSets} sets`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono">
+                          <span>Push ({pushSets})</span>
+                          <span>Golden: 1.0–1.4:1</span>
+                          <span>Pull ({pullSets})</span>
+                        </div>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${scapularStatus.color}`}>
+                        <div className="font-bold mb-0.5">{scapularStatus.label}</div>
+                        <div className="text-stone-300 text-[10px]">{scapularStatus.desc}</div>
+                      </div>
+                    </div>
+
+                    {/* Ratio 2: Lower Chain (Knee vs Hip) */}
+                    <div className="bg-stone-950/80 border border-stone-800/80 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-stone-300 flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                            Lower Chain Knee : Hinge
+                          </span>
+                          <span className="font-mono font-bold text-white text-sm">
+                            {kneeToHingeRatio}:1
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-stone-400 font-mono">
+                          <span>{kneeSets} Knee (Squat/Lunge)</span>
+                          <span>vs</span>
+                          <span>{hingeSets} Hip Hinge</span>
+                        </div>
+                      </div>
+
+                      {/* Visual Meter */}
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-stone-800/80 h-2 rounded-full overflow-hidden flex">
+                          <div
+                            className="bg-emerald-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (kneeSets / Math.max(1, kneeSets + hingeSets)) * 100)}%` }}
+                            title={`Knee: ${kneeSets} sets`}
+                          />
+                          <div
+                            className="bg-teal-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (hingeSets / Math.max(1, kneeSets + hingeSets)) * 100)}%` }}
+                            title={`Hinge: ${hingeSets} sets`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono">
+                          <span>Knee ({kneeSets})</span>
+                          <span>Ideal: 0.8–1.3:1</span>
+                          <span>Hinge ({hingeSets})</span>
+                        </div>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${lowerChainStatus.color}`}>
+                        <div className="font-bold mb-0.5">{lowerChainStatus.label}</div>
+                        <div className="text-stone-300 text-[10px]">{lowerChainStatus.desc}</div>
+                      </div>
+                    </div>
+
+                    {/* Ratio 3: Core Multi-Planar Rigidity */}
+                    <div className="bg-stone-950/80 border border-stone-800/80 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-stone-300 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                            Multi-Planar Core Rigidity
+                          </span>
+                          <span className="font-mono font-bold text-white text-sm">
+                            {coreSets} Sets
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-stone-400 font-mono">
+                          <span>{patternCounts.anti_extension} Anti-Extension</span>
+                          <span>·</span>
+                          <span>{patternCounts.anti_rotation} Anti-Rotation</span>
+                        </div>
+                      </div>
+
+                      {/* Visual Meter */}
+                      <div className="space-y-1.5">
+                        <div className="w-full bg-stone-800/80 h-2 rounded-full overflow-hidden flex">
+                          <div
+                            className="bg-purple-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (patternCounts.anti_extension / Math.max(1, coreSets)) * 100)}%` }}
+                            title={`Anti-Extension: ${patternCounts.anti_extension} sets`}
+                          />
+                          <div
+                            className="bg-pink-400 h-full transition-all"
+                            style={{ width: `${Math.min(100, (patternCounts.anti_rotation / Math.max(1, coreSets)) * 100)}%` }}
+                            title={`Anti-Rotation: ${patternCounts.anti_rotation} sets`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono">
+                          <span>Sagittal ({patternCounts.anti_extension})</span>
+                          <span>Target: ≥6 sets</span>
+                          <span>Transverse ({patternCounts.anti_rotation})</span>
+                        </div>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${coreStatus.color}`}>
+                        <div className="font-bold mb-0.5">{coreStatus.label}</div>
+                        <div className="text-stone-300 text-[10px]">{coreStatus.desc}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pattern Breakdown Pills & Set Badges */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-stone-300">Kinetic Movement Pattern Breakdown</span>
+                      <span className="text-[11px] text-stone-500">Click any pattern to filter overload cards below</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                      {patternCards.map(p => {
+                        const isSelected = weeklyFilterPattern === p.id;
+                        const pctOfTotal = Math.round((p.sets / totalDisplaySets) * 100);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setWeeklyFilterPattern(isSelected ? 'all' : p.id)}
+                            className={`p-3 rounded-2xl border text-left transition relative flex flex-col justify-between gap-1.5 ${
+                              isSelected
+                                ? 'bg-stone-800 border-amber-500 ring-1 ring-amber-500/50'
+                                : 'bg-stone-950/70 border-stone-800/80 hover:border-stone-700'
+                            }`}
+                          >
+                            <div>
+                              <div className="text-[11px] font-bold text-white flex items-center justify-between">
+                                <span className="truncate">{p.label}</span>
+                                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${p.color}`}>
+                                  {p.sets}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-stone-400 truncate">{p.category}</div>
+                            </div>
+
+                            <div className="w-full bg-stone-800/80 h-1 rounded-full overflow-hidden">
+                              <div className={`h-full ${p.barColor}`} style={{ width: `${Math.max(4, pctOfTotal)}%` }} />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[9px] font-mono text-stone-500">
+                              <span>{pctOfTotal}% volume</span>
+                              {p.exercises.length > 0 && <span>{p.exercises.length} lifts</span>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ========================================================== */}
+            {/* 2. SCIENTIFIC HYPERTROPHY VOLUME LANDMARKS (MEV/MAV/MRV)   */}
+            {/* ========================================================== */}
             {(() => {
               // Aggregate sets by muscle category across this week
               const muscleVolumeMap: Record<string, number> = {
                 'Chest': 0,
-                'Back / Lats': 0,
+                'Back & Lats': 0,
                 'Quads & Glutes': 0,
                 'Hamstrings': 0,
                 'Shoulders': 0,
-                'Arms': 0
+                'Arms': 0,
+                'Core & Abs': 0
+              };
+
+              const tallyMuscle = (exId: string, exName: string, subCategory: string, count: number) => {
+                if (count <= 0) return;
+                const def = EXERCISE_DATABASE.find(e => e.id === exId || e.name.toLowerCase() === exName.toLowerCase());
+                const cat = (def?.subCategory || subCategory || '').toLowerCase();
+                if (cat.includes('chest')) muscleVolumeMap['Chest'] += count;
+                else if (cat.includes('back') || cat.includes('lat')) muscleVolumeMap['Back & Lats'] += count;
+                else if (cat.includes('quad') || cat.includes('calv') || cat.includes('glute')) muscleVolumeMap['Quads & Glutes'] += count;
+                else if (cat.includes('hamstring')) muscleVolumeMap['Hamstrings'] += count;
+                else if (cat.includes('shoulder')) muscleVolumeMap['Shoulders'] += count;
+                else if (cat.includes('bicep') || cat.includes('tricep') || cat.includes('arm') || cat.includes('forearm')) muscleVolumeMap['Arms'] += count;
+                else if (cat.includes('abs') || cat.includes('core')) muscleVolumeMap['Core & Abs'] += count;
+                else muscleVolumeMap['Back & Lats'] += count;
               };
 
               thisWeekWorkouts.forEach(workout => {
                 workout.exercises.forEach(ex => {
                   const completedSets = ex.sets.filter(s => s.completed && s.type !== 'Warmup').length;
-                  const cat = ex.subCategory.toLowerCase();
-                  if (cat.includes('chest')) muscleVolumeMap['Chest'] += completedSets;
-                  else if (cat.includes('back') || cat.includes('lat')) muscleVolumeMap['Back / Lats'] += completedSets;
-                  else if (cat.includes('quad') || cat.includes('calv') || cat.includes('glute')) muscleVolumeMap['Quads & Glutes'] += completedSets;
-                  else if (cat.includes('hamstring')) muscleVolumeMap['Hamstrings'] += completedSets;
-                  else if (cat.includes('shoulder')) muscleVolumeMap['Shoulders'] += completedSets;
-                  else if (cat.includes('bicep') || cat.includes('tricep') || cat.includes('arm')) muscleVolumeMap['Arms'] += completedSets;
-                  else muscleVolumeMap['Back / Lats'] += completedSets;
+                  tallyMuscle(ex.id, ex.name, ex.subCategory, completedSets);
                 });
               });
 
-              // Also include active in-progress completed sets
               activeExercises.forEach(ex => {
                 const count = ex.sets.filter(s => s.completed && s.type !== 'Warmup').length;
-                const cat = ex.exercise.subCategory.toLowerCase();
-                if (cat.includes('chest')) muscleVolumeMap['Chest'] += count;
-                else if (cat.includes('back') || cat.includes('lat')) muscleVolumeMap['Back / Lats'] += count;
-                else if (cat.includes('quad') || cat.includes('calv') || cat.includes('glute')) muscleVolumeMap['Quads & Glutes'] += count;
-                else if (cat.includes('hamstring')) muscleVolumeMap['Hamstrings'] += count;
-                else if (cat.includes('shoulder')) muscleVolumeMap['Shoulders'] += count;
-                else if (cat.includes('bicep') || cat.includes('tricep') || cat.includes('arm')) muscleVolumeMap['Arms'] += count;
-                else muscleVolumeMap['Back / Lats'] += count;
+                tallyMuscle(ex.exercise.id, ex.exercise.name, ex.exercise.subCategory, count);
               });
 
               const landmarks = [
                 { name: 'Chest', sets: muscleVolumeMap['Chest'], mev: 8, mav: 16, mrv: 22 },
-                { name: 'Back / Lats', sets: muscleVolumeMap['Back / Lats'], mev: 10, mav: 18, mrv: 24 },
+                { name: 'Back & Lats', sets: muscleVolumeMap['Back & Lats'], mev: 10, mav: 18, mrv: 24 },
                 { name: 'Quads & Glutes', sets: muscleVolumeMap['Quads & Glutes'], mev: 8, mav: 16, mrv: 22 },
                 { name: 'Hamstrings', sets: muscleVolumeMap['Hamstrings'], mev: 6, mav: 14, mrv: 20 },
                 { name: 'Shoulders', sets: muscleVolumeMap['Shoulders'], mev: 8, mav: 18, mrv: 24 },
-                { name: 'Arms', sets: muscleVolumeMap['Arms'], mev: 6, mav: 16, mrv: 20 }
+                { name: 'Arms', sets: muscleVolumeMap['Arms'], mev: 6, mav: 16, mrv: 20 },
+                { name: 'Core & Abs', sets: muscleVolumeMap['Core & Abs'], mev: 6, mav: 12, mrv: 18 }
               ];
 
               return (
@@ -4384,7 +4734,7 @@ export default function ExerciseTracker() {
                           </span>
                         </h3>
                         <p className="text-xs text-stone-400">
-                          Direct working sets completed this week relative to scientific growth landmarks
+                          Direct working sets completed this week relative to scientific growth landmarks across all muscle groups
                         </p>
                       </div>
                     </div>
@@ -4395,12 +4745,12 @@ export default function ExerciseTracker() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                     {landmarks.map(m => {
                       const pct = Math.min(100, Math.round((m.sets / m.mrv) * 100));
                       const isMAV = m.sets >= m.mev && m.sets <= m.mav;
                       const statusBadge = m.sets < m.mev 
-                        ? { label: 'Sub-MEV', color: 'bg-stone-800 text-stone-400' }
+                        ? { label: 'Sub-MEV', color: 'bg-stone-800 text-stone-400 border border-stone-700' }
                         : isMAV 
                         ? { label: 'Optimal Growth (MAV)', color: 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30' }
                         : { label: 'High Volume (MRV)', color: 'bg-amber-950/80 text-amber-300 border border-amber-500/30' };
@@ -4433,7 +4783,7 @@ export default function ExerciseTracker() {
                             <span className={`px-1.5 py-0.5 rounded font-mono font-medium ${statusBadge.color}`}>
                               {statusBadge.label}
                             </span>
-                            <span className="text-stone-500 font-mono">Target: {m.mev}–{m.mav} sets</span>
+                            <span className="text-stone-500 font-mono">Target: {m.mev}–{m.mav}</span>
                           </div>
                         </div>
                       );
@@ -4443,147 +4793,520 @@ export default function ExerciseTracker() {
               );
             })()}
 
-            {/* Exercise-by-Exercise Overload Progression Comparison */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-amber-500" />
-                Exercise Progression Cards (This Week vs. Last Week)
-              </h3>
+            {/* ========================================================== */}
+            {/* 3. DYNAMIC EXERCISE OVERLOAD PROGRESSION CARDS             */}
+            {/* ========================================================== */}
+            {(() => {
+              // Extract all exercises from thisWeekWorkouts and activeExercises
+              const exerciseMap = new Map<string, {
+                exId: string;
+                exName: string;
+                definition: ExerciseDefinition;
+              }>();
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Bench Press Card */}
-                <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-start justify-between">
+              // Collect from thisWeekWorkouts
+              thisWeekWorkouts.forEach(w => {
+                w.exercises.forEach(e => {
+                  const def = EXERCISE_DATABASE.find(item => item.id === e.id || item.name.toLowerCase() === e.name.toLowerCase());
+                  if (def && !exerciseMap.has(def.id)) {
+                    exerciseMap.set(def.id, { exId: def.id, exName: def.name, definition: def });
+                  }
+                });
+              });
+
+              // Collect from in-progress activeExercises
+              activeExercises.forEach(ae => {
+                if (!exerciseMap.has(ae.exercise.id)) {
+                  exerciseMap.set(ae.exercise.id, { exId: ae.exercise.id, exName: ae.exercise.name, definition: ae.exercise });
+                }
+              });
+
+              // If less than 4, pull recent distinct exercises from history
+              if (exerciseMap.size < 4) {
+                history.slice(0, 8).forEach(w => {
+                  w.exercises.forEach(e => {
+                    const def = EXERCISE_DATABASE.find(item => item.id === e.id || item.name.toLowerCase() === e.name.toLowerCase());
+                    if (def && !exerciseMap.has(def.id)) {
+                      exerciseMap.set(def.id, { exId: def.id, exName: def.name, definition: def });
+                    }
+                  });
+                });
+              }
+
+              // If still less than 4, pull from active routine template
+              if (exerciseMap.size < 4) {
+                const activeRoutine = routines.find(r => r.id === activeTemplateId) || routines[0];
+                if (activeRoutine?.exerciseConfigs) {
+                  activeRoutine.exerciseConfigs.forEach(cfg => {
+                    const def = EXERCISE_DATABASE.find(e => e.id === cfg.exerciseId);
+                    if (def && !exerciseMap.has(def.id)) {
+                      exerciseMap.set(def.id, { exId: def.id, exName: def.name, definition: def });
+                    }
+                  });
+                }
+              }
+
+              // Compute progression telemetry for each exercise
+              const progressionCards = Array.from(exerciseMap.values()).map(({ exId, exName, definition }) => {
+                // Find all sets logged this week for this exercise
+                const thisWeekSets: { weight: number; reps: number; completed: boolean; type: string; rpe?: number }[] = [];
+                let targetSets = isDeloadActive ? 2 : 3;
+                let targetReps = 10;
+
+                thisWeekWorkouts.forEach(w => {
+                  const found = w.exercises.find(e => e.id === exId || e.name.toLowerCase() === exName.toLowerCase());
+                  if (found) {
+                    if (found.targetSets) targetSets = found.targetSets;
+                    if (found.targetReps) targetReps = found.targetReps;
+                    found.sets.forEach(s => {
+                      if (s.completed && s.type !== 'Warmup') thisWeekSets.push(s);
+                    });
+                  }
+                });
+
+                // Also include active workout completed sets
+                const inProgress = activeExercises.find(ae => ae.exercise.id === exId || ae.exercise.name.toLowerCase() === exName.toLowerCase());
+                if (inProgress) {
+                  if (inProgress.targetSets) targetSets = inProgress.targetSets;
+                  if (inProgress.targetReps) targetReps = inProgress.targetReps;
+                  inProgress.sets.forEach(s => {
+                    if (s.completed && s.type !== 'Warmup') thisWeekSets.push(s);
+                  });
+                }
+
+                const hasCurrentData = thisWeekSets.length > 0;
+                const thisWeekCompletedCount = thisWeekSets.length;
+                const thisWeekVolume = thisWeekSets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+                const thisWeekTopWeight = thisWeekSets.length > 0 ? Math.max(...thisWeekSets.map(s => s.weight)) : 0;
+                const thisWeekTopSets = thisWeekSets.filter(s => s.weight === thisWeekTopWeight);
+                const thisWeekMaxReps = thisWeekTopSets.length > 0 ? Math.max(...thisWeekTopSets.map(s => s.reps)) : 0;
+                const thisWeekE1RM = calculateE1RM(thisWeekTopWeight, thisWeekMaxReps);
+
+                // Find previous workout performance (prior to this week or most recent session)
+                let prevSets: { weight: number; reps: number; completed: boolean; type?: string; rpe?: number }[] = [];
+                let prevDate = '';
+
+                // Try lastWeekWorkouts first
+                for (const w of lastWeekWorkouts) {
+                  const found = w.exercises.find(e => e.id === exId || e.name.toLowerCase() === exName.toLowerCase());
+                  if (found && found.sets.some(s => s.completed && s.type !== 'Warmup')) {
+                    prevSets = found.sets.filter(s => s.completed && s.type !== 'Warmup');
+                    prevDate = w.date;
+                    break;
+                  }
+                }
+
+                // If not in last week, look back through history (skipping current week)
+                if (prevSets.length === 0) {
+                  for (const w of history) {
+                    if (w.weekNumber === currentWeekNumber && w.year === currentYear) continue;
+                    const found = w.exercises.find(e => e.id === exId || e.name.toLowerCase() === exName.toLowerCase());
+                    if (found && found.sets.some(s => s.completed && s.type !== 'Warmup')) {
+                      prevSets = found.sets.filter(s => s.completed && s.type !== 'Warmup');
+                      prevDate = w.date;
+                      break;
+                    }
+                  }
+                }
+
+                const hasPreviousData = prevSets.length > 0;
+                const prevCompletedCount = prevSets.length;
+                const prevVolume = prevSets.reduce((sum, s) => sum + s.weight * s.reps, 0);
+                const prevTopWeight = prevSets.length > 0 ? Math.max(...prevSets.map(s => s.weight)) : 0;
+                const prevTopSets = prevSets.filter(s => s.weight === prevTopWeight);
+                const prevMaxReps = prevTopSets.length > 0 ? Math.max(...prevTopSets.map(s => s.reps)) : 0;
+                const prevE1RM = calculateE1RM(prevTopWeight, prevMaxReps);
+
+                // Deltas
+                const volumeDelta = hasCurrentData && hasPreviousData ? thisWeekVolume - prevVolume : 0;
+                const volumeDeltaPct = prevVolume > 0 ? Math.round((volumeDelta / prevVolume) * 100) : 0;
+                const weightDelta = hasCurrentData && hasPreviousData ? thisWeekTopWeight - prevTopWeight : 0;
+                const e1rmDelta = hasCurrentData && hasPreviousData ? Math.round((thisWeekE1RM - prevE1RM) * 10) / 10 : 0;
+
+                // Double Progression Logic
+                const stepWeight = unit === 'kg' ? 2.5 : 5;
+                const isWeightJumpReady = hasCurrentData && thisWeekCompletedCount >= targetSets && thisWeekSets.every(s => s.reps >= targetReps);
+                const isTierExpansionNeeded = hasCurrentData && thisWeekCompletedCount < targetSets;
+                const isRepBuilding = hasCurrentData && !isWeightJumpReady && !isTierExpansionNeeded;
+
+                let statusType: 'ready_to_bump' | 'building' | 'tier_expansion' | 'calibrating';
+                let statusBadge: { label: string; bg: string; text: string; border: string };
+                let coachPrescription: string;
+                let targetCeilingStr: string;
+                let targetCeilingVol: number;
+
+                if (isWeightJumpReady) {
+                  statusType = 'ready_to_bump';
+                  statusBadge = {
+                    label: `🎯 Target Mastered (+${stepWeight} ${unit} Jump)`,
+                    bg: 'bg-emerald-950/80',
+                    text: 'text-emerald-300',
+                    border: 'border-emerald-500/40'
+                  };
+                  coachPrescription = `Mastered all ${thisWeekCompletedCount} sets at/above ${targetReps} reps with ${thisWeekTopWeight} ${unit}! Bump load to ${thisWeekTopWeight + stepWeight} ${unit} next session.`;
+                  targetCeilingStr = `${targetSets} sets × ${Math.max(6, targetReps - 2)}–${targetReps} reps @ ${thisWeekTopWeight + stepWeight} ${unit}`;
+                  targetCeilingVol = targetSets * Math.max(6, targetReps - 2) * (thisWeekTopWeight + stepWeight);
+                } else if (isTierExpansionNeeded) {
+                  statusType = 'tier_expansion';
+                  statusBadge = {
+                    label: `🧱 Set Expansion (${thisWeekCompletedCount}/${targetSets} Sets)`,
+                    bg: 'bg-amber-950/80',
+                    text: 'text-amber-300',
+                    border: 'border-amber-500/40'
+                  };
+                  coachPrescription = `You logged ${thisWeekCompletedCount} set${thisWeekCompletedCount === 1 ? '' : 's'}. Expand to ${targetSets} full working sets at ${thisWeekTopWeight || 'target'} ${unit} before bumping weight.`;
+                  targetCeilingStr = `${targetSets} sets × ${targetReps} reps @ ${thisWeekTopWeight || 100} ${unit}`;
+                  targetCeilingVol = targetSets * targetReps * (thisWeekTopWeight || 100);
+                } else if (isRepBuilding) {
+                  statusType = 'building';
+                  statusBadge = {
+                    label: `📈 Rep Building (${thisWeekMaxReps}/${targetReps} Ceiling)`,
+                    bg: 'bg-cyan-950/80',
+                    text: 'text-cyan-300',
+                    border: 'border-cyan-500/40'
+                  };
+                  coachPrescription = `Keep load steady at ${thisWeekTopWeight} ${unit}. Squeeze every eccentric contraction and build all sets to ${targetReps} reps to lock in your next weight jump.`;
+                  targetCeilingStr = `${targetSets} sets × ${targetReps} reps @ ${thisWeekTopWeight} ${unit}`;
+                  targetCeilingVol = targetSets * targetReps * thisWeekTopWeight;
+                } else {
+                  statusType = 'calibrating';
+                  statusBadge = {
+                    label: '⚡ Routine Baseline',
+                    bg: 'bg-stone-800',
+                    text: 'text-stone-300',
+                    border: 'border-stone-700'
+                  };
+                  coachPrescription = `Prescribed for your routine. Perform ${targetSets} controlled sets @ RPE 7–8 to benchmark baseline work capacity.`;
+                  targetCeilingStr = `${targetSets} sets × ${targetReps} reps`;
+                  targetCeilingVol = 0;
+                }
+
+                return {
+                  definition,
+                  exId,
+                  name: definition.name,
+                  split: definition.split,
+                  subCategory: definition.subCategory,
+                  equipment: definition.defaultEquipment,
+                  movementPattern: definition.movementPattern,
+                  loadType: definition.loadType,
+                  hasCurrentData,
+                  thisWeekSets,
+                  thisWeekCompletedCount,
+                  thisWeekVolume,
+                  thisWeekTopWeight,
+                  thisWeekMaxReps,
+                  thisWeekE1RM,
+                  targetSets,
+                  targetReps,
+                  hasPreviousData,
+                  prevSets,
+                  prevCompletedCount,
+                  prevVolume,
+                  prevTopWeight,
+                  prevMaxReps,
+                  prevE1RM,
+                  prevDate,
+                  volumeDelta,
+                  volumeDeltaPct,
+                  weightDelta,
+                  e1rmDelta,
+                  statusType,
+                  statusBadge,
+                  coachPrescription,
+                  targetCeilingStr,
+                  targetCeilingVol
+                };
+              });
+
+              // Apply User Filters
+              const filteredCards = progressionCards.filter(card => {
+                if (weeklyFilterPattern !== 'all' && card.movementPattern !== weeklyFilterPattern) {
+                  return false;
+                }
+                if (weeklyOverloadStatusFilter !== 'all' && card.statusType !== weeklyOverloadStatusFilter) {
+                  return false;
+                }
+                if (weeklyExerciseSearch.trim()) {
+                  const q = weeklyExerciseSearch.toLowerCase();
+                  return (
+                    card.name.toLowerCase().includes(q) ||
+                    card.subCategory.toLowerCase().includes(q) ||
+                    card.equipment.toLowerCase().includes(q)
+                  );
+                }
+                return true;
+              });
+
+              return (
+                <div className="space-y-4">
+                  {/* Cards Header & Filter Toolbar */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                      <h4 className="font-bold text-white text-base">Bench Press</h4>
-                      <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                        <span className="text-amber-400 font-medium">Upper Body</span> • <span>Chest</span> • <span>Barbell</span>
-                      </div>
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <TrendingUp className="w-5 h-5 text-amber-500" />
+                        Dynamic Exercise Progression & Double Overload Engine
+                      </h3>
+                      <p className="text-xs text-stone-400 mt-0.5">
+                        Week-over-week deltas, estimated 1RM changes, and 3-tier progressive overload coaching for your exact lifts.
+                      </p>
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Progressing
-                    </span>
+
+                    {/* Quick Search */}
+                    <div className="relative min-w-[220px]">
+                      <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={weeklyExerciseSearch}
+                        onChange={e => setWeeklyExerciseSearch(e.target.value)}
+                        placeholder="Search lifts..."
+                        className="w-full bg-stone-900 border border-stone-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                    <div>
-                      <div className="text-stone-500">Last Week</div>
-                      <div className="font-mono text-stone-300 font-bold mt-0.5">3 sets: 8, 8, 7 @ 135 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Volume: 3,105 {unit}</div>
-                    </div>
-                    <div>
-                      <div className="text-amber-400">Target Ceiling</div>
-                      <div className="font-mono text-emerald-400 font-bold mt-0.5">3 sets × 10 @ 135 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Target Volume: 4,050 {unit}</div>
-                    </div>
+                  {/* Overload Status Filter Chips */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setWeeklyOverloadStatusFilter('all')}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold transition ${
+                        weeklyOverloadStatusFilter === 'all'
+                          ? 'bg-amber-500 text-stone-950 font-bold'
+                          : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                    >
+                      All Lifts ({progressionCards.length})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWeeklyOverloadStatusFilter('ready_to_bump')}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                        weeklyOverloadStatusFilter === 'ready_to_bump'
+                          ? 'bg-emerald-600 text-white font-bold'
+                          : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                    >
+                      <Target className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Ready to Bump Load ({progressionCards.filter(c => c.statusType === 'ready_to_bump').length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWeeklyOverloadStatusFilter('building')}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                        weeklyOverloadStatusFilter === 'building'
+                          ? 'bg-cyan-600 text-white font-bold'
+                          : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                    >
+                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Rep Building ({progressionCards.filter(c => c.statusType === 'building').length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWeeklyOverloadStatusFilter('tier_expansion')}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                        weeklyOverloadStatusFilter === 'tier_expansion'
+                          ? 'bg-amber-600 text-white font-bold'
+                          : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Set Expansion ({progressionCards.filter(c => c.statusType === 'tier_expansion').length})</span>
+                    </button>
+
+                    {weeklyFilterPattern !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyFilterPattern('all')}
+                        className="px-2.5 py-1 rounded-xl text-xs font-mono bg-stone-800 text-amber-400 border border-amber-500/30 flex items-center gap-1"
+                      >
+                        <span>Pattern: {weeklyFilterPattern.replace('_', ' ')}</span>
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
-                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs text-stone-200">
-                    <strong className="text-amber-400 block mb-0.5">💡 Coach Prescription:</strong>
-                    You hit 8, 8, 7 reps last week. Aim to complete all 3 sets with 8-10 reps this session to lock in your next weight jump!
-                  </div>
+                  {/* Empty state if search or filter yields nothing */}
+                  {filteredCards.length === 0 ? (
+                    <div className="bg-stone-900/40 border border-stone-800/80 rounded-2xl p-8 text-center space-y-2">
+                      <p className="text-sm text-stone-300 font-bold">No exercises match current filter</p>
+                      <p className="text-xs text-stone-500">
+                        Try resetting your search or filter pills to view all active movement progression cards.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWeeklyFilterPattern('all');
+                          setWeeklyOverloadStatusFilter('all');
+                          setWeeklyExerciseSearch('');
+                        }}
+                        className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-xs font-semibold mt-2"
+                      >
+                        Reset Filters
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filteredCards.map(card => {
+                        const patternInfo = MOVEMENT_PATTERN_OPTIONS.find(p => p.id === card.movementPattern);
+
+                        return (
+                          <div
+                            key={card.exId}
+                            className="bg-stone-900/60 border border-stone-800 hover:border-stone-700/80 transition rounded-2xl p-5 space-y-4 flex flex-col justify-between"
+                          >
+                            <div className="space-y-3">
+                              {/* Card Header */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <h4 className="font-bold text-white text-base flex items-center gap-2">
+                                    <span>{card.name}</span>
+                                  </h4>
+                                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-400 mt-0.5">
+                                    <span className="text-amber-400 font-medium">{card.split}</span>
+                                    <span>·</span>
+                                    <span>{card.subCategory}</span>
+                                    <span>·</span>
+                                    <span>{card.equipment}</span>
+                                    {patternInfo && (
+                                      <>
+                                        <span>·</span>
+                                        <span className="text-cyan-400 font-mono text-[11px]">{patternInfo.label}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-xl border shrink-0 ${card.statusBadge.bg} ${card.statusBadge.text} ${card.statusBadge.border}`}>
+                                  {card.statusBadge.label}
+                                </span>
+                              </div>
+
+                              {/* Performance Telemetry Grid: Prior Session vs This Week */}
+                              <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950/90 p-3.5 rounded-xl border border-stone-800/80">
+                                {/* Left Column: Prior Session */}
+                                <div className="space-y-1">
+                                  <div className="text-stone-500 font-semibold flex items-center justify-between">
+                                    <span>Prior Session</span>
+                                    {card.prevDate && <span className="text-[10px] text-stone-600 font-mono">{card.prevDate}</span>}
+                                  </div>
+                                  {card.hasPreviousData ? (
+                                    <>
+                                      <div className="font-mono text-stone-300 font-bold mt-0.5">
+                                        {card.prevCompletedCount} sets: {card.prevSets.map(s => s.reps).join(', ')} @ {card.prevTopWeight} {unit}
+                                      </div>
+                                      <div className="text-[11px] text-stone-500 flex items-center justify-between mt-1">
+                                        <span>Volume: <strong className="text-stone-400 font-mono">{card.prevVolume.toLocaleString()} {unit}</strong></span>
+                                        <span>e1RM: <strong className="text-stone-400 font-mono">{card.prevE1RM}</strong></span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="text-stone-500 text-[11px] italic mt-1">
+                                      First mesocycle session (calibrating)
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Right Column: This Week or Target Ceiling */}
+                                <div className="space-y-1 border-l border-stone-800/80 pl-3">
+                                  <div className="text-amber-400 font-semibold flex items-center justify-between">
+                                    <span>{card.hasCurrentData ? 'This Week' : 'Target Ceiling'}</span>
+                                    {card.volumeDeltaPct !== 0 && (
+                                      <span className={`text-[10px] font-mono px-1 rounded ${card.volumeDeltaPct > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                        {card.volumeDeltaPct > 0 ? `+${card.volumeDeltaPct}%` : `${card.volumeDeltaPct}%`} vol
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {card.hasCurrentData ? (
+                                    <>
+                                      <div className="font-mono text-emerald-400 font-bold mt-0.5">
+                                        {card.thisWeekCompletedCount} sets: {card.thisWeekSets.map(s => s.reps).join(', ')} @ {card.thisWeekTopWeight} {unit}
+                                      </div>
+                                      <div className="text-[11px] text-stone-400 flex items-center justify-between mt-1">
+                                        <span>Volume: <strong className="text-stone-200 font-mono">{card.thisWeekVolume.toLocaleString()} {unit}</strong></span>
+                                        <span>e1RM: <strong className="text-emerald-400 font-mono">{card.thisWeekE1RM} {unit}</strong></span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="font-mono text-amber-400 font-bold mt-0.5">
+                                        {card.targetCeilingStr}
+                                      </div>
+                                      <div className="text-[11px] text-stone-500 mt-1">
+                                        Prescribed Routine Target
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Target Ceiling Micro-Card if current data exists */}
+                              {card.hasCurrentData && (
+                                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-stone-950/50 border border-stone-800/50 text-xs">
+                                  <span className="text-stone-400 flex items-center gap-1.5">
+                                    <Target className="w-3.5 h-3.5 text-amber-400" />
+                                    Next Overload Target:
+                                  </span>
+                                  <span className="font-mono font-bold text-amber-400">
+                                    {card.targetCeilingStr}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Double Progression Coach Prescription */}
+                              <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                                card.statusType === 'ready_to_bump'
+                                  ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
+                                  : card.statusType === 'building'
+                                  ? 'bg-cyan-950/30 border-cyan-500/30 text-cyan-200'
+                                  : 'bg-amber-950/20 border-amber-500/30 text-stone-200'
+                              }`}>
+                                <strong className={`block mb-0.5 ${
+                                  card.statusType === 'ready_to_bump' ? 'text-emerald-400' : card.statusType === 'building' ? 'text-cyan-400' : 'text-amber-400'
+                                }`}>
+                                  💡 Double Progression Coach:
+                                </strong>
+                                {card.coachPrescription}
+                              </div>
+                            </div>
+
+                            {/* Card Quick Actions */}
+                            <div className="flex items-center justify-between pt-2 border-t border-stone-800/80 text-xs">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setHistoryDrawerExercise({ id: card.exId, name: card.name });
+                                }}
+                                className="text-stone-400 hover:text-white transition flex items-center gap-1 font-medium"
+                              >
+                                <History className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Historical Analytics</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('workout');
+                                }}
+                                className="px-3 py-1 bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white rounded-xl font-semibold transition flex items-center gap-1.5"
+                              >
+                                <Dumbbell className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Track in Workout</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-
-                {/* Squat or Leg Press Card */}
-                <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-white text-base">Squat or Leg Press</h4>
-                      <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                        <span className="text-emerald-400 font-medium">Lower Body</span> • <span>Quads</span> • <span>Barbell</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                      Rep Building
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                    <div>
-                      <div className="text-stone-500">Last Week</div>
-                      <div className="font-mono text-stone-300 font-bold mt-0.5">3 sets: 8, 8, 7 @ 185 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Volume: 4,255 {unit}</div>
-                    </div>
-                    <div>
-                      <div className="text-amber-400">Target Ceiling</div>
-                      <div className="font-mono text-amber-400 font-bold mt-0.5">3 sets × 10 @ 185 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Target Volume: 5,550 {unit}</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-3 text-xs text-stone-200">
-                    <strong className="text-cyan-400 block mb-0.5">💡 Coach Prescription:</strong>
-                    Drive out of the hole with full foot pressure. Once 3x10 is reached, bump load by +5 {unit} next week.
-                  </div>
-                </div>
-
-                {/* Romanian Deadlift Card */}
-                <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-white text-base">Romanian Deadlift (RDL)</h4>
-                      <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                        <span className="text-emerald-400 font-medium">Lower Body</span> • <span>Hamstrings</span> • <span>Barbell</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Target Mastered
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                    <div>
-                      <div className="text-stone-500">Last Week</div>
-                      <div className="font-mono text-stone-300 font-bold mt-0.5">2 sets × 10 @ 135 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">2x10 Completed</div>
-                    </div>
-                    <div>
-                      <div className="text-amber-400">Tier 2 Target</div>
-                      <div className="font-mono text-emerald-400 font-bold mt-0.5">3 sets × 10 @ 135 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Add Set 3</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-stone-200">
-                    <strong className="text-emerald-400 block mb-0.5">💡 Coach Prescription:</strong>
-                    You completed 2 clean sets of 10. Expand to 3 sets of 10 this session before bumping to 140 {unit}.
-                  </div>
-                </div>
-
-                {/* Chest-Supported Row Card */}
-                <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-white text-base">Chest-Supported Row</h4>
-                      <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                        <span className="text-amber-400 font-medium">Upper Body</span> • <span>Back / Lats</span> • <span>Machine</span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
-                      Steady Load
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                    <div>
-                      <div className="text-stone-500">Last Week</div>
-                      <div className="font-mono text-stone-300 font-bold mt-0.5">3 sets: 10, 10, 9 @ 90 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Volume: 2,610 {unit}</div>
-                    </div>
-                    <div>
-                      <div className="text-amber-400">Target Ceiling</div>
-                      <div className="font-mono text-amber-400 font-bold mt-0.5">3 sets × 12 @ 90 {unit}</div>
-                      <div className="text-[11px] text-stone-500 mt-1">Volume: 3,240 {unit}</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-stone-800/60 border border-stone-700 rounded-xl p-3 text-xs text-stone-300">
-                    <strong className="text-amber-400 block mb-0.5">💡 Coach Prescription:</strong>
-                    Focus on pinching scapulae for 1 solid second at contraction. Squeeze out that 10th rep on set 3.
-                  </div>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         )}
 

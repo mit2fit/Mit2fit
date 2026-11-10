@@ -75,7 +75,11 @@ import {
   WorkoutTemplate,
   RoutineTemplate,
   RoutineExerciseConfig,
-  ExperienceLevel
+  ExperienceLevel,
+  MovementPattern,
+  LoadType,
+  MOVEMENT_PATTERN_OPTIONS,
+  LOAD_TYPE_OPTIONS
 } from '../data/exerciseLibrary';
 import {
   ROUTINE_DEFINITIONS,
@@ -805,7 +809,7 @@ export default function ExerciseTracker() {
     exIdx: number;
     exercise: ExerciseDefinition;
     search?: string;
-    filterMode?: 'SameMuscle' | 'SameSplit' | 'All';
+    filterMode?: 'Direct' | 'SameMuscle' | 'SameSplit' | 'All';
     updateRoutineTemplate?: boolean;
   } | null>(null);
 
@@ -897,6 +901,8 @@ export default function ExerciseTracker() {
   const [selectedSplit, setSelectedSplit] = useState<string>('All');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('All');
   const [selectedEquipmentFilter, setSelectedEquipmentFilter] = useState<string>('All');
+  const [selectedPatternFilter, setSelectedPatternFilter] = useState<MovementPattern | 'All'>('All');
+  const [selectedLoadTypeFilter, setSelectedLoadTypeFilter] = useState<LoadType | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Custom Exercise Creation State
@@ -1158,12 +1164,16 @@ export default function ExerciseTracker() {
       const matchesEquipment = selectedEquipmentFilter === 'All' || 
         ex.defaultEquipment === selectedEquipmentFilter || 
         ex.supportedEquipment.includes(selectedEquipmentFilter);
-      const matchesSearch = ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ex.primaryMuscle.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesPattern = selectedPatternFilter === 'All' || ex.movementPattern === selectedPatternFilter;
+      const matchesLoadType = selectedLoadTypeFilter === 'All' || ex.loadType === selectedLoadTypeFilter;
+      const matchesSearch = !searchQuery.trim() ||
+        ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ex.primaryMuscle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ex.subCategory.toLowerCase().includes(searchQuery.toLowerCase());
 
-      return matchesSplit && matchesSubCat && matchesEquipment && matchesSearch;
+      return matchesSplit && matchesSubCat && matchesEquipment && matchesPattern && matchesLoadType && matchesSearch;
     });
-  }, [selectedSplit, selectedSubCategory, selectedEquipmentFilter, searchQuery]);
+  }, [selectedSplit, selectedSubCategory, selectedEquipmentFilter, selectedPatternFilter, selectedLoadTypeFilter, searchQuery]);
 
   // Format MM:SS
   const formatTime = (secs: number) => {
@@ -3458,7 +3468,8 @@ export default function ExerciseTracker() {
                             onClick={() => setSubstituteModal({
                               isOpen: true,
                               exIdx,
-                              exercise: activeEx.exercise
+                              exercise: activeEx.exercise,
+                              filterMode: (activeEx.exercise.substituteIds && activeEx.exercise.substituteIds.length > 0) ? 'Direct' : 'SameMuscle'
                             })}
                             className="px-2.5 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-950/30 text-xs text-emerald-300 hover:text-emerald-200 hover:bg-emerald-900/50 flex items-center gap-1.5 transition font-semibold"
                             title="Substitute movement (if equipment occupied)"
@@ -4580,42 +4591,108 @@ export default function ExerciseTracker() {
         {/* TAB 3: EXERCISE EXECUTION & BIOMECHANICS GUIDE                 */}
         {/* ============================================================== */}
         {activeTab === 'library' && (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-stone-900/40 p-4 rounded-2xl border border-stone-800">
+          <div className="space-y-5">
+            {/* Library Command Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-stone-900/60 p-4 sm:p-5 rounded-2xl border border-stone-800 shadow-xl backdrop-blur-sm">
               <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 tracking-tight">
                   <BookOpen className="w-5 h-5 text-amber-500" />
-                  Exercise Execution & Biomechanics Guide ({EXERCISE_DATABASE.length} Exercises)
+                  Exercise Biomechanics & Execution Library
                 </h2>
-                <p className="text-xs text-stone-400 mt-0.5">
-                  Click any movement to view proper setup cues, step-by-step biomechanics, and open-source database references.
+                <p className="text-xs text-stone-400 mt-1">
+                  {EXERCISE_DATABASE.length} normalized movements across compound splits, functional calisthenics, core stabilization, and loaded carries.
                 </p>
               </div>
 
-              <button
-                onClick={() => {
-                  setIsCustomMode(true);
-                  setIsAddModalOpen(true);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold rounded-xl text-xs transition"
-              >
-                <Plus className="w-4 h-4 text-amber-400" />
-                Create Custom Exercise
-              </button>
+              <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
+                {(selectedSplit !== 'All' || selectedSubCategory !== 'All' || selectedEquipmentFilter !== 'All' || selectedPatternFilter !== 'All' || selectedLoadTypeFilter !== 'All' || searchQuery) && (
+                  <button
+                    onClick={() => {
+                      setSelectedSplit('All');
+                      setSelectedSubCategory('All');
+                      setSelectedEquipmentFilter('All');
+                      setSelectedPatternFilter('All');
+                      setSelectedLoadTypeFilter('All');
+                      setSearchQuery('');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white border border-stone-700 text-xs font-semibold transition"
+                  >
+                    Reset Filters
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    setIsCustomMode(true);
+                    setIsAddModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition shadow-md shadow-amber-500/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Custom Movement
+                </button>
+              </div>
             </div>
 
-            {/* Split Filter Tabs */}
-            <div className="space-y-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-400">
-                Filter by Session Split:
+            {/* Unified Search & Pattern Filter Deck */}
+            <div className="bg-stone-900/50 p-4 rounded-2xl border border-stone-800 space-y-3.5 shadow-md">
+              {/* Row 1: Search + Equipment + Load Type */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="relative md:col-span-2">
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500" />
+                  <input
+                    type="text"
+                    placeholder="Search movement, prime muscle, or cue (e.g. Dips, Chest, Nordic, Plank)..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl pl-10 pr-9 py-2 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-white p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <select
+                    value={selectedEquipmentFilter}
+                    onChange={(e) => setSelectedEquipmentFilter(e.target.value)}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-stone-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    <option value="All">All Equipment Types</option>
+                    {EQUIPMENT_OPTIONS.map(eq => (
+                      <option key={eq} value={eq}>{eq}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <select
+                    value={selectedLoadTypeFilter}
+                    onChange={(e) => setSelectedLoadTypeFilter(e.target.value as LoadType | 'All')}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-stone-300 focus:outline-none focus:border-amber-500 cursor-pointer"
+                  >
+                    {LOAD_TYPE_OPTIONS.map(opt => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+
+              {/* Row 2: Split Category Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0 mr-1">Split:</span>
                 <button
                   onClick={() => setSelectedSplit('All')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
                     selectedSplit === 'All' 
-                      ? 'bg-amber-500 text-stone-950' 
-                      : 'bg-stone-900 text-stone-400 hover:text-white border border-stone-800'
+                      ? 'bg-amber-500 text-stone-950 font-bold shadow-sm shadow-amber-500/20' 
+                      : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
                   }`}
                 >
                   All Splits
@@ -4624,137 +4701,184 @@ export default function ExerciseTracker() {
                   <button
                     key={split}
                     onClick={() => setSelectedSplit(split)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
                       selectedSplit === split 
-                        ? 'bg-amber-500 text-stone-950' 
-                        : 'bg-stone-900 text-stone-400 hover:text-white border border-stone-800'
+                        ? 'bg-amber-500 text-stone-950 font-bold shadow-sm shadow-amber-500/20' 
+                        : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
                     }`}
                   >
                     {split}
                   </button>
                 ))}
               </div>
-            </div>
 
-            {/* Dynamic Subcategory Filters */}
-            <div className="space-y-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-400">
-                Filter by Muscle Subcategory:
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setSelectedSubCategory('All')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition ${
-                    selectedSubCategory === 'All' 
-                      ? 'bg-stone-200 text-stone-950 font-bold' 
-                      : 'bg-stone-900/90 text-stone-400 hover:text-white border border-stone-800'
-                  }`}
-                >
-                  All Subcategories
-                </button>
-                {availableSubCategories.map(sub => (
-                  <button
-                    key={sub}
-                    onClick={() => setSelectedSubCategory(sub)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition ${
-                      selectedSubCategory === sub 
-                        ? 'bg-stone-200 text-stone-950 font-bold' 
-                        : 'bg-stone-900/90 text-stone-400 hover:text-white border border-stone-800'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Equipment Filter & Search Bar */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div className="relative md:col-span-2">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500" />
-                <input
-                  type="text"
-                  placeholder="Search exercise by name or prime muscle..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-stone-900 border border-stone-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
-                />
+              {/* Row 3: Movement Pattern Horizontal Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 pt-1 border-t border-stone-800/60">
+                <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0 mr-1">Pattern:</span>
+                {MOVEMENT_PATTERN_OPTIONS.map(p => {
+                  const isSelected = selectedPatternFilter === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedPatternFilter(p.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+                        isSelected
+                          ? 'bg-cyan-500 text-stone-950 font-bold shadow-sm shadow-cyan-500/20'
+                          : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div>
-                <select
-                  value={selectedEquipmentFilter}
-                  onChange={(e) => setSelectedEquipmentFilter(e.target.value)}
-                  className="w-full bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-xs text-stone-300 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="All">All Equipment</option>
-                  {EQUIPMENT_OPTIONS.map(eq => (
-                    <option key={eq} value={eq}>{eq}</option>
-                  ))}
-                </select>
+              {/* Active Results Summary */}
+              <div className="flex items-center justify-between text-xs text-stone-400 pt-1 border-t border-stone-800/50">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono font-bold text-white">{filteredExercises.length}</span>
+                  <span>of {EXERCISE_DATABASE.length} movements matching criteria</span>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-stone-500">
+                  <span>• Biomechanical Cues Included</span>
+                  <span>• Direct 1-to-1 Swaps</span>
+                </div>
               </div>
             </div>
 
             {/* Exercises Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredExercises.map(exercise => (
-                <div 
-                  key={exercise.id}
-                  className="bg-stone-900/60 border border-stone-800/80 hover:border-amber-500/50 rounded-2xl p-5 transition flex flex-col justify-between space-y-4"
+            {filteredExercises.length === 0 ? (
+              <div className="text-center py-16 bg-stone-900/30 rounded-3xl border border-stone-800/80 p-8">
+                <Dumbbell className="w-12 h-12 text-stone-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-stone-300">No matching exercises found</h3>
+                <p className="text-sm text-stone-500 max-w-md mx-auto mt-1 mb-4">
+                  Try clearing some filters or searching with a different muscle group.
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedSplit('All');
+                    setSelectedSubCategory('All');
+                    setSelectedEquipmentFilter('All');
+                    setSelectedPatternFilter('All');
+                    setSelectedLoadTypeFilter('All');
+                    setSearchQuery('');
+                  }}
+                  className="px-4 py-2 bg-stone-800 text-stone-200 hover:text-white rounded-xl text-xs font-semibold border border-stone-700 transition"
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="font-bold text-white text-base leading-snug">{exercise.name}</h4>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/40 text-cyan-400 border border-cyan-800/30 shrink-0">
-                        {exercise.defaultEquipment}
-                      </span>
-                    </div>
+                  Reset All Filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredExercises.map(exercise => {
+                  const isTimedHold = exercise.loadType === 'bodyweight_timed' || exercise.defaultTarget?.repsUnit === 'sec';
+                  const isBodyweight = exercise.defaultEquipment === 'Bodyweight' || exercise.loadType === 'bodyweight_reps' || isTimedHold;
 
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-amber-400 font-semibold">{exercise.split}</span>
-                      <span className="text-stone-500">•</span>
-                      <span className="text-stone-300">{exercise.subCategory}</span>
-                    </div>
+                  return (
+                    <div 
+                      key={exercise.id}
+                      className="bg-stone-900/60 border border-stone-800/80 hover:border-amber-500/40 rounded-2xl p-4 sm:p-5 transition flex flex-col justify-between space-y-3.5 shadow-md hover:shadow-xl"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-bold text-white text-base leading-snug tracking-tight">
+                            {exercise.name}
+                          </h4>
 
-                    <p className="text-xs text-stone-400">
-                      Prime Muscle: <strong className="text-stone-200">{exercise.primaryMuscle}</strong>
-                    </p>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-stone-950 text-stone-300 border border-stone-800">
+                              {exercise.defaultEquipment}
+                            </span>
+                            {isTimedHold ? (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 font-bold">
+                                ⏱ Hold
+                              </span>
+                            ) : isBodyweight ? (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-cyan-950/60 text-cyan-400 border border-cyan-800/40 font-bold">
+                                BW
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
 
-                    <div className="bg-stone-950/80 p-3 rounded-xl border border-stone-800/80 text-xs space-y-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
-                        <Info className="w-3 h-3" /> Key Cue
+                        {/* Zero-Pill Unboxed Metadata Line with · Separators */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-400">
+                          <span className="font-semibold text-amber-400/90">{exercise.split}</span>
+                          <span>·</span>
+                          <span className="text-stone-300">{exercise.subCategory}</span>
+                          <span>·</span>
+                          <span>Prime: <strong className="text-stone-200">{exercise.primaryMuscle}</strong></span>
+                          {exercise.movementPattern && (
+                            <>
+                              <span>·</span>
+                              <span className="text-cyan-400 font-mono text-[11px]">
+                                {exercise.movementPattern.replace('_', ' ').toUpperCase()}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Key Biomechanical Cue */}
+                        <div className="bg-stone-950/80 p-3 rounded-xl border border-stone-800/80 text-xs space-y-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1 font-mono">
+                            <Info className="w-3 h-3 text-amber-400" />
+                            <span>Kinematic Cue</span>
+                          </div>
+                          <p className="text-stone-300 text-xs line-clamp-2 leading-relaxed">
+                            {exercise.cues[0] || 'Execute with controlled eccentric tempo.'}
+                          </p>
+                        </div>
+
+                        {/* Direct Substitutes Preview */}
+                        {exercise.substituteIds && exercise.substituteIds.length > 0 && (
+                          <div className="text-[11px] text-stone-400 bg-stone-950/50 px-2.5 py-1.5 rounded-xl border border-stone-800/60 flex items-center gap-1.5">
+                            <ArrowLeftRight className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <span className="text-stone-500 font-medium shrink-0">Swaps:</span>
+                            <span className="truncate text-stone-300 font-mono text-[10px]">
+                              {exercise.substituteIds.slice(0, 3).map(id => EXERCISE_DATABASE.find(e => e.id === id)?.name || id).join(', ')}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Default Prescription Strip */}
+                        <div className="text-[11px] font-mono text-stone-400 flex items-center justify-between pt-1">
+                          <span>Target: {exercise.defaultTarget.targetSets} sets × {exercise.defaultTarget.minReps}–{exercise.defaultTarget.maxReps} {exercise.defaultTarget.repsUnit || 'reps'}</span>
+                          <span className="text-amber-400 font-bold">
+                            {exercise.defaultTarget.defaultWeight > 0 ? `${exercise.defaultTarget.defaultWeight} ${unit}` : 'BW'}
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-stone-300 line-clamp-2">
-                        {exercise.cues[0] || 'Execute with controlled eccentric tempo.'}
-                      </p>
+
+                      {/* Card Action Buttons */}
+                      <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedGuideExercise(exercise)}
+                          className="text-xs text-stone-300 hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 transition font-semibold"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Full Guide</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            addExerciseToWorkout(exercise, exercise.defaultEquipment);
+                            setAlertNotice(`Added ${exercise.name} to active workout session!`);
+                            setTimeout(() => setAlertNotice(null), 3000);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition shadow-sm"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add to Routine</span>
+                        </button>
+                      </div>
                     </div>
-
-                    <div className="text-[11px] font-mono text-stone-400 flex items-center justify-between pt-1">
-                      <span>Prescribed: {exercise.defaultTarget.targetSets} sets × {exercise.defaultTarget.minReps}–{exercise.defaultTarget.maxReps} {exercise.defaultTarget.repsUnit || 'reps'}</span>
-                      <span className="text-amber-400 font-bold">{exercise.defaultTarget.defaultWeight} {unit}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => setSelectedGuideExercise(exercise)}
-                      className="text-xs text-stone-300 hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 transition"
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                      Full Guide
-                    </button>
-
-                    <button
-                      onClick={() => addExerciseToWorkout(exercise, exercise.defaultEquipment)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-lg text-xs transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add to Routine
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -6144,24 +6268,41 @@ export default function ExerciseTracker() {
 
             {/* Filter Tabs */}
             <div className="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar py-0.5">
-              {(['SameMuscle', 'SameSplit', 'All'] as const).map(mode => (
+              {substituteModal.exercise.substituteIds && substituteModal.exercise.substituteIds.length > 0 && (
                 <button
-                  key={mode}
                   type="button"
-                  onClick={() => setSubstituteModal({ ...substituteModal, filterMode: mode })}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
-                    (substituteModal.filterMode || 'SameMuscle') === mode
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  onClick={() => setSubstituteModal({ ...substituteModal, filterMode: 'Direct' })}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition whitespace-nowrap flex items-center gap-1 ${
+                    (substituteModal.filterMode || 'Direct') === 'Direct'
+                      ? 'bg-emerald-500 text-stone-950 font-bold shadow-sm'
                       : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
                   }`}
                 >
-                  {mode === 'SameMuscle' 
-                    ? `Same Muscle (${substituteModal.exercise.subCategory})` 
-                    : mode === 'SameSplit'
-                    ? `Same Split (${substituteModal.exercise.split})`
-                    : 'All 76 Exercises'}
+                  <span>🎯 Direct Swaps ({substituteModal.exercise.substituteIds.length})</span>
                 </button>
-              ))}
+              )}
+              {(['SameMuscle', 'SameSplit', 'All'] as const).map(mode => {
+                const isSelected = substituteModal.filterMode === mode || 
+                  (!substituteModal.exercise.substituteIds?.length && (substituteModal.filterMode || 'SameMuscle') === mode);
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSubstituteModal({ ...substituteModal, filterMode: mode })}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                        : 'bg-stone-950 text-stone-400 hover:text-white border border-stone-800'
+                    }`}
+                  >
+                    {mode === 'SameMuscle' 
+                      ? `Same Muscle (${substituteModal.exercise.subCategory})` 
+                      : mode === 'SameSplit'
+                      ? `Same Split (${substituteModal.exercise.split})`
+                      : `All ${EXERCISE_DATABASE.length} Exercises`}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Routine Template Update Toggle */}
@@ -6188,7 +6329,10 @@ export default function ExerciseTracker() {
                     ex.primaryMuscle.toLowerCase().includes(query) ||
                     ex.subCategory.toLowerCase().includes(query);
 
-                  const mode = substituteModal.filterMode || 'SameMuscle';
+                  const mode = substituteModal.filterMode || (substituteModal.exercise.substituteIds?.length ? 'Direct' : 'SameMuscle');
+                  if (mode === 'Direct') {
+                    return matchesSearch && (substituteModal.exercise.substituteIds || []).includes(ex.id);
+                  }
                   if (mode === 'SameMuscle') {
                     return matchesSearch && ex.subCategory === substituteModal.exercise.subCategory;
                   }
@@ -6200,18 +6344,24 @@ export default function ExerciseTracker() {
                 .map(altEx => {
                   const prevPerf = getPreviousExercisePerformance(altEx.id, altEx.name, history);
                   const isSameMuscle = altEx.subCategory === substituteModal.exercise.subCategory;
+                  const isDirect = substituteModal.exercise.substituteIds?.includes(altEx.id);
                   return (
                     <div
                       key={altEx.id}
                       className="pt-2 flex items-center justify-between p-3 rounded-xl hover:bg-stone-950 transition border border-transparent hover:border-stone-800"
                     >
                       <div className="space-y-1 min-w-0 pr-3">
-                        <div className="font-bold text-white text-xs flex items-center gap-2">
+                        <div className="font-bold text-white text-xs flex items-center gap-2 flex-wrap">
                           <span className="truncate">{altEx.name}</span>
                           <span className="text-[10px] font-mono text-cyan-400 px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40 shrink-0">
                             {altEx.defaultEquipment}
                           </span>
-                          {isSameMuscle && (
+                          {isDirect && (
+                            <span className="text-[9px] font-bold text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/50 shrink-0 font-mono">
+                              🎯 Direct Swap
+                            </span>
+                          )}
+                          {!isDirect && isSameMuscle && (
                             <span className="text-[9px] font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-500/30 shrink-0">
                               Recommended
                             </span>

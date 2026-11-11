@@ -10,18 +10,6 @@
     <meta property="og:type" content="website" />
     <meta name="theme-color" content="#09090b" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <script>
-      // Restore path if redirected from static 404.html
-      (function() {
-        var redirect = sessionStorage.getItem('mit2fit_redirect_path');
-        if (redirect) {
-          sessionStorage.removeItem('mit2fit_redirect_path');
-          if (redirect !== '/' && redirect !== window.location.pathname) {
-            window.history.replaceState(null, '', redirect);
-          }
-        }
-      })();
-    </script>
   </head>
   <body class="bg-paper text-ink antialiased">
     <div id="root"></div>

@@ -100,6 +100,10 @@ import {
   ProgressionStage
 } from '../data/progressiveOverloadEngine';
 import { ProgressiveOverloadPathwayDrawer } from '../components/ProgressiveOverloadPathwayDrawer';
+import { TrainingHeatmapAndPRTrophyRoom } from '../components/TrainingHeatmapAndPRTrophyRoom';
+import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionHUD';
+import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
+import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
 
 interface WorkoutSet {
   id: string;
@@ -1136,6 +1140,8 @@ export default function ExerciseTracker() {
   const [completedModalData, setCompletedModalData] = useState<CompletedWorkout | null>(null);
   const [isDataPortalOpen, setIsDataPortalOpen] = useState(false);
   const [alertNotice, setAlertNotice] = useState<string | null>(null);
+  const [isCustomSplitBuilderOpen, setIsCustomSplitBuilderOpen] = useState(false);
+  const [shareCardWorkout, setShareCardWorkout] = useState<CompletedWorkout | null>(null);
 
   // Audio Chime Toggle for Rest Timer
   const [isRestSoundEnabled, setIsRestSoundEnabled] = useState(true);
@@ -2607,6 +2613,86 @@ export default function ExerciseTracker() {
     });
   };
 
+  // Custom Split Builder Handler: Convert slots to active exercises and mount immediately
+  const handleSaveCustomRoutine = (customRoutine: CustomRoutineOutput) => {
+    const newExercises: ActiveExercise[] = customRoutine.slots.map((slot, index) => {
+      const sets: WorkoutSet[] = Array.from({ length: Math.max(1, slot.targetSets || 3) }, (_, sIdx) => ({
+        id: `set-${Date.now()}-${index}-${sIdx}`,
+        setNumber: sIdx + 1,
+        weight: slot.targetWeight || 0,
+        reps: slot.targetReps || 10,
+        completed: false,
+        type: 'Working' as const,
+        rpe: 8
+      }));
+
+      return {
+        instanceId: `inst-${Date.now()}-${index}`,
+        exercise: slot.exercise,
+        equipment: slot.equipment || slot.exercise.defaultEquipment || 'Barbell',
+        targetSets: slot.targetSets || 3,
+        targetReps: slot.targetReps || 10,
+        targetWeight: slot.targetWeight || 0,
+        minReps: slot.minReps || 8,
+        maxReps: slot.maxReps || 12,
+        sets,
+        supersetTag: slot.supersetTag,
+        notes: ''
+      };
+    });
+
+    setActiveExercises(newExercises);
+    setSessionTitle(customRoutine.name);
+    setActiveTemplateId(`custom-${customRoutine.id}`);
+    setActiveTab('workout');
+    setAlertNotice(`Activated custom split: "${customRoutine.name}" (${newExercises.length} movements)`);
+    setIsCustomSplitBuilderOpen(false);
+    setTimeout(() => setAlertNotice(null), 4000);
+  };
+
+  // Companion HUD helper handlers and active exercise projection
+  const activeExercisesHUD = useMemo(() => {
+    return activeExercises.map(ae => {
+      const completedSets = ae.sets.filter(s => s.completed).length;
+      const nextUnfinishedSet = ae.sets.find(s => !s.completed);
+      return {
+        instanceId: ae.instanceId,
+        name: ae.exercise.name,
+        equipment: ae.equipment,
+        supersetTag: ae.supersetTag,
+        targetSets: ae.targetSets || ae.sets.length,
+        completedSets,
+        nextWeight: nextUnfinishedSet?.weight || ae.targetWeight || 0,
+        nextReps: nextUnfinishedSet?.reps || ae.targetReps || 0
+      };
+    });
+  }, [activeExercises]);
+
+  const currentHUDExerciseIndex = useMemo(() => {
+    const idx = activeExercises.findIndex(ae => ae.sets.some(s => !s.completed));
+    return idx >= 0 ? idx : 0;
+  }, [activeExercises]);
+
+  const handleAdjustRestHUD = (delta: number) => {
+    setRestSecondsLeft(prev => {
+      if (prev === null) {
+        return Math.max(15, 60 + delta);
+      }
+      const next = prev + delta;
+      return next > 0 ? next : null;
+    });
+  };
+
+  const handleOpenPlateCalculatorHUD = () => {
+    const currentEx = activeExercises[currentHUDExerciseIndex] || activeExercises[0];
+    const weight = currentEx?.sets.find(s => !s.completed)?.weight || currentEx?.targetWeight || (unit === 'kg' ? 60 : 135);
+    setPlateModal({
+      isOpen: true,
+      exerciseName: currentEx?.exercise.name || 'Barbell Movement',
+      weight: weight > 0 ? weight : (unit === 'kg' ? 60 : 135)
+    });
+  };
+
   // Weekly Aggregations
   const currentWeekNumber = getWeekNumber(new Date());
   const currentYear = new Date().getFullYear();
@@ -3157,6 +3243,15 @@ export default function ExerciseTracker() {
                 <div className="flex items-center gap-2 self-end sm:self-center">
                   <button
                     type="button"
+                    onClick={() => setIsCustomSplitBuilderOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                    title="Build equipment-adaptive routine or custom split"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Custom Split</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setIsRoutinePickerExpanded(true)}
                     className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
                     title="Expand routine browser to view splits and tiers"
@@ -3199,8 +3294,16 @@ export default function ExerciseTracker() {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      onClick={() => setIsCustomSplitBuilderOpen(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-semibold transition shadow-sm"
+                      title="Open interactive custom routine & equipment filter builder"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Custom Split Builder</span>
+                    </button>
+                    <button
                       onClick={handleOpenCreateRoutine}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-semibold transition"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 rounded-xl text-xs font-medium transition"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>New Routine</span>
@@ -4667,6 +4770,21 @@ export default function ExerciseTracker() {
         {/* ============================================================== */}
         {activeTab === 'weekly' && (
           <div className="space-y-8">
+            {/* 52-Week Training Consistency Heatmap & All-Time PR Trophy Room */}
+            <TrainingHeatmapAndPRTrophyRoom
+              history={history}
+              unit={unit}
+              calculateE1RM={calculateE1RM}
+              onSelectExercise={(exerciseName) => {
+                setHistoryAnalyticsExercise(exerciseName);
+                setActiveTab('history');
+                setTimeout(() => {
+                  const el = document.getElementById('history-analytics-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
+              }}
+            />
+
             {/* Device Persistence & Sending Controls Card */}
             <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-start gap-3">
@@ -6367,7 +6485,7 @@ export default function ExerciseTracker() {
                 : '';
 
               return (
-                <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-5 space-y-4 shadow-xl">
+                <div id="history-analytics-section" className="bg-stone-900/80 border border-stone-800 rounded-2xl p-5 space-y-4 shadow-xl">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3">
                     <div className="flex items-center gap-2">
                       <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
@@ -6560,6 +6678,13 @@ export default function ExerciseTracker() {
 
                         {/* Send / Share Individual Workout Dropdown / Buttons */}
                         <div className="flex items-center gap-1 border-l border-stone-800 pl-3">
+                          <button
+                            onClick={() => setShareCardWorkout(workout)}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-amber-600 text-stone-300 hover:text-white transition"
+                            title="Generate shareable milestone card (PNG image or summary)"
+                          >
+                            <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
                           <button
                             onClick={() => {
                               const text = formatWorkoutText(workout);
@@ -7860,6 +7985,17 @@ export default function ExerciseTracker() {
               return null;
             })()}
 
+            {/* Generate Shareable Milestone Card */}
+            <button
+              onClick={() => {
+                setShareCardWorkout(completedModalData);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition"
+            >
+              <Share2 className="w-4 h-4 text-stone-950" />
+              <span>Generate Shareable Milestone Card (PNG / Text)</span>
+            </button>
+
             {/* Direct Send / Share Workout Row */}
             <div className="space-y-2">
               <div className="text-xs font-bold text-stone-400 uppercase tracking-wider">
@@ -9051,6 +9187,46 @@ export default function ExerciseTracker() {
           </div>
         );
       })()}
+
+      {/* Live In-Workout Companion HUD (Sticky Floating Bar) */}
+      <ActiveWorkoutCompanionHUD
+        hasStarted={hasStartedWorkout}
+        elapsedSeconds={elapsedSeconds}
+        restSecondsLeft={restSecondsLeft || 0}
+        isRestActive={restSecondsLeft !== null && restSecondsLeft > 0}
+        isTimerRunning={isTimerRunning}
+        activeExercisesCount={activeExercises.length}
+        completedSetsCount={totalCompletedSets}
+        totalSetsCount={totalTargetSets || activeExercises.reduce((sum, e) => sum + e.sets.length, 0)}
+        totalVolume={totalVolume}
+        unit={unit}
+        currentExerciseIndex={currentHUDExerciseIndex}
+        activeExercises={activeExercisesHUD}
+        onToggleTimer={() => setIsTimerRunning(prev => !prev)}
+        onAdjustRest={handleAdjustRestHUD}
+        onSkipRest={() => setRestSecondsLeft(null)}
+        onOpenPlateCalculator={handleOpenPlateCalculatorHUD}
+        isRestSoundEnabled={isRestSoundEnabled}
+        onToggleRestSound={() => setIsRestSoundEnabled(prev => !prev)}
+        onFinishWorkout={handleFinishWorkout}
+      />
+
+      {/* Post-Workout Milestone Share Card Modal */}
+      {shareCardWorkout && (
+        <WorkoutShareCardModal
+          workout={shareCardWorkout}
+          onClose={() => setShareCardWorkout(null)}
+          calculateE1RM={calculateE1RM}
+        />
+      )}
+
+      {/* Equipment-Adaptive Custom Routine Builder Modal */}
+      <CustomSplitBuilderModal
+        isOpen={isCustomSplitBuilderOpen}
+        onClose={() => setIsCustomSplitBuilderOpen(false)}
+        onSaveRoutine={handleSaveCustomRoutine}
+        unit={unit}
+      />
 
       </div>
 

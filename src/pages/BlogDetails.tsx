@@ -1,12 +1,14 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { BLOG_POSTS } from '../components/BlogSection';
-import { ArrowLeft, History, Share2 } from 'lucide-react';
+import { BLOG_POSTS } from '../data/blogPosts';
+import { ArrowLeft, Share2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function BlogDetails() {
   const { id } = useParams();
-  const post = BLOG_POSTS.find(p => p.id === Number(id));
+  const post = BLOG_POSTS.find((entry) =>
+    typeof entry.id === 'number' ? entry.id === Number(id) : entry.id === id,
+  );
 
   if (!post) return <div className="py-40 text-center text-zinc-500 uppercase font-mono tracking-widest">Protocol not found.</div>;
 
@@ -36,31 +38,58 @@ export default function BlogDetails() {
         </div>
 
         <div className="markdown-body p-6 md:p-16 bg-surface border border-edge">
-          <h2>Protocol Synthesis</h2>
-          <p>
-            In the pursuit of peak physical conditioning, we often rely on tradition over data. However, recent advancements in cellular biology reveal that the "work harder" mantra is only half the story. To truly optimize for hypertrophy and strength, we must understand the signaling pathways at play.
-          </p>
-          
-          <h2>Cellular Transmission</h2>
-          <p>
-            Mechanical tension remains the primary driver of the mTOR pathway. When we expose muscle fibers to high levels of tension, it triggers a cascade of protein synthesis that leads to fiber thickening. But tension alone isn't enough; it must be sustained and applied through the full range of motion.
-          </p>
+          {'sections' in post ? (
+            <>
+              {post.sections.map((section) => (
+                <section key={section.heading}>
+                  <h2>{section.heading}</h2>
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </section>
+              ))}
+              <section>
+                <h2>References</h2>
+                <ul>
+                  {post.references.map((reference) => (
+                    <li key={reference.url} className="mb-2">
+                      <a href={reference.url} className="text-brand underline hover:text-white">
+                        {reference.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </>
+          ) : (
+            <>
+              <h2>Protocol Synthesis</h2>
+              <p>
+                In the pursuit of peak physical conditioning, we often rely on tradition over data. However, recent advancements in cellular biology reveal that the "work harder" mantra is only half the story. To truly optimize for hypertrophy and strength, we must understand the signaling pathways at play.
+              </p>
 
-          <div className="grid md:grid-cols-2 gap-8 my-12 bg-black p-8 border border-edge">
-            <div>
-              <h4 className="text-brand text-xs font-bold mb-4 uppercase tracking-widest">01 / Overload</h4>
-              <p className="text-zinc-500 text-sm">Incremental increases in tension over time to force metabolic adaptation.</p>
-            </div>
-            <div>
-              <h4 className="text-brand text-xs font-bold mb-4 uppercase tracking-widest">02 / Signal</h4>
-              <p className="text-zinc-500 text-sm">Balancing sets and reps against neural recovery capacity (CNS restoration).</p>
-            </div>
-          </div>
+              <h2>Cellular Transmission</h2>
+              <p>
+                Mechanical tension remains the primary driver of the mTOR pathway. When we expose muscle fibers to high levels of tension, it triggers a cascade of protein synthesis that leads to fiber thickening. But tension alone isn't enough; it must be sustained and applied through the full range of motion.
+              </p>
 
-          <h2>Practical Methodology</h2>
-          <p>
-            For the elite trainee, this means focusing on slow eccentrics and controlled concentrics. Stop counting calories and start counting signals. Are you giving your body a reason to change?
-          </p>
+              <div className="grid md:grid-cols-2 gap-8 my-12 bg-black p-8 border border-edge">
+                <div>
+                  <h4 className="text-brand text-xs font-bold mb-4 uppercase tracking-widest">01 / Overload</h4>
+                  <p className="text-zinc-500 text-sm">Incremental increases in tension over time to force metabolic adaptation.</p>
+                </div>
+                <div>
+                  <h4 className="text-brand text-xs font-bold mb-4 uppercase tracking-widest">02 / Signal</h4>
+                  <p className="text-zinc-500 text-sm">Balancing sets and reps against neural recovery capacity (CNS restoration).</p>
+                </div>
+              </div>
+
+              <h2>Practical Methodology</h2>
+              <p>
+                For the elite trainee, this means focusing on slow eccentrics and controlled concentrics. Stop counting calories and start counting signals. Are you giving your body a reason to change?
+              </p>
+            </>
+          )}
         </div>
 
         <footer className="mt-20 pt-12 border-t border-edge flex flex-col md:flex-row justify-between items-center gap-8">

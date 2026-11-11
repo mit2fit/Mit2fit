@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { BLOG_POSTS } from '../components/BlogSection';
+import { BLOG_POSTS } from '../data/blogPosts';
 import { History, Search, ArrowRight } from 'lucide-react';
 
 export default function BlogList() {

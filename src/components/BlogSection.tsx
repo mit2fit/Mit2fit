@@ -1,36 +1,7 @@
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, History } from 'lucide-react';
-
-export const BLOG_POSTS = [
-  {
-    id: 1,
-    title: "The Hypertrophy Signal: mTOR and Mechanical Tension",
-    excerpt: "Understanding the biological pathways that trigger muscle growth. Why tension is king.",
-    date: "MAY 01, 2026",
-    category: "PHYSIOLOGY",
-    readTime: "8 MIN READ",
-    image: "https://images.unsplash.com/photo-1541534741688-6078c64b52d3?auto=format&fit=crop&q=80&w=800"
-  },
-  {
-    id: 2,
-    title: "Metabolic Flexibility: Burn Fat and Carbohydrates Efficiently",
-    excerpt: "How to train your body to switch fuel sources for better endurance and body composition.",
-    date: "APR 25, 2026",
-    category: "BIO-ENERGETICS",
-    readTime: "12 MIN READ",
-    image: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&q=80&w=800"
-  },
-  {
-    id: 3,
-    title: "CNS Recovery: The Forgotten Variable in Heavy Lifting",
-    excerpt: "Your muscles might be ready, but is your brain? Signs of neural fatigue and how to fix it.",
-    date: "APR 18, 2026",
-    category: "RECOVERY",
-    readTime: "6 MIN READ",
-    image: "https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&q=80&w=800"
-  }
-];
+import { ArrowRight } from 'lucide-react';
+import { BLOG_POSTS } from '../data/blogPosts';
 
 export default function BlogSection() {
   return (
@@ -47,7 +18,7 @@ export default function BlogSection() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-px bg-edge border border-edge">
-          {BLOG_POSTS.slice(0, 2).map((post, idx) => (
+          {BLOG_POSTS.slice(0, 2).map((post) => (
             <motion.div
               key={post.id}
               initial={{ opacity: 0 }}

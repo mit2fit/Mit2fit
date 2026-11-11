@@ -93,6 +93,13 @@ import {
   RoutineDefinition,
   RoutineSlotPrescription
 } from '../data/routineLookupTable';
+import {
+  generateProgressiveOverloadLadder,
+  getPreviousSameWorkoutPerformance,
+  ProgressionLadder,
+  ProgressionStage
+} from '../data/progressiveOverloadEngine';
+import { ProgressiveOverloadPathwayDrawer } from '../components/ProgressiveOverloadPathwayDrawer';
 
 interface WorkoutSet {
   id: string;
@@ -1108,15 +1115,18 @@ export default function ExerciseTracker() {
   // Modals & Popups
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedGuideExercise, setSelectedGuideExercise] = useState<ExerciseDefinition | null>(null);
-  const [guideActiveTab, setGuideActiveTab] = useState<'technique' | 'faults' | 'tempo' | 'warmup' | 'swaps'>('technique');
+  const [guideActiveTab, setGuideActiveTab] = useState<'technique' | 'faults' | 'tempo' | 'warmup' | 'swaps' | 'overload'>('technique');
   const [guideWarmupWeight, setGuideWarmupWeight] = useState<number>(135);
   const [isGuideTempoRunning, setIsGuideTempoRunning] = useState<boolean>(false);
   const [guideTempoPhase, setGuideTempoPhase] = useState<string>('Eccentric Lowering');
   const [guideTempoCountdown, setGuideTempoCountdown] = useState<number>(3);
 
-  const openExerciseGuide = (exercise: ExerciseDefinition) => {
+  const openExerciseGuide = (
+    exercise: ExerciseDefinition, 
+    initialTab: 'technique' | 'faults' | 'tempo' | 'warmup' | 'swaps' | 'overload' = 'technique'
+  ) => {
     setSelectedGuideExercise(exercise);
-    setGuideActiveTab('technique');
+    setGuideActiveTab(initialTab);
     setIsGuideTempoRunning(false);
     const inWorkout = activeExercises.find(ae => ae.exercise.id === exercise.id || ae.exercise.name.toLowerCase() === exercise.name.toLowerCase());
     const load = inWorkout?.targetWeight || inWorkout?.sets[0]?.weight || exercise.defaultTarget?.defaultWeight || (unit === 'kg' ? 60 : 135);
@@ -1925,6 +1935,57 @@ export default function ExerciseTracker() {
     });
     setAlertNotice(`Restored ${ex.exercise.name} sets to last session (${prevPerf.summary})`);
     setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // 1-Tap Apply Progressive Overload Ladder Stage to Active Exercise
+  const applyOverloadStageToExercise = (exIdx: number, stage: ProgressionStage) => {
+    setActiveExercises(prev => {
+      const next = [...prev];
+      const cur = next[exIdx];
+      if (!cur) return prev;
+
+      const newTargetWeight = stage.targetWeight;
+      const newTargetReps = Math.round(stage.totalReps / stage.setReps.length);
+
+      // Map working sets to prescribed reps and weight from stage
+      let workingSetCounter = 0;
+      const updatedSets = cur.sets.map(s => {
+        if (s.type === 'Warmup') return s;
+        const prescribedRep = stage.setReps[workingSetCounter] ?? stage.setReps[stage.setReps.length - 1] ?? cur.targetReps;
+        workingSetCounter++;
+        return {
+          ...s,
+          weight: newTargetWeight,
+          reps: prescribedRep
+        };
+      });
+
+      // If active exercise has fewer sets than stage prescribed, append them
+      while (workingSetCounter < stage.setReps.length) {
+        const newSetNum = updatedSets.length + 1;
+        updatedSets.push({
+          id: `set-${Date.now()}-${workingSetCounter}`,
+          setNumber: newSetNum,
+          weight: newTargetWeight,
+          reps: stage.setReps[workingSetCounter] || stage.setReps[0] || cur.targetReps,
+          completed: false,
+          type: 'Working'
+        });
+        workingSetCounter++;
+      }
+
+      next[exIdx] = {
+        ...cur,
+        targetWeight: newTargetWeight,
+        targetReps: newTargetReps,
+        targetSets: updatedSets.filter(s => s.type !== 'Warmup').length,
+        sets: updatedSets
+      };
+      return next;
+    });
+
+    setAlertNotice(`Applied ${stage.title}: ${stage.targetWeight > 0 ? `${stage.targetWeight} ${unit} · ` : ''}[${stage.setReps.join(', ')}] reps to ${activeExercises[exIdx].exercise.name}!`);
+    setTimeout(() => setAlertNotice(null), 3500);
   };
 
   // 1-Tap apply previous set's weight & reps to this specific set
@@ -3808,6 +3869,21 @@ export default function ExerciseTracker() {
                   const prevPerf = getPreviousExercisePerformance(activeEx.exercise.id, activeEx.exercise.name, history);
                   const isMenuOpen = activeExerciseMenuId === activeEx.instanceId;
 
+                  const overloadLadder = generateProgressiveOverloadLadder({
+                    exerciseId: activeEx.exercise.id,
+                    exerciseName: activeEx.exercise.name,
+                    equipment: activeEx.equipment,
+                    loadType: activeEx.exercise.loadType,
+                    currentSetsCount: activeEx.targetSets || activeEx.sets.length,
+                    minReps: activeEx.minReps,
+                    maxReps: activeEx.maxReps,
+                    repsUnit: repsUnit,
+                    defaultWeight: activeEx.targetWeight || activeEx.exercise.defaultTarget?.defaultWeight || 0,
+                    unit: unit,
+                    sessionTitle: sessionTitle,
+                    history: history
+                  });
+
                   return (
                     <div 
                       key={activeEx.instanceId}
@@ -3860,6 +3936,16 @@ export default function ExerciseTracker() {
 
                         {/* Clean High-Tactile Action Cluster */}
                         <div className="flex items-center gap-1.5 self-end md:self-center relative">
+                          <button
+                            type="button"
+                            onClick={() => openExerciseGuide(activeEx.exercise, 'overload')}
+                            className="px-2.5 py-1.5 rounded-xl border border-cyan-500/30 bg-cyan-950/30 text-xs text-cyan-300 hover:text-cyan-200 hover:bg-cyan-900/50 flex items-center gap-1.5 transition font-semibold"
+                            title="Open progressive overload ladder & lookup table"
+                          >
+                            <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="hidden sm:inline">Overload</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => addWarmupRamp(exIdx)}
@@ -4153,6 +4239,17 @@ export default function ExerciseTracker() {
                             {progressionAdvice.actionLabel}
                           </button>
                         )}
+                      </div>
+
+                      {/* Progressive Overload Pathway & Rep-Weight Combination Ladder */}
+                      <div className="px-4 sm:px-5 pt-3.5 pb-1 border-b border-stone-800/80 bg-stone-950/40">
+                        <ProgressiveOverloadPathwayDrawer
+                          ladder={overloadLadder}
+                          unit={unit}
+                          onApplyStage={(stage) => applyOverloadStageToExercise(exIdx, stage)}
+                          isCollapsible={true}
+                          defaultExpanded={false}
+                        />
                       </div>
 
                       {/* Interactive Sets Table */}
@@ -6694,6 +6791,21 @@ export default function ExerciseTracker() {
           ae => ae.exercise.id === selectedGuideExercise.id || ae.exercise.name.toLowerCase() === selectedGuideExercise.name.toLowerCase()
         );
 
+        const guideOverloadLadder = generateProgressiveOverloadLadder({
+          exerciseId: selectedGuideExercise.id,
+          exerciseName: selectedGuideExercise.name,
+          equipment: activeExInWorkout?.equipment || selectedGuideExercise.defaultEquipment,
+          loadType: selectedGuideExercise.loadType,
+          currentSetsCount: activeExInWorkout?.targetSets || selectedGuideExercise.defaultTarget?.targetSets || 3,
+          minReps: activeExInWorkout?.minReps || selectedGuideExercise.defaultTarget?.minReps || 8,
+          maxReps: activeExInWorkout?.maxReps || selectedGuideExercise.defaultTarget?.maxReps || 12,
+          repsUnit: selectedGuideExercise.defaultTarget?.repsUnit || 'reps',
+          defaultWeight: activeExInWorkout?.targetWeight || guideWarmupWeight || selectedGuideExercise.defaultTarget?.defaultWeight || 0,
+          unit,
+          sessionTitle,
+          history
+        });
+
         // Direct substitutes from exercise database
         const directSubstitutes = (selectedGuideExercise.substituteIds || [])
           .map(id => EXERCISE_DATABASE.find(e => e.id === id))
@@ -6822,10 +6934,11 @@ export default function ExerciseTracker() {
                 </button>
               </div>
 
-              {/* 5-Tab Navigation Bar */}
+              {/* 6-Tab Navigation Bar */}
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-stone-800/80 bg-stone-950/50 px-4 py-2.5">
                 {[
                   { id: 'technique', label: 'Technique & Setup', icon: CheckCircle2 },
+                  { id: 'overload', label: 'Overload Pathway', icon: TrendingUp },
                   { id: 'faults', label: 'Form Faults & Fixes', icon: AlertTriangle, count: faults.length },
                   { id: 'tempo', label: 'Tempo & Cadence', icon: Clock },
                   { id: 'warmup', label: 'Warmup Pyramid', icon: Flame },
@@ -7308,6 +7421,71 @@ export default function ExerciseTracker() {
                         );
                       })}
                     </div>
+                  </div>
+                )}
+
+                {/* ============================================================== */}
+                {/* TAB 6: PROGRESSIVE OVERLOAD PATHWAY & LOOKUP TABLE             */}
+                {/* ============================================================== */}
+                {guideActiveTab === 'overload' && (
+                  <div className="space-y-4">
+                    <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-amber-400" />
+                          <span>Dynamic Progressive Overload Ladder</span>
+                        </h4>
+                        <span className="text-[11px] font-mono text-stone-400">
+                          Double Progression Engine
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-300 leading-relaxed">
+                        Calculated from your previous performance in <strong className="text-white">"{sessionTitle}"</strong> (or recent exercise history). This lookup table plots your exact reps and weight combinations for the upcoming 5 training steps, ensuring consistent stimulus without premature technical breakdown.
+                      </p>
+                    </div>
+
+                    <ProgressiveOverloadPathwayDrawer
+                      ladder={guideOverloadLadder}
+                      unit={unit}
+                      onApplyStage={(stage) => {
+                        if (activeExIndex !== -1) {
+                          applyOverloadStageToExercise(activeExIndex, stage);
+                          setAlertNotice(`Applied ${stage.title} target to ${selectedGuideExercise.name}!`);
+                        } else {
+                          addExerciseToWorkout(selectedGuideExercise, selectedGuideExercise.defaultEquipment);
+                          setTimeout(() => {
+                            setActiveExercises(prev => {
+                              const lastIdx = prev.length - 1;
+                              if (lastIdx >= 0) {
+                                const next = [...prev];
+                                const cur = next[lastIdx];
+                                const newTargetWeight = stage.targetWeight;
+                                const newTargetReps = Math.round(stage.totalReps / stage.setReps.length);
+                                let wCount = 0;
+                                const updatedSets = cur.sets.map(s => {
+                                  if (s.type === 'Warmup') return s;
+                                  const rep = stage.setReps[wCount] ?? cur.targetReps;
+                                  wCount++;
+                                  return { ...s, weight: newTargetWeight, reps: rep };
+                                });
+                                next[lastIdx] = {
+                                  ...cur,
+                                  targetWeight: newTargetWeight,
+                                  targetReps: newTargetReps,
+                                  sets: updatedSets
+                                };
+                                return next;
+                              }
+                              return prev;
+                            });
+                          }, 50);
+                          setAlertNotice(`Added ${selectedGuideExercise.name} to session with ${stage.title} targets!`);
+                        }
+                        setTimeout(() => setAlertNotice(null), 3500);
+                      }}
+                      isCollapsible={false}
+                      defaultExpanded={true}
+                    />
                   </div>
                 )}
               </div>

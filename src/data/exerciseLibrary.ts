@@ -6408,6 +6408,2546 @@ export const EXERCISE_DATABASE: ExerciseDefinition[] = [
       "defaultWeight": 20,
       "repsUnit": "reps"
     }
+  },
+  {
+    "id": "svend-press",
+    "name": "Svend Press (Plate Pinch Press)",
+    "split": "Upper Body",
+    "subCategory": "Chest",
+    "category": "Chest",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Pectoralis Major (Sternal & Inner Fibers)",
+    "secondaryMuscles": [
+      "Anterior Deltoid",
+      "Biceps Brachii"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Pinch two light weight plates or dumbbells together aggressively between flat palms",
+      "Press straight outward in front of sternum without interlocking elbows",
+      "Squeeze pectorals for 2 full seconds at full reach before retracting"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Plate Pinch Press",
+      "url": "https://exrx.net/WeightExercises/PectoralSternal/PlatePress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand tall with core braced and shoulder blades retracted.",
+      "Hold weight plates pressed together flat between open palms at sternum height.",
+      "Extend arms straight forward, maintaining relentless inward pressing force.",
+      "Return under control to chest level while keeping maximum tension."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 15,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "cable-chest-crossover",
+      "pec-deck-machine-fly",
+      "push-ups"
+    ]
+  },
+  {
+    "id": "incline-cable-fly",
+    "name": "Incline Cable Fly (Low-to-High)",
+    "split": "Upper Body",
+    "subCategory": "Chest",
+    "category": "Chest",
+    "defaultEquipment": "Cable",
+    "supportedEquipment": [
+      "Cable",
+      "Resistance Band"
+    ],
+    "primaryMuscle": "Pectoralis Major (Clavicular Head)",
+    "secondaryMuscles": [
+      "Anterior Deltoid",
+      "Biceps Brachii (Short Head)"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Set pulleys low and adopt a staggered athletic stance with slight forward lean",
+      "Sweep hands upward and inward in an arc converging at eye level",
+      "Maintain a soft bend at the elbows throughout to protect biceps tendons"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cable Low Incline Fly",
+      "url": "https://exrx.net/WeightExercises/PectoralClavicular/CBInclineFly",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Position an incline bench or stand equidistant between low cable pulleys.",
+      "Grip D-handles with palms facing forward and slightly upward.",
+      "Contract upper chest to sweep cables upward toward nose height.",
+      "Lower under eccentric control for 3 seconds to a deep pectoral stretch."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 25,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "incline-dumbbell-press",
+      "cable-chest-crossover",
+      "incline-barbell-bench-press"
+    ]
+  },
+  {
+    "id": "low-incline-dumbbell-bench-press",
+    "name": "Low-Incline Dumbbell Bench Press (15°-30°)",
+    "split": "Upper Body",
+    "subCategory": "Chest",
+    "category": "Chest",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Barbell",
+      "Machine"
+    ],
+    "primaryMuscle": "Pectoralis Major (Clavicular & Sternal)",
+    "secondaryMuscles": [
+      "Anterior Deltoid",
+      "Triceps Brachii"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Set incline to notch 1 or 2 (15° to 30°) to maximize upper chest over front deltoids",
+      "Pack shoulder blades hard into pad with active foot drive",
+      "Press in a gentle inward arc without banging dumbbells together at top"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Incline Dumbbell Bench Press",
+      "url": "https://exrx.net/WeightExercises/PectoralClavicular/DBInclineBenchPress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lie back on a low-incline bench holding dumbbells with neutral/semi-pronated grip.",
+      "Retract scapulae and establish a firm arch with heels flat.",
+      "Lower dumbbells until elbows form a 90° angle touching deep pectoral stretch.",
+      "Press upward smoothly to full arm extension."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 60,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_push",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "incline-dumbbell-press",
+      "incline-barbell-bench-press",
+      "dumbbell-flat-bench-press"
+    ]
+  },
+  {
+    "id": "dumbbell-floor-press",
+    "name": "Dumbbell Floor Press",
+    "split": "Upper Body",
+    "subCategory": "Chest",
+    "category": "Chest",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Barbell",
+      "Kettlebell"
+    ],
+    "primaryMuscle": "Pectoralis Major & Triceps Brachii",
+    "secondaryMuscles": [
+      "Anterior Deltoid"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Lie flat on floor with knees bent and feet flat on ground",
+      "Lower dumbbells until upper arms gently make contact with floor at 45° angle",
+      "Pause for 1 second on floor to eliminate stretch reflex before pressing"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Dumbbell Floor Press",
+      "url": "https://exrx.net/WeightExercises/PectoralSternal/DBFloorPress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on floor with dumbbells on thighs; roll back to supine position with bent knees.",
+      "Press dumbbells up to full extension over lower chest.",
+      "Lower under control until triceps touch the floor gently.",
+      "Pause momentarily, then explode upward to lockout."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 65,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_push",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "bench-press",
+      "dumbbell-flat-bench-press",
+      "close-grip-bench-press"
+    ]
+  },
+  {
+    "id": "landmine-chest-press",
+    "name": "Half-Kneeling Landmine Chest Press",
+    "split": "Upper Body",
+    "subCategory": "Chest",
+    "category": "Chest",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell"
+    ],
+    "primaryMuscle": "Upper Pectoralis & Serratus Anterior",
+    "secondaryMuscles": [
+      "Anterior Deltoid",
+      "Triceps Brachii",
+      "Core Stabilizers"
+    ],
+    "animationType": "overhead",
+    "cues": [
+      "Kneel on the knee on the pressing side with front foot planted firmly",
+      "Hold barbell sleeve at collarbone height with elbow tucked at 45°",
+      "Press barbell upward and forward along its natural diagonal arc with scapular protraction"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Landmine Press",
+      "url": "https://exrx.net/WeightExercises/PectoralClavicular/LMPress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Anchor barbell in a landmine swivel or secure corner.",
+      "Assume half-kneeling stance holding end of barbell with one hand at shoulder.",
+      "Press diagonally upward, reaching fully at the top to engage serratus.",
+      "Lower with a 3-second tempo back to chest."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 45,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_push",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "incline-dumbbell-press",
+      "dumbbell-shoulder-press",
+      "cable-chest-crossover"
+    ]
+  },
+  {
+    "id": "meadows-row",
+    "name": "Meadows Row (Landmine Lat Row)",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell"
+    ],
+    "primaryMuscle": "Latissimus Dorsi & Rhomboids",
+    "secondaryMuscles": [
+      "Teres Major",
+      "Posterior Deltoid",
+      "Biceps Brachii",
+      "Forearms"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Stand perpendicular to barbell collar with staggered athletic stance",
+      "Grip thick sleeve overhand with wrist strap for maximum lat connection",
+      "Drive elbow backward toward hip pocket while keeping torso locked at 45°"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - One Arm Landmine Row",
+      "url": "https://exrx.net/WeightExercises/BackGeneral/LVOneArmBentOverRow",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand perpendicular to the loaded end of a landmine barbell.",
+      "Hinge hips back with front elbow braced on front thigh.",
+      "Grip the barbell sleeve with an overhand pronated grip.",
+      "Pull elbow aggressively toward hip, feeling a massive contraction in lower lat.",
+      "Lower under control to a deep stretch at bottom."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 50,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_pull",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "single-arm-dumbbell-row",
+      "t-bar-row",
+      "chest-supported-row"
+    ]
+  },
+  {
+    "id": "seal-row",
+    "name": "Seal Row (Prone Bench Barbell Row)",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Middle & Lower Trapezius, Rhomboids",
+    "secondaryMuscles": [
+      "Latissimus Dorsi",
+      "Posterior Deltoids",
+      "Biceps"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Lie face down on an elevated flat bench with arms hanging fully straight",
+      "Eliminate all momentum and lower back arching; isolate upper back pull",
+      "Pull barbell up until it touches the underside of bench, pinching scapulae"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Barbell Cambered Row",
+      "url": "https://exrx.net/WeightExercises/BackGeneral/BBCamberedRow",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set an elevated flat bench on blocks high enough for full arm extension.",
+      "Lie face down with barbell resting directly beneath your chest.",
+      "Grip bar slightly wider than shoulder width.",
+      "Row bar vertically upward until it contacts the bench underside.",
+      "Lower with controlled tempo to complete dead-hang stretch."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 95,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_pull",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "chest-supported-row",
+      "barbell-bent-over-row",
+      "chest-supported-t-bar-row"
+    ]
+  },
+  {
+    "id": "single-arm-cable-lat-pulldown",
+    "name": "Single-Arm Half-Kneeling Lat Pulldown",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Cable",
+    "supportedEquipment": [
+      "Cable",
+      "Resistance Band"
+    ],
+    "primaryMuscle": "Latissimus Dorsi (Iliac Division)",
+    "secondaryMuscles": [
+      "Teres Major",
+      "Biceps Brachii",
+      "Brachialis"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Kneel opposite the pulling side with torso upright and core braced",
+      "Start with arm reaching high in full stretch with neutral or pronated wrist",
+      "Pull elbow tight down toward your hip bone, slightly side-crunching into lat"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cable One Arm Lat Pulldown",
+      "url": "https://exrx.net/WeightExercises/LatissimusDorsi/CBOneArmPulldown",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set high cable pulley with single D-handle attachment.",
+      "Take a half-kneeling stance facing the cable column.",
+      "Grip handle, rotate palm slightly inward, and pull elbow straight down to the hip.",
+      "Hold peak contraction for 1 second, then return to full overhead stretch."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 40,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "vertical_pull",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "lat-pulldown",
+      "close-grip-lat-pulldown",
+      "pull-up-or-lat-pulldown"
+    ]
+  },
+  {
+    "id": "pendlay-row",
+    "name": "Pendlay Row (Strict Dead-Stop Row)",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell"
+    ],
+    "primaryMuscle": "Latissimus Dorsi, Rhomboids, Trapezius",
+    "secondaryMuscles": [
+      "Erector Spinae",
+      "Posterior Deltoids",
+      "Biceps",
+      "Hamstrings"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Torso stays parallel to floor (horizontal) throughout the entire repetition",
+      "Reset barbell completely to dead-stop on floor between every single rep",
+      "Explode bar up to lower ribcage using strict back drive without standing up"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Pendlay Bent Over Row",
+      "url": "https://exrx.net/WeightExercises/BackGeneral/BBRow",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand with feet shoulder-width, bar over mid-foot as in a deadlift.",
+      "Hinge hips back until back is completely horizontal and parallel to floor.",
+      "Grip barbell overhand slightly wider than shoulder width.",
+      "Explosively row bar to touch upper abdomen / lower sternum.",
+      "Return bar to floor dead-stop, pause, and repeat."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 6,
+      "minReps": 5,
+      "maxReps": 8,
+      "defaultWeight": 135,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_pull",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "barbell-bent-over-row",
+      "seal-row",
+      "t-bar-row"
+    ]
+  },
+  {
+    "id": "kroc-row",
+    "name": "Kroc Row (High-Rep Heavy Dumbbell Row)",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Kettlebell"
+    ],
+    "primaryMuscle": "Upper Back & Latissimus Dorsi",
+    "secondaryMuscles": [
+      "Forearms / Grip Strength",
+      "Biceps Brachii",
+      "Erector Spinae"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Use heavy dumbbell with strategic controlled body English at peak reps",
+      "Full hang stretch at bottom opening lat and shoulder blade",
+      "Drive elbow high and back behind ribs with explosive power"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - One Arm Dumbbell Row",
+      "url": "https://exrx.net/WeightExercises/BackGeneral/DBBentOverRow",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Brace opposite hand and foot on bench or dumbbell rack in wide stable base.",
+      "Grip heavy dumbbell without straps to build crushing grip endurance.",
+      "Allow dumbbell to stretch down toward floor.",
+      "Row violently upward to ribcage for sets of 15 to 25 repetitions."
+    ],
+    "defaultTarget": {
+      "targetSets": 2,
+      "targetReps": 15,
+      "minReps": 12,
+      "maxReps": 20,
+      "defaultWeight": 85,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_pull",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "single-arm-dumbbell-row",
+      "meadows-row",
+      "chest-supported-row"
+    ]
+  },
+  {
+    "id": "rack-pull",
+    "name": "Rack Pull (Above Knee Block Pull)",
+    "split": "Upper Body",
+    "subCategory": "Back / Lats",
+    "category": "Back",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Trap Bar"
+    ],
+    "primaryMuscle": "Upper Trapezius, Rhomboids, Erector Spinae",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Hamstrings",
+      "Forearms / Grip"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Set safety pins or blocks so bar sits just below or right at kneecap",
+      "Pack lats, wedge hips close to bar, and brace core into lifting belt",
+      "Drive hips forward into bar with aggressive glute and upper back lockout"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Barbell Rack Pull",
+      "url": "https://exrx.net/WeightExercises/ErectorSpinae/BBRackPull",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set barbell on power rack safety pins or wood blocks at knee level.",
+      "Take conventional deadlift stance with double-overhand or hook grip.",
+      "Pull slack out of bar, engage thoracic spine, and drive floor away.",
+      "Lock out hips tall without hyperextending lower back."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 6,
+      "minReps": 4,
+      "maxReps": 8,
+      "defaultWeight": 225,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "barbell-deadlift",
+      "barbell-shrugs",
+      "good-mornings"
+    ]
+  },
+  {
+    "id": "behind-the-neck-press",
+    "name": "Behind-the-Neck Overhead Press",
+    "split": "Upper Body",
+    "subCategory": "Shoulders",
+    "category": "Shoulders",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Smith Machine"
+    ],
+    "primaryMuscle": "Lateral & Posterior Deltoid",
+    "secondaryMuscles": [
+      "Upper Trapezius",
+      "Triceps Brachii",
+      "Rotator Cuff"
+    ],
+    "animationType": "overhead",
+    "cues": [
+      "Take a snatch or wide grip to reduce shoulder rotational strain",
+      "Lower bar slowly under control only to ear or hairline level (not upper traps)",
+      "Press vertically upward locking out directly over base of skull"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Behind Neck Press",
+      "url": "https://exrx.net/WeightExercises/DeltoidAnterior/BBBehindNeckPress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on an upright bench or stand with bar racked at upper chest height.",
+      "Unrack bar overhead with wide grip and establish solid brace.",
+      "Lower bar behind head slowly to upper ear level.",
+      "Press upward smoothly to full lockout."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 75,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "vertical_push",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "barbell-overhead-press",
+      "dumbbell-shoulder-press",
+      "machine-shoulder-press"
+    ]
+  },
+  {
+    "id": "egyptian-cable-lateral-raise",
+    "name": "Leaning Egyptian Cable Lateral Raise",
+    "split": "Upper Body",
+    "subCategory": "Shoulders",
+    "category": "Shoulders",
+    "defaultEquipment": "Cable",
+    "supportedEquipment": [
+      "Cable",
+      "Resistance Band"
+    ],
+    "primaryMuscle": "Lateral Deltoid (Lengthened Range)",
+    "secondaryMuscles": [
+      "Supraspinatus",
+      "Upper Trapezius"
+    ],
+    "animationType": "overhead",
+    "cues": [
+      "Hold cable tower upright with one arm and lean torso away at ~20-30° angle",
+      "Run cable behind or in front of body from lowest pulley position",
+      "Raise arm along scapular plane to parallel with floor, feeling constant tension"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cable One Arm Lateral Raise",
+      "url": "https://exrx.net/WeightExercises/DeltoidLateral/CBOneArmLateralRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set cable pulley to lowest notch with single handle attachment.",
+      "Grip upright tower with free arm and lean outward into a solid diagonal lean.",
+      "Raise cable out to the side until hand reaches shoulder level.",
+      "Lower with a 3-second negative to a full stretch across the hip."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 15,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "cable-lateral-raise",
+      "dumbbell-lateral-raise",
+      "cable-y-raise"
+    ]
+  },
+  {
+    "id": "lu-raises",
+    "name": "Lu Raises (Full-ROM Overhead Lateral Raise)",
+    "split": "Upper Body",
+    "subCategory": "Shoulders",
+    "category": "Shoulders",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Cable"
+    ],
+    "primaryMuscle": "Lateral Deltoid & Serratus Anterior",
+    "secondaryMuscles": [
+      "Upper & Lower Trapezius",
+      "Rotator Cuff"
+    ],
+    "animationType": "overhead",
+    "cues": [
+      "Hold light dumbbells at sides with thumbs pointing slightly forward",
+      "Raise dumbbells out and all the way overhead until plates touch overhead",
+      "Keep ribs locked down and core braced without arching lower back"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Full ROM Lateral Raise",
+      "url": "https://exrx.net/WeightExercises/DeltoidLateral/DBLateralRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand tall holding light dumbbells (5–15 lbs) at outer thighs.",
+      "Raise arms out to sides in a smooth continuous arc past parallel all the way overhead.",
+      "Gently touch dumbbell bells together overhead at full upward scapular rotation.",
+      "Lower under control over 3 seconds back to thighs."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 15,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "dumbbell-lateral-raise",
+      "cable-lateral-raise",
+      "cable-y-raise"
+    ]
+  },
+  {
+    "id": "prone-incline-y-raise",
+    "name": "Prone Incline Dumbbell Y-Raise",
+    "split": "Upper Body",
+    "subCategory": "Shoulders",
+    "category": "Shoulders",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Cable"
+    ],
+    "primaryMuscle": "Lower Trapezius & Posterior Deltoid",
+    "secondaryMuscles": [
+      "Rhomboids",
+      "Infraspinatus",
+      "Supraspinatus"
+    ],
+    "animationType": "overhead",
+    "cues": [
+      "Lie face down on a 30° to 45° incline bench with chest firmly supported",
+      "Raise arms in a wide 'Y' shape (thumbs pointing up at 45° angle)",
+      "Initiate by depressing and retracting scapulae, pausing 1 second at top"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Incline Prone Y Raise",
+      "url": "https://exrx.net/WeightExercises/BackGeneral/DBInclineYRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set an incline bench to 30–45 degrees and lie face down.",
+      "Hold light dumbbells with thumbs pointing toward ceiling.",
+      "Raise arms outward and upward into a 'Y' formation.",
+      "Pinch lower shoulder blades hard at peak, then lower slowly."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 10,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "face-pull-rear-delt-fly",
+      "incline-dumbbell-rear-delt-raise",
+      "cable-y-raise"
+    ]
+  },
+  {
+    "id": "trap-bar-shrug",
+    "name": "Trap Bar Neutral-Grip Shrug",
+    "split": "Upper Body",
+    "subCategory": "Shoulders",
+    "category": "Shoulders",
+    "defaultEquipment": "Trap Bar",
+    "supportedEquipment": [
+      "Trap Bar",
+      "Dumbbell",
+      "Barbell"
+    ],
+    "primaryMuscle": "Upper Trapezius",
+    "secondaryMuscles": [
+      "Levator Scapulae",
+      "Forearms / Grip"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Stand inside trap bar with neutral palms-in grip and tall posture",
+      "Elevate shoulders straight up toward ears without rolling shoulders back",
+      "Hold peak contraction for a solid 2-second pause before lowering"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Trap Bar Shrug",
+      "url": "https://exrx.net/WeightExercises/TrapeziusUpper/TBShrug",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand centered inside the trap bar with feet hip-width.",
+      "Deadlift the bar to standing lockout with neutral spine.",
+      "Shrug shoulders straight up toward earlobes, squeezing traps forcefully.",
+      "Lower under control over 2 seconds to full stretch."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 155,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "barbell-shrugs",
+      "dumbbell-shrugs",
+      "rack-pull"
+    ]
+  },
+  {
+    "id": "spider-curl",
+    "name": "Spider Curl (Prone Incline Bicep Curl)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Barbell",
+      "Cable"
+    ],
+    "primaryMuscle": "Biceps Brachii (Short Inner Head)",
+    "secondaryMuscles": [
+      "Brachialis",
+      "Brachioradialis"
+    ],
+    "animationType": "curl",
+    "cues": [
+      "Lie face down on a 45° incline bench with chest pinned and arms hanging straight down",
+      "Keep upper arms locked vertical perpendicular to floor without swinging backward",
+      "Curl dumbbells up toward forehead, squeezing peak contraction for 1 second"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Spider Curl",
+      "url": "https://exrx.net/WeightExercises/Biceps/DBSpiderCurl",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Position yourself chest-down on a 45-degree incline bench.",
+      "Let dumbbells hang straight down toward the floor with supinated palms.",
+      "Curl dumbbells upward while keeping elbows completely stationary.",
+      "Squeeze biceps hard at top contraction, then lower slowly to dead hang."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 25,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "preacher-curl",
+      "concentration-curl",
+      "ez-bar-biceps-curl"
+    ]
+  },
+  {
+    "id": "bayesian-cable-curl",
+    "name": "Bayesian Cable Curl (Behind-the-Back Cable Curl)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Cable",
+    "supportedEquipment": [
+      "Cable",
+      "Resistance Band"
+    ],
+    "primaryMuscle": "Biceps Brachii (Long Outer Head - Lengthened Range)",
+    "secondaryMuscles": [
+      "Brachialis",
+      "Forearm Flexors"
+    ],
+    "animationType": "curl",
+    "cues": [
+      "Face away from low cable pulley, stepping forward until arm is drawn back behind torso",
+      "Keep elbow behind hips to place long head of biceps under deep stretch",
+      "Curl forward and up without letting shoulder shift forward"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cable Behind Back Curl",
+      "url": "https://exrx.net/WeightExercises/Biceps/CBBehindBackCurl",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Attach single handle to lowest pulley.",
+      "Face away from machine, grasp handle, and take 2 steps forward into staggered stance.",
+      "Allow cable to pull arm into extension behind torso.",
+      "Curl forward through full range of motion, pausing at peak contraction."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 20,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "incline-dumbbell-biceps-curl",
+      "cable-biceps-curl",
+      "ez-bar-biceps-curl"
+    ]
+  },
+  {
+    "id": "zottman-curl",
+    "name": "Zottman Curl (Supinated Up, Pronated Down)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Biceps Brachii & Brachioradialis",
+    "secondaryMuscles": [
+      "Brachialis",
+      "Forearm Extensors"
+    ],
+    "animationType": "curl",
+    "cues": [
+      "Curl upward with palms facing up (supinated) to overload biceps",
+      "Rotate wrists at the top so palms face down (pronated)",
+      "Lower under slow 3-second control with overhand grip to overload brachioradialis"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Zottman Curl",
+      "url": "https://exrx.net/WeightExercises/Biceps/DBZottmanCurl",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand tall holding dumbbells at your sides.",
+      "Curl dumbbells upward with supinated palms up to shoulder height.",
+      "At top of curl, rotate wrists 180 degrees until palms face downward.",
+      "Lower dumbbells slowly with overhand grip back to thighs.",
+      "Rotate palms back to supinated and repeat."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 25,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "hammer-curl",
+      "reverse-barbell-curl",
+      "ez-bar-biceps-curl"
+    ]
+  },
+  {
+    "id": "cross-body-hammer-curl",
+    "name": "Cross-Body Pinwheel Hammer Curl",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Kettlebell"
+    ],
+    "primaryMuscle": "Brachialis & Brachioradialis",
+    "secondaryMuscles": [
+      "Biceps Brachii",
+      "Forearms"
+    ],
+    "animationType": "curl",
+    "cues": [
+      "Keep palms facing inward (neutral grip) throughout entire movement",
+      "Curl dumbbell diagonally across chest toward opposite collarbone",
+      "Squeeze outer arm / brachialis hard at top without swinging torso"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cross Body Hammer Curl",
+      "url": "https://exrx.net/WeightExercises/Brachioradialis/DBCrossBodyHammerCurl",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand tall with dumbbells hanging at sides in neutral grip.",
+      "Curl one dumbbell across your body toward opposite shoulder.",
+      "Pause for 1 second at top squeeze.",
+      "Lower under control and repeat on opposite arm."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 30,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "hammer-curl",
+      "zottman-curl",
+      "reverse-barbell-curl"
+    ]
+  },
+  {
+    "id": "jm-press",
+    "name": "JM Press (Hybrid Close-Grip Bench & Skull Crusher)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Smith Machine",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Triceps Brachii (Medial & Lateral Heads)",
+    "secondaryMuscles": [
+      "Anterior Deltoids",
+      "Pectoralis Major"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Grip bar with hands shoulder-width apart as in a close-grip bench press",
+      "Lower bar straight down toward clavicle/throat while folding elbows forward and down",
+      "Explode upward through tricep extension back over lower chest"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Barbell JM Press",
+      "url": "https://exrx.net/WeightExercises/Triceps/BBJMPress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lie flat on bench, unrack bar directly over shoulders with close overhand grip.",
+      "Allow elbows to drift forward as bar descends toward neck/upper chest junction.",
+      "When forearms make deep acute angle with biceps, pause briefly.",
+      "Extend elbows forcefully upward to complete lockout."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 95,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "horizontal_push",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "close-grip-bench-press",
+      "skull-crushers",
+      "triceps-rope-pushdown"
+    ]
+  },
+  {
+    "id": "tate-press",
+    "name": "Tate Press (Dumbbell Elbows-Out Tricep Extension)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Triceps Brachii (Lateral Head)",
+    "secondaryMuscles": [
+      "Anconeus",
+      "Pectoralis Major (Inner)"
+    ],
+    "animationType": "bench",
+    "cues": [
+      "Lie on flat bench with dumbbells held touching above chest with palms facing feet",
+      "Flare elbows outward and lower inner dumbbell heads to gently touch chest",
+      "Extend triceps to lock dumbbells back upward without shifting shoulders"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Dumbbell Tate Press",
+      "url": "https://exrx.net/WeightExercises/Triceps/DBTatePress",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lie flat on a bench holding dumbbells above chest with elbows pointed out.",
+      "Flex elbows inward to lower the bells until they touch lower chest.",
+      "Drive outward and up using pure tricep extension to lockout.",
+      "Squeeze lateral triceps hard at top."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 30,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "skull-crushers",
+      "triceps-rope-pushdown",
+      "overhead-triceps-extension"
+    ]
+  },
+  {
+    "id": "cable-tricep-kickback",
+    "name": "Single-Arm Cable Triceps Kickback",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Cable",
+    "supportedEquipment": [
+      "Cable",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Triceps Brachii (Long Head Shortened Range)",
+    "secondaryMuscles": [
+      "Posterior Deltoid",
+      "Anconeus"
+    ],
+    "animationType": "row",
+    "cues": [
+      "Set cable at elbow height, hinge forward at 45°, and pin upper arm parallel to torso",
+      "Extend forearm straight back until arm is completely locked parallel to ground",
+      "Hold peak tricep contraction for a full 2-second squeeze"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Cable One Arm Triceps Kickback",
+      "url": "https://exrx.net/WeightExercises/Triceps/CBOneArmTricepsKickback",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set pulley to mid-chest height without handle (hold bare cable ball).",
+      "Hinge hips back with upper arm locked securely to ribcage.",
+      "Extend forearm backward into full extension.",
+      "Hold contraction 2 seconds, then return slowly to 90 degrees."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 15,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "dumbbell-kickbacks",
+      "triceps-rope-pushdown",
+      "cable-overhead-triceps-rope"
+    ]
+  },
+  {
+    "id": "reverse-barbell-wrist-curl",
+    "name": "Overhand Barbell Wrist Extension (Extensor Isolation)",
+    "split": "Upper Body",
+    "subCategory": "Arms",
+    "category": "Arms",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Forearm Extensors (Extensor Carpi Radialis & Ulnaris)",
+    "secondaryMuscles": [
+      "Brachioradialis"
+    ],
+    "animationType": "curl",
+    "cues": [
+      "Rest forearms flat across thighs or a flat bench with wrists hanging just over the edge",
+      "Use an overhand (pronated) grip with thumbs over or under bar",
+      "Curl wrists upward toward ceiling as high as possible, pausing 1 second at full extension"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Barbell Reverse Wrist Curl",
+      "url": "https://exrx.net/WeightExercises/WristExtensors/BBReverseWristCurl",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on flat bench with forearms resting securely on thighs, wrists free.",
+      "Hold a light barbell with palms facing downward.",
+      "Lower bar into full wrist flexion, feeling a deep stretch in forearm extensors.",
+      "Extend wrists upward vigorously toward ceiling, holding the squeeze at top."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 15,
+      "minReps": 12,
+      "maxReps": 20,
+      "defaultWeight": 30,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "barbell-wrist-curls",
+      "zottman-curl",
+      "reverse-barbell-curl"
+    ]
+  },
+  {
+    "id": "pendulum-squat",
+    "name": "Pendulum Squat (Deep Knee Flexion Quad Squat)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine"
+    ],
+    "primaryMuscle": "Quadriceps (Vastus Medialis, Lateralis, Intermedius)",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Adductor Magnus"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Keep back completely flat against pad throughout the arc",
+      "Position feet low on platform to achieve maximum knee travel over toes",
+      "Descend deep into full knee flexion without letting lower back peel off the pad"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Sled 45° Hack Squat",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/SL45HackSquat",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Step onto the pendulum squat platform and rest shoulders under padded yokes.",
+      "Release safety handles and plant feet shoulder-width.",
+      "Descend slowly into the hole, allowing knees to track forward over toes.",
+      "Drive out of the hole smoothly through mid-foot to full extension without locking knees."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 90,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "squat",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "hack-squat",
+      "squat-or-leg-press",
+      "leg-extension"
+    ]
+  },
+  {
+    "id": "belt-squat",
+    "name": "Belt Squat (Zero Spinal Compression Squat)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine",
+      "Cable"
+    ],
+    "primaryMuscle": "Quadriceps & Gluteus Maximus",
+    "secondaryMuscles": [
+      "Adductor Magnus",
+      "Hamstrings"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Fasten dip belt low around hips and hook chain securely to lever or cable arm",
+      "Stand tall holding upright guide handles with light fingertips",
+      "Squat deep between knees; load pulls hips down directly without any spinal shear"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Belt Squat",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/LVBeltSquat",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Step onto belt squat machine platform with belt snug around iliac crest.",
+      "Unrack weight lever and take comfortable shoulder-width stance.",
+      "Descend until hip crease is below knee level with an upright torso.",
+      "Drive through whole foot to stand tall."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 135,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "squat",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "hack-squat",
+      "barbell-back-squat",
+      "goblet-front-squat"
+    ]
+  },
+  {
+    "id": "zercher-squat",
+    "name": "Zercher Squat (Crook of Elbows Front Squat)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell"
+    ],
+    "primaryMuscle": "Quadriceps & Upper Back / Biceps",
+    "secondaryMuscles": [
+      "Anterior Core",
+      "Gluteus Maximus",
+      "Hamstrings"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Cradle barbell securely in the crook of elbows with hands clasped together tightly",
+      "Stand tall with chest puffed out and elbows pulled tight against ribcage",
+      "Squat deep between legs, tracking elbows inside the knees at the bottom"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Zercher Squat",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/BBZercherSquat",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set barbell in rack at mid-chest height.",
+      "Hook forearms under bar, resting bar in elbow creases, and clasp hands.",
+      "Unrack bar and take slightly wider than shoulder-width stance.",
+      "Descend with an upright torso, letting elbows settle between knees.",
+      "Drive through heels and midfoot back to standing lockout."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 115,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "squat",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "goblet-front-squat",
+      "barbell-back-squat",
+      "hack-squat"
+    ]
+  },
+  {
+    "id": "smith-machine-squat",
+    "name": "Smith Machine Squat (Feet-Forward Quad Bias)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine"
+    ],
+    "primaryMuscle": "Quadriceps Femoris (Rectus Femoris & VMO)",
+    "secondaryMuscles": [
+      "Gluteus Maximus"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Position feet ~12 inches out in front of the bar line",
+      "Lean back slightly into the fixed bar path with a completely vertical torso",
+      "Squat deep with full knee flexion, driving through midfoot to isolate quadriceps"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Smith Squat",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/SMSquat",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Step under the Smith machine bar, resting it across upper traps.",
+      "Walk feet forward 10–14 inches and unhook safety hooks.",
+      "Lower under control, keeping hips under shoulders and torso upright.",
+      "Descend to parallel or below, then press through the floor to return."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 135,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "squat",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "hack-squat",
+      "barbell-back-squat",
+      "leg-extension"
+    ]
+  },
+  {
+    "id": "heel-elevated-goblet-squat",
+    "name": "Heel-Elevated Goblet Squat (VMO Bias)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Kettlebell",
+      "Barbell"
+    ],
+    "primaryMuscle": "Quadriceps (Vastus Medialis / Teardrop)",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Anterior Core"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Elevate heels 1–2 inches on a slant board or weight plate with toes on floor",
+      "Hold dumbbell vertically against upper sternum with elbows tucked",
+      "Descend straight down with vertical torso, letting knees push far past toes"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Dumbbell Squat",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/DBSquat",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Place heels on an elevated wedge or weight plate.",
+      "Hold heavy dumbbell or kettlebell tight against chest in goblet position.",
+      "Squat down vertically as low as possible without rounding lower back.",
+      "Drive straight up through the balls of the feet and midfoot, feeling intense VMO burn."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 50,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "squat",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "goblet-front-squat",
+      "sissy-squat",
+      "leg-extension"
+    ]
+  },
+  {
+    "id": "cossack-squat",
+    "name": "Cossack Squat (Frontal Plane Lateral Squat)",
+    "split": "Lower Body",
+    "subCategory": "Quads",
+    "category": "Legs",
+    "defaultEquipment": "Kettlebell",
+    "supportedEquipment": [
+      "Kettlebell",
+      "Dumbbell",
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Adductors, Quadriceps & Gluteus Medius",
+    "secondaryMuscles": [
+      "Hamstrings",
+      "Ankle Stabilizers"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Take an ultra-wide stance with toes angled slightly outward",
+      "Squat deep to one side while keeping trailing leg completely straight with toes pointing up",
+      "Keep heel of working leg glued flat to the floor throughout descent"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Side Lunge",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/BWSideLunge",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Assume a wide straddle stance holding kettlebell in goblet position.",
+      "Shift weight to right side and squat down as deep as mobility allows.",
+      "Rotate left foot onto heel with toes pointing toward ceiling.",
+      "Push through right foot to return to center and switch sides."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 25,
+      "repsUnit": "per leg"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "lunge",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "bulgarian-split-squat",
+      "walking-dumbbell-lunges",
+      "reverse-lunge"
+    ]
+  },
+  {
+    "id": "stiff-leg-deadlift",
+    "name": "Stiff-Leg Deadlift (SLDL)",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Hamstrings (Biceps Femoris & Semitendinosus)",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Erector Spinae",
+      "Grip"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Keep knees relatively straight (soft 10° unlock, no knee flexion during hinge)",
+      "Start each rep from floor plates or 1 inch above, keeping hips higher than a conventional deadlift",
+      "Push hips back toward the wall behind you until maximum hamstring stretch is achieved"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Stiff Leg Deadlift",
+      "url": "https://exrx.net/WeightExercises/Hamstrings/BBStraightLegDeadlift",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand with feet hip-width apart over the barbell.",
+      "Hinge hips back with knees softly unlocked, keeping hips elevated.",
+      "Grip the bar overhand and pull your chest up.",
+      "Drive through heels and push hips forward to stand tall.",
+      "Lower under control with high hips to touch the floor or mid-shin."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 185,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "romanian-deadlift",
+      "barbell-deadlift",
+      "good-mornings"
+    ]
+  },
+  {
+    "id": "b-stance-rdl",
+    "name": "B-Stance Romanian Deadlift (Kickstand RDL)",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Barbell",
+      "Kettlebell"
+    ],
+    "primaryMuscle": "Unilateral Hamstring & Gluteus Maximus",
+    "secondaryMuscles": [
+      "Gluteus Medius",
+      "Erector Spinae",
+      "Core"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Set lead foot flat with 85% of body weight; trailing foot acts as a kickstand on toes",
+      "Hinge hips backward as if pushing a car door shut with the working glute",
+      "Lower dumbbells down front shin until deep hamstring stretch is felt, then drive hips forward"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - One Leg Romanian Deadlift",
+      "url": "https://exrx.net/WeightExercises/Hamstrings/DBOneLegDeadlift",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand with feet hip-width; slide one foot back 6 inches onto its toes.",
+      "Hold dumbbells in front of thighs with core braced.",
+      "Hinge at the hips, keeping 85% of your weight rooted through front heel.",
+      "Lower bells along front shin until hamstrings are fully loaded.",
+      "Contract glute and hamstring to stand tall."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 45,
+      "repsUnit": "per leg"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "romanian-deadlift",
+      "single-leg-romanian-deadlift",
+      "dumbbell-romanian-deadlift"
+    ]
+  },
+  {
+    "id": "single-leg-hip-thrust",
+    "name": "Single-Leg Dumbbell Hip Thrust",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Dumbbell",
+    "supportedEquipment": [
+      "Dumbbell",
+      "Bodyweight",
+      "Barbell"
+    ],
+    "primaryMuscle": "Gluteus Maximus (Unilateral Peak Contraction)",
+    "secondaryMuscles": [
+      "Hamstrings",
+      "Gluteus Medius",
+      "Core"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Position upper back across sturdy bench with working foot planted flat",
+      "Elevate non-working knee to 90° over hip",
+      "Drive through working heel to full horizontal hip lockout, holding squeeze 2 seconds"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Single Leg Hip Thrust",
+      "url": "https://exrx.net/WeightExercises/GluteusMaximus/BWSingleLegHipThrust",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on floor with upper back braced against bench and working foot flat.",
+      "Rest dumbbell across working hip crease.",
+      "Drive working heel into floor to lift hips until pelvis is parallel to ground.",
+      "Squeeze working glute hard at top for 2 seconds, then lower slowly."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 30,
+      "repsUnit": "per leg"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "barbell-hip-thrust",
+      "dumbbell-hip-thrust",
+      "cable-glute-kickback"
+    ]
+  },
+  {
+    "id": "glute-ham-raise",
+    "name": "Glute-Ham Raise (GHR)",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine",
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Hamstrings (Knee Flexion & Hip Extension)",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Gastrocnemius",
+      "Spinal Erectors"
+    ],
+    "animationType": "deadlift",
+    "cues": [
+      "Set GHD machine so thighs rest securely on curved pads and feet locked in rollers",
+      "Lower torso down horizontal by extending knees under strict hamstring tension",
+      "Pull through hamstrings and calves to return to upright kneeling position"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Glute Ham Raise",
+      "url": "https://exrx.net/WeightExercises/Hamstrings/BWGluteHamRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lock ankles between roller pads on a Glute-Ham Developer.",
+      "Start kneeling upright with torso rigid and arms folded across chest.",
+      "Lower body forward by straightening knees under maximum hamstring braking control.",
+      "Pull through hamstrings and contract calves to return to starting upright position."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 0,
+      "repsUnit": "reps"
+    },
+    "loadType": "bodyweight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "nordic-hamstring-curl",
+      "leg-curl",
+      "seated-leg-curl"
+    ]
+  },
+  {
+    "id": "seated-hip-abduction-machine",
+    "name": "Seated Machine Hip Abduction",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine",
+      "Cable",
+      "Resistance Band"
+    ],
+    "primaryMuscle": "Gluteus Medius & Tensor Fasciae Latae",
+    "secondaryMuscles": [
+      "Gluteus Minimus",
+      "Piriformis"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Lean forward slightly from hips or sit back against pad to target different upper glute fibers",
+      "Push knees outward against pads as wide as possible",
+      "Pause 2 seconds at maximum spread, then resist the return over 3 seconds"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Lever Seated Hip Abduction",
+      "url": "https://exrx.net/WeightExercises/GluteusMedius/LVSeatedHipAbduction",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on abduction machine with outer thighs resting against padded levers.",
+      "Select weight and assume upright or slight forward-hinged posture.",
+      "Push knees apart forcefully against the pads.",
+      "Hold full contraction for 2 seconds, then return under slow control."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 15,
+      "minReps": 12,
+      "maxReps": 20,
+      "defaultWeight": 90,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "cable-glute-kickback",
+      "barbell-hip-thrust",
+      "side-plank"
+    ]
+  },
+  {
+    "id": "seated-hip-adduction-machine",
+    "name": "Seated Machine Hip Adduction",
+    "split": "Lower Body",
+    "subCategory": "Hamstrings & Glutes",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine",
+      "Cable"
+    ],
+    "primaryMuscle": "Adductor Longus, Brevis, Magnus & Gracilis",
+    "secondaryMuscles": [
+      "Pectineus",
+      "Deep Groin Stabilizers"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Sit back firmly against pad with feet supported on footpegs",
+      "Squeeze knees inward together until pads touch gently",
+      "Hold inner thigh contraction for 2 seconds before slow eccentric stretch"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Lever Seated Hip Adduction",
+      "url": "https://exrx.net/WeightExercises/Adductors/LVSeatedHipAdduction",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Sit on adduction machine with inner knees against pads spread wide.",
+      "Grasp side handles and sit tall with spine neutral.",
+      "Squeeze inner thighs to draw knees together smoothly.",
+      "Pause at peak touch, then control the outward opening stretch over 3 seconds."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 15,
+      "minReps": 12,
+      "maxReps": 20,
+      "defaultWeight": 80,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "cossack-squat",
+      "sumo-deadlift",
+      "goblet-front-squat"
+    ]
+  },
+  {
+    "id": "tibialis-raise",
+    "name": "Tibialis Anterior Wall Raise",
+    "split": "Lower Body",
+    "subCategory": "Calves",
+    "category": "Legs",
+    "defaultEquipment": "Bodyweight",
+    "supportedEquipment": [
+      "Bodyweight",
+      "Dumbbell",
+      "Kettlebell"
+    ],
+    "primaryMuscle": "Tibialis Anterior (Shin / Dorsiflexion)",
+    "secondaryMuscles": [
+      "Extensor Digitorum Longus",
+      "Peroneus Tertius"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Lean upper back against wall with legs straight and heels planted 12-18 inches forward",
+      "Pull toes and front of feet straight up toward shins as high as possible",
+      "Hold top squeeze for 2 seconds to burn shin muscles, building knee deceleration armor"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Tibialis Anterior Raise",
+      "url": "https://exrx.net/WeightExercises/TibialisAnterior/BWTibialisRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lean butt and shoulders back against a flat wall.",
+      "Step feet forward 12 to 18 inches with heels flat on the floor.",
+      "Pull toes and balls of feet as high up as possible toward your shins.",
+      "Hold the contraction at the top for 2 seconds, then slowly lower back down."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 20,
+      "minReps": 15,
+      "maxReps": 25,
+      "defaultWeight": 0,
+      "repsUnit": "reps"
+    },
+    "loadType": "bodyweight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "standing-calf-raise",
+      "seated-calf-raise",
+      "leg-press-calf-raise"
+    ]
+  },
+  {
+    "id": "smith-machine-calf-raise",
+    "name": "Smith Machine Standing Calf Raise",
+    "split": "Lower Body",
+    "subCategory": "Calves",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine",
+      "Barbell"
+    ],
+    "primaryMuscle": "Gastrocnemius (Medial & Lateral Heads)",
+    "secondaryMuscles": [
+      "Soleus"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Place balls of feet on elevated calf block with heels hanging free",
+      "Rest bar across upper traps and lock knees straight with soft micro-unlock",
+      "Drop heels deep into stretch for 2 full seconds before exploding up onto big toes"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Smith Standing Calf Raise",
+      "url": "https://exrx.net/WeightExercises/Gastrocnemius/SMStandingCalfRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Set a calf block under the Smith machine bar.",
+      "Rest bar across upper traps and stand on the balls of your feet.",
+      "Lower heels deeply below the platform for a 2-second dead stretch.",
+      "Drive up forcefully onto the balls of your big toes, squeezing calves at top."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 12,
+      "minReps": 10,
+      "maxReps": 15,
+      "defaultWeight": 135,
+      "repsUnit": "reps"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "standing-calf-raise",
+      "leg-press-calf-raise",
+      "donkey-calf-raise"
+    ]
+  },
+  {
+    "id": "dragon-flag",
+    "name": "Dragon Flag (Bruce Lee Eccentric Core Raise)",
+    "split": "Core & Conditioning",
+    "subCategory": "Core / Abs",
+    "category": "Core",
+    "defaultEquipment": "Bodyweight",
+    "supportedEquipment": [
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Rectus Abdominis & Transversus Abdominis",
+    "secondaryMuscles": [
+      "Hip Flexors",
+      "Latissimus Dorsi",
+      "Glutes"
+    ],
+    "animationType": "core",
+    "cues": [
+      "Lie on flat bench and grip top of bench tightly behind head",
+      "Raise entire body upward in a rigid straight line supported only by upper shoulder blades",
+      "Lower torso and legs as a single unbending plank under slow 4-second eccentric control"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Dragon Flag",
+      "url": "https://exrx.net/WeightExercises/RectusAbdominis/BWDragonFlag",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Lie flat on bench gripping the edges firmly behind your ears.",
+      "Roll hips back and raise your entire body up until pointed vertically.",
+      "Keep body in a completely rigid plank from shoulders to toes.",
+      "Lower body slowly toward bench without breaking at the hips.",
+      "Hover just above bench, then power back upward."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 6,
+      "minReps": 5,
+      "maxReps": 8,
+      "defaultWeight": 0,
+      "repsUnit": "reps"
+    },
+    "loadType": "bodyweight_reps",
+    "movementPattern": "anti_extension",
+    "tierSuitability": [
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "ab-wheel-rollout",
+      "hanging-leg-raise",
+      "hollow-body-hold"
+    ]
+  },
+  {
+    "id": "toes-to-bar",
+    "name": "Strict Hanging Toes to Bar",
+    "split": "Core & Conditioning",
+    "subCategory": "Core / Abs",
+    "category": "Core",
+    "defaultEquipment": "Bodyweight",
+    "supportedEquipment": [
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Rectus Abdominis (Lower Fibers)",
+    "secondaryMuscles": [
+      "Iliopsoas",
+      "Latissimus Dorsi",
+      "Forearms / Grip"
+    ],
+    "animationType": "core",
+    "cues": [
+      "Hang with active shoulders from pull-up bar without swinging or kipping",
+      "Compress abs and roll pelvis upward as you pull toes directly to touch the bar",
+      "Lower under control over 3 seconds to dead hang before initiating next rep"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Hanging Straight Leg Hip Raise",
+      "url": "https://exrx.net/WeightExercises/RectusAbdominis/BWHangingStraightLegHipRaise",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Grasp pull-up bar with overhand grip and hang fully extended.",
+      "Engage lats and posterior pelvic tilt to initiate movement without swinging.",
+      "Raise straight legs smoothly until toes touch the bar between hands.",
+      "Control the descent slowly to full dead hang."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 8,
+      "minReps": 6,
+      "maxReps": 10,
+      "defaultWeight": 0,
+      "repsUnit": "reps"
+    },
+    "loadType": "bodyweight_reps",
+    "movementPattern": "anti_extension",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "hanging-leg-raise",
+      "captain-chair-leg-raise",
+      "hanging-knee-raise"
+    ]
+  },
+  {
+    "id": "landmine-rotations",
+    "name": "Landmine Rotational Oblique Cleans (Landmine 180s)",
+    "split": "Core & Conditioning",
+    "subCategory": "Core / Abs",
+    "category": "Core",
+    "defaultEquipment": "Barbell",
+    "supportedEquipment": [
+      "Barbell"
+    ],
+    "primaryMuscle": "Internal & External Obliques",
+    "secondaryMuscles": [
+      "Transversus Abdominis",
+      "Anterior Deltoids",
+      "Forearms"
+    ],
+    "animationType": "core",
+    "cues": [
+      "Stand with athletic stance holding sleeve of landmine barbell with both hands",
+      "Rotate bar across in a wide rainbow arc down toward hip without twisting lumbar spine",
+      "Brake rotational momentum with obliques, then power back across to opposite hip"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Landmine 180",
+      "url": "https://exrx.net/WeightExercises/Obliques/LMRotation",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Anchor barbell in a landmine swivel.",
+      "Hold barbell end with both hands with arms extended out at shoulder height.",
+      "Pivot feet and rotate bar down toward one hip under core control.",
+      "Explode out of hip turn, sweeping bar overhead and down to opposite hip."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 25,
+      "repsUnit": "per side"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "anti_rotation",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "cable-woodchoppers",
+      "cable-pallof-press",
+      "russian-twists"
+    ]
+  },
+  {
+    "id": "stomach-vacuum",
+    "name": "Standing Transverse Abdominis Stomach Vacuum",
+    "split": "Core & Conditioning",
+    "subCategory": "Core / Abs",
+    "category": "Core",
+    "defaultEquipment": "Bodyweight",
+    "supportedEquipment": [
+      "Bodyweight"
+    ],
+    "primaryMuscle": "Transversus Abdominis (Deep Core Belt)",
+    "secondaryMuscles": [
+      "Diaphragm",
+      "Pelvic Floor"
+    ],
+    "animationType": "core",
+    "cues": [
+      "Exhale all air completely from lungs until abdomen is completely empty",
+      "Without inhaling, suck navel inward and upward toward ribcage as deep as possible",
+      "Hold isometric contraction rigidly for 15-30 seconds, maintaining hollow stomach"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Stomach Vacuum",
+      "url": "https://exrx.net/WeightExercises/TransverseAbdominis/BWStomachVacuum",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand tall or lean slightly forward with hands resting on a table or knees.",
+      "Exhale forcefully until completely empty of air.",
+      "Pull stomach inward as though touching belly button to the spine.",
+      "Lock the vacuum in place for the full timed prescription, breathing shallowly.",
+      "Release slowly and repeat."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 20,
+      "minReps": 15,
+      "maxReps": 30,
+      "defaultWeight": 0,
+      "repsUnit": "sec"
+    },
+    "loadType": "bodyweight_timed",
+    "movementPattern": "anti_extension",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "plank",
+      "deadbug",
+      "hollow-body-hold"
+    ]
+  },
+  {
+    "id": "kettlebell-snatch",
+    "name": "Kettlebell Snatch (Single-Arm Explosive Snatch)",
+    "split": "Core & Conditioning",
+    "subCategory": "Conditioning & Kettlebells",
+    "category": "Full Body",
+    "defaultEquipment": "Kettlebell",
+    "supportedEquipment": [
+      "Kettlebell",
+      "Dumbbell"
+    ],
+    "primaryMuscle": "Posterior Chain (Glutes & Hamstrings)",
+    "secondaryMuscles": [
+      "Upper Back / Trapezius",
+      "Shoulders",
+      "Core",
+      "Grip"
+    ],
+    "animationType": "swing",
+    "cues": [
+      "Hinge at hips to swing kettlebell between legs with wrist tight to zipper line",
+      "Snap hips forward violently, allowing bell to travel close along the body",
+      "Punch hand through handle at the top into a soft, seamless overhead lockout"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Kettlebell Snatch",
+      "url": "https://exrx.net/WeightExercises/Kettlebell/KBSnatch",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Stand over kettlebell with feet shoulder-width.",
+      "Hinge and hike kettlebell back between legs.",
+      "Drive hips forward explosively, pulling elbow high and punch hand through into lockout.",
+      "Drop bell in an arc back between legs and repeat."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 10,
+      "minReps": 8,
+      "maxReps": 12,
+      "defaultWeight": 35,
+      "repsUnit": "per arm"
+    },
+    "loadType": "weight_reps",
+    "movementPattern": "hinge",
+    "tierSuitability": [
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "unilateral",
+    "substituteIds": [
+      "kettlebell-swing",
+      "kettlebell-clean-and-press",
+      "barbell-thruster"
+    ]
+  },
+  {
+    "id": "sled-push",
+    "name": "Heavy Sled / Prowler Push",
+    "split": "Core & Conditioning",
+    "subCategory": "Conditioning & Kettlebells",
+    "category": "Full Body",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine"
+    ],
+    "primaryMuscle": "Quadriceps (Concentric Overload) & Calves",
+    "secondaryMuscles": [
+      "Gluteus Maximus",
+      "Hamstrings",
+      "Core",
+      "Cardiovascular System"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Grip upright poles with arms locked or elbows tucked tight to torso",
+      "Set body at a forward 45° angle with rigid neutral spine and braced core",
+      "Drive through the balls of your feet with piston-like aggressive leg turnover"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Sled Push",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/SledPush",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Load sled with weight plates on turf or track.",
+      "Grasp upright handles at shoulder height, leaning forward into a 45-degree sprint posture.",
+      "Drive legs powerfully, striking through the balls of the feet.",
+      "Sprint or march steadily for prescribed distance without pausing."
+    ],
+    "defaultTarget": {
+      "targetSets": 4,
+      "targetReps": 25,
+      "minReps": 20,
+      "maxReps": 40,
+      "defaultWeight": 135,
+      "repsUnit": "meters"
+    },
+    "loadType": "distance_time",
+    "movementPattern": "lunge",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "farmers-walk",
+      "trap-bar-farmers-carry",
+      "kettlebell-swing"
+    ]
+  },
+  {
+    "id": "sled-backward-drag",
+    "name": "Reverse Sled Drag (Backward Walking Sled Pull)",
+    "split": "Core & Conditioning",
+    "subCategory": "Conditioning & Kettlebells",
+    "category": "Legs",
+    "defaultEquipment": "Machine",
+    "supportedEquipment": [
+      "Machine"
+    ],
+    "primaryMuscle": "Vastus Medialis (VMO) & Patellar Tendon",
+    "secondaryMuscles": [
+      "Tibialis Anterior",
+      "Glutes",
+      "Hamstrings"
+    ],
+    "animationType": "squat",
+    "cues": [
+      "Attach strap/belt to waist or hold handles in front with elbows extended",
+      "Lean back slightly into sled resistance with chest upright and knees bent",
+      "Walk backward, striking toe-first and rolling back through the heel for continuous VMO pump"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Reverse Sled Drag",
+      "url": "https://exrx.net/WeightExercises/Quadriceps/ReverseSledDrag",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Connect waist harness or long straps to loaded sled.",
+      "Face toward the sled and walk backward in steady rhythmic strides.",
+      "Reach toes back, plant ball of foot, and push through heel to lock knee out.",
+      "Maintain continuous backward stride for target distance."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 30,
+      "minReps": 20,
+      "maxReps": 50,
+      "defaultWeight": 90,
+      "repsUnit": "meters"
+    },
+    "loadType": "distance_time",
+    "movementPattern": "lunge",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "tibialis-raise",
+      "hack-squat",
+      "leg-extension"
+    ]
+  },
+  {
+    "id": "battle-ropes-waves",
+    "name": "Battle Ropes Alternating Waves",
+    "split": "Core & Conditioning",
+    "subCategory": "Conditioning & Kettlebells",
+    "category": "Full Body",
+    "defaultEquipment": "Bodyweight",
+    "supportedEquipment": [
+      "Bodyweight",
+      "Custom / Other"
+    ],
+    "primaryMuscle": "Shoulders, Forearms & Core",
+    "secondaryMuscles": [
+      "Lats",
+      "Pectorals",
+      "Cardiovascular Capacity"
+    ],
+    "animationType": "swing",
+    "cues": [
+      "Sit into an athletic quarter-squat with chest proud and spine neutral",
+      "Whip ropes up and down alternately with high frequency",
+      "Generate power from the core and shoulder drive, keeping waves traveling all the way to anchor"
+    ],
+    "openSourceLink": {
+      "label": "ExRx - Battle Ropes Alternating Waves",
+      "url": "https://exrx.net/WeightExercises/Conditioning/BattleRopesWaves",
+      "source": "ExRx Biomechanics"
+    },
+    "instructions": [
+      "Hold ends of anchor-wrapped heavy ropes with neutral thumbs-forward grip.",
+      "Assume a stable athletic half-squat stance.",
+      "Whip right arm up while left arm slams down, creating continuous alternating undulating waves.",
+      "Maintain max intensity for prescribed interval time."
+    ],
+    "defaultTarget": {
+      "targetSets": 3,
+      "targetReps": 30,
+      "minReps": 20,
+      "maxReps": 45,
+      "defaultWeight": 0,
+      "repsUnit": "sec"
+    },
+    "loadType": "bodyweight_timed",
+    "movementPattern": "isolation",
+    "tierSuitability": [
+      "Beginner",
+      "Intermediate",
+      "Advanced"
+    ],
+    "bilateralType": "bilateral",
+    "substituteIds": [
+      "medicine-ball-slam",
+      "kettlebell-swing",
+      "farmers-walk"
+    ]
   }
 ];
 

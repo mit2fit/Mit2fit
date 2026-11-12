@@ -1143,6 +1143,31 @@ export default function ExerciseTracker() {
   const [isCustomSplitBuilderOpen, setIsCustomSplitBuilderOpen] = useState(false);
   const [shareCardWorkout, setShareCardWorkout] = useState<CompletedWorkout | null>(null);
 
+  // Browser Persistent Storage & Backup Reminder State
+  const [isStoragePersisted, setIsStoragePersisted] = useState<boolean>(false);
+  const [lastBackupDate, setLastBackupDate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('mit2fit_last_backup_date');
+    } catch {
+      return null;
+    }
+  });
+  const [backupBannerDismissedUntil, setBackupBannerDismissedUntil] = useState<number>(() => {
+    try {
+      return parseInt(localStorage.getItem('mit2fit_backup_dismissed_until') || '0', 10);
+    } catch {
+      return 0;
+    }
+  });
+
+  const shouldShowBackupReminder = useMemo(() => {
+    if (history.length < 3) return false;
+    if (backupBannerDismissedUntil && Date.now() < backupBannerDismissedUntil) return false;
+    if (!lastBackupDate) return true;
+    const daysSince = (Date.now() - new Date(lastBackupDate).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSince >= 14;
+  }, [history.length, backupBannerDismissedUntil, lastBackupDate]);
+
   // Audio Chime Toggle for Rest Timer
   const [isRestSoundEnabled, setIsRestSoundEnabled] = useState(true);
 
@@ -1510,6 +1535,26 @@ export default function ExerciseTracker() {
       }
     }
   }, [selectedSplit, selectedSubCategory]);
+
+  // Persistent Storage API: Guard local data against browser disk eviction
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.storage) {
+      if (navigator.storage.persisted) {
+        navigator.storage.persisted().then(persisted => {
+          setIsStoragePersisted(persisted);
+          if (!persisted && navigator.storage.persist) {
+            navigator.storage.persist().then(granted => {
+              setIsStoragePersisted(granted);
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      } else if (navigator.storage.persist) {
+        navigator.storage.persist().then(granted => {
+          setIsStoragePersisted(granted);
+        }).catch(() => {});
+      }
+    }
+  }, []);
 
   // Interactive Cadence & Tempo Metronome loop for Exercise Guide
   useEffect(() => {
@@ -2509,21 +2554,38 @@ export default function ExerciseTracker() {
     setTimeout(() => setAlertNotice(null), 4000);
   };
 
-  // Export JSON Backup
+  // Export JSON Backup (Comprehensive: workouts + custom routines + metadata)
   const handleExportData = () => {
-    const dataStr = JSON.stringify(history, null, 2);
+    const nowIso = new Date().toISOString();
+    const backupPayload = {
+      appName: 'Mit2Fit',
+      version: 4,
+      exportedAt: nowIso,
+      totalWorkouts: history.length,
+      totalRoutines: routines.length,
+      unit,
+      history,
+      routines
+    };
+    const dataStr = JSON.stringify(backupPayload, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `mit2fit-workouts-backup-${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `mit2fit-workouts-backup-${nowIso.split('T')[0]}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    setAlertNotice('Backup JSON exported! Keep this file safe.');
-    setTimeout(() => setAlertNotice(null), 4000);
+
+    try {
+      localStorage.setItem('mit2fit_last_backup_date', nowIso);
+    } catch {}
+    setLastBackupDate(nowIso);
+
+    setAlertNotice('Backup JSON exported! Keep this file in iCloud, Google Drive, or your Files app.');
+    setTimeout(() => setAlertNotice(null), 5000);
   };
 
-  // Import JSON Backup
+  // Import JSON Backup (Supports both legacy array format and comprehensive backup)
   const handleImportData = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2536,14 +2598,68 @@ export default function ExerciseTracker() {
           setHistory(parsed);
           setAlertNotice(`Restored ${parsed.length} workouts successfully!`);
           setTimeout(() => setAlertNotice(null), 4000);
+        } else if (parsed && typeof parsed === 'object') {
+          let restoredWorkouts = 0;
+          let restoredRoutines = 0;
+
+          if (Array.isArray(parsed.history)) {
+            setHistory(parsed.history);
+            restoredWorkouts = parsed.history.length;
+          }
+          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) {
+            setRoutines(parsed.routines);
+            restoredRoutines = parsed.routines.length;
+          }
+
+          if (restoredWorkouts > 0 || restoredRoutines > 0) {
+            setAlertNotice(`Restored ${restoredWorkouts} workouts and ${restoredRoutines} custom routines successfully!`);
+          } else {
+            setAlertNotice('No workout or routine records found in this backup file.');
+          }
+          setTimeout(() => setAlertNotice(null), 4000);
+        } else {
+          setAlertNotice('Invalid backup file. Please select a valid JSON export.');
+          setTimeout(() => setAlertNotice(null), 4000);
         }
       } catch (err) {
-        setAlertNotice('Invalid backup file. Please select a valid JSON export.');
+        setAlertNotice('Invalid backup file format. Please select a valid JSON export.');
         setTimeout(() => setAlertNotice(null), 4000);
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  // Dismiss Backup Safety Banner for 14 Days
+  const handleDismissBackupBanner = () => {
+    const fourteenDays = Date.now() + 14 * 24 * 60 * 60 * 1000;
+    try {
+      localStorage.setItem('mit2fit_backup_dismissed_until', String(fourteenDays));
+    } catch {}
+    setBackupBannerDismissedUntil(fourteenDays);
+    setAlertNotice('Backup reminder dismissed for 14 days.');
+    setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  // Request Persistent Storage API explicitly from user action
+  const requestPersistentStorage = async () => {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      try {
+        const granted = await navigator.storage.persist();
+        setIsStoragePersisted(granted);
+        if (granted) {
+          setAlertNotice('Browser persistent storage enabled! Your data is protected against disk cleanup.');
+        } else {
+          setAlertNotice('Browser did not grant persistence automatically. Adding to Home Screen ensures protection.');
+        }
+      } catch (e) {
+        setAlertNotice('Browser persistent storage could not be configured.');
+      }
+      setTimeout(() => setAlertNotice(null), 4000);
+    } else {
+      setAlertNotice('Persistent Storage API is not supported in this browser.');
+      setTimeout(() => setAlertNotice(null), 4000);
+    }
   };
 
   // Delete single workout from history (In-app confirmation modal, sandbox-safe)
@@ -4790,11 +4906,27 @@ export default function ExerciseTracker() {
               <div className="flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                 <div className="text-xs space-y-1">
-                  <div className="font-bold text-white flex items-center gap-2">
+                  <div className="font-bold text-white flex flex-wrap items-center gap-2">
                     <span>Local Device Storage (No Login / 100% Private)</span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">
                       {history.length} Sessions Saved
                     </span>
+                    {isStoragePersisted ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-mono border border-cyan-500/30">
+                        <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                        Storage Guarded
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={requestPersistentStorage}
+                        className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 font-mono border border-amber-500/30 transition"
+                        title="Click to request browser persistent storage protection against disk cleanups"
+                      >
+                        <ShieldAlert className="w-3 h-3 text-amber-400" />
+                        Guard Storage
+                      </button>
+                    )}
                   </div>
                   <p className="text-stone-400 max-w-xl">
                     All your workouts are stored permanently on this device. Send your weekly report to your coach, your email, or WhatsApp with 1 click.
@@ -4804,6 +4936,15 @@ export default function ExerciseTracker() {
 
               {/* Weekly Dispatch Buttons */}
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={handleExportData}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-semibold transition"
+                  title="Download complete JSON backup (workouts & custom routines)"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  Backup JSON
+                </button>
+
                 <button
                   onClick={() => {
                     const text = formatWeeklyText(currentWeekNumber, thisWeekWorkouts, thisWeekVolume, thisWeekSets, unit);
@@ -6226,10 +6367,28 @@ export default function ExerciseTracker() {
           <div className="space-y-6">
             <div className="bg-stone-900/40 p-4 rounded-2xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <History className="w-5 h-5 text-amber-500" />
-                  Logged Sessions & Overload History
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <History className="w-5 h-5 text-amber-500" />
+                    Logged Sessions & Overload History
+                  </h2>
+                  {isStoragePersisted ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono border border-emerald-500/30">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      Storage Guarded
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestPersistentStorage}
+                      className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 font-mono border border-amber-500/30 transition"
+                      title="Request browser not to delete local workouts during disk cleanup"
+                    >
+                      <ShieldAlert className="w-3 h-3 text-amber-400" />
+                      Enable Storage Guard
+                    </button>
+                  )}
+                </div>
                 <p className="text-xs text-stone-400 mt-0.5">
                   Saved automatically in your browser. Send any session report or export your history.
                 </p>
@@ -6276,6 +6435,55 @@ export default function ExerciseTracker() {
                 />
               </div>
             </div>
+
+            {/* Data Safety & Backup Safeguard Banner */}
+            {shouldShowBackupReminder && (
+              <aside 
+                aria-label="Workout Data Backup Safeguard"
+                className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0 mt-0.5">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div className="text-xs space-y-1">
+                    <div className="font-bold text-white flex flex-wrap items-center gap-2">
+                      <span>Safeguard Your Workout History</span>
+                      <span className="text-[10px] text-amber-300 font-mono">
+                        {history.length} Workouts Logged
+                      </span>
+                    </div>
+                    <p className="text-stone-300 leading-relaxed max-w-xl">
+                      Your training logs live in this browser's local storage. If you ever clear cookies or site data, they could be lost. Download a 1-click JSON backup to save in your Files, iCloud, or Google Drive.
+                    </p>
+                    {lastBackupDate && (
+                      <div className="text-[10px] text-stone-400 font-mono">
+                        Last backup: {new Date(lastBackupDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExportData}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5 text-stone-950" />
+                    <span>Backup Now (JSON)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismissBackupBanner}
+                    className="px-2.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white text-xs font-semibold transition"
+                    title="Dismiss reminder for 14 days"
+                  >
+                    Dismiss (14d)
+                  </button>
+                </div>
+              </aside>
+            )}
 
             {/* 12-Week Workout Consistency Heatmap & Streak Tracker */}
             <div className="bg-stone-900/60 border border-stone-800 rounded-2xl p-5 space-y-4">
@@ -6797,15 +7005,46 @@ export default function ExerciseTracker() {
             </div>
 
             {/* Explanation of how it saves in browser */}
-            <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 text-xs space-y-2">
-              <div className="flex items-center gap-2 font-bold text-emerald-400">
-                <ShieldCheck className="w-4 h-4" />
-                <span>How your data is saved:</span>
+            <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 text-xs space-y-2.5">
+              <div className="flex items-center justify-between font-bold">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>How your data is saved:</span>
+                </div>
+                {isStoragePersisted ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-cyan-300 font-mono bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+                    <CheckCircle2 className="w-3 h-3 text-cyan-400" />
+                    Storage Guarded
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={requestPersistentStorage}
+                    className="inline-flex items-center gap-1 text-[10px] text-amber-300 font-mono bg-amber-500/15 hover:bg-amber-500/25 px-2 py-0.5 rounded border border-amber-500/30 transition"
+                  >
+                    <ShieldAlert className="w-3 h-3 text-amber-400" />
+                    Request Guard
+                  </button>
+                )}
               </div>
               <p className="text-stone-300 leading-relaxed">
-                Your workouts and double progression targets are saved directly in your browser's persistent storage (<code className="text-amber-400 font-mono">HTML5 LocalStorage</code>).
-                No passwords, no tracking, and no cloud logins required.
+                Workouts and custom routines live in your browser (<code className="text-amber-400 font-mono">HTML5 LocalStorage</code>).
+                No external cloud servers, no trackers, and no passwords required.
               </p>
+              <div className="bg-stone-900/80 p-2.5 rounded-xl border border-stone-800 text-[11px] text-stone-400 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span>Browser Persistent Lock:</span>
+                  <strong className={isStoragePersisted ? "text-cyan-400" : "text-amber-400"}>
+                    {isStoragePersisted ? "Active (Safe from OS disk cleanup)" : "Standard LocalStorage"}
+                  </strong>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Last Downloaded Backup:</span>
+                  <strong className="text-stone-300 font-mono">
+                    {lastBackupDate ? new Date(lastBackupDate).toLocaleDateString() : "Never (Export advised)"}
+                  </strong>
+                </div>
+              </div>
               <div className="pt-1 text-[11px] text-stone-500 border-t border-stone-800/80 flex items-center justify-between">
                 <span>Storage Key: <strong className="font-mono text-stone-400">mit2fit_exercise_logs_v4</strong></span>
                 <span>Saved Sessions: <strong className="font-mono text-amber-400">{history.length}</strong></span>

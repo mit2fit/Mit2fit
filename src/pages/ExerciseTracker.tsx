@@ -719,21 +719,45 @@ export function getDefaultRoutines(): RoutineTemplate[] {
   return getAllParametricRoutines();
 }
 
+function getRoutineExerciseConfig(routine: RoutineTemplate, exerciseId: string, index: number) {
+  const slot = routine.exerciseConfigs?.[index];
+  return slot?.exerciseId === exerciseId
+    ? slot
+    : routine.exerciseConfigs?.find(config => config.exerciseId === exerciseId);
+}
+
+function toRoutineExerciseConfig(active: ActiveExercise): RoutineExerciseConfig {
+  return {
+    exerciseId: active.exercise.id,
+    exercise: active.exercise.custom ? active.exercise : undefined,
+    targetSets: active.targetSets,
+    targetReps: active.targetReps,
+    targetWeight: active.targetWeight,
+    minReps: active.minReps,
+    maxReps: active.maxReps,
+    equipment: active.equipment,
+    supersetTag: active.supersetTag,
+  };
+}
+
 // History-aware routine constructor: automatically pre-populates previous set weights and reps
 export function buildRoutineExercises(
   routine: RoutineTemplate,
   historyList: CompletedWorkout[]
 ): ActiveExercise[] {
-  return routine.exerciseIds.map((exId, idx) => {
-    const def = EXERCISE_DATABASE.find(e => e.id === exId) || EXERCISE_DATABASE[0];
-    const prevPerf = getPreviousExercisePerformance(exId, def.name, historyList);
-    const cfg = routine.exerciseConfigs?.find(c => c.exerciseId === exId);
+  return routine.exerciseIds.flatMap((exId, idx) => {
+    const cfg = getRoutineExerciseConfig(routine, exId, idx);
+    const def = cfg?.exercise ?? EXERCISE_DATABASE.find(e => e.id === exId);
+    if (!def) return [];
 
-    // If history exists, auto-adjust to user's proven working weights & reps!
-    const targetSets = prevPerf ? prevPerf.targetSets : (cfg?.targetSets || def.defaultTarget?.targetSets || 3);
-    const targetReps = prevPerf ? prevPerf.targetReps : (cfg?.targetReps || def.defaultTarget?.targetReps || 10);
-    const targetWeight = prevPerf ? prevPerf.maxWeight : (cfg?.targetWeight || def.defaultTarget?.defaultWeight || 45);
-    const equipment = cfg?.equipment || def.defaultEquipment;
+    // A saved prescription takes precedence for custom routines. Presets still adapt to history.
+    const prevPerf = routine.isCustom && cfg
+      ? null
+      : getPreviousExercisePerformance(exId, def.name, historyList);
+    const targetSets = prevPerf?.targetSets ?? cfg?.targetSets ?? def.defaultTarget?.targetSets ?? 3;
+    const targetReps = prevPerf?.targetReps ?? cfg?.targetReps ?? def.defaultTarget?.targetReps ?? 10;
+    const targetWeight = prevPerf?.maxWeight ?? cfg?.targetWeight ?? def.defaultTarget?.defaultWeight ?? 45;
+    const equipment = cfg?.equipment ?? def.defaultEquipment;
 
     const sets: WorkoutSet[] = Array.from({ length: targetSets }).map((_, sIdx) => {
       const prevSet = prevPerf?.sets[sIdx];
@@ -754,11 +778,54 @@ export function buildRoutineExercises(
       targetSets,
       targetReps,
       targetWeight,
-      minReps: def.defaultTarget?.minReps || 8,
-      maxReps: def.defaultTarget?.maxReps || 12,
+      minReps: cfg?.minReps ?? def.defaultTarget?.minReps ?? 8,
+      maxReps: cfg?.maxReps ?? def.defaultTarget?.maxReps ?? 12,
+      supersetTag: cfg?.supersetTag,
       sets
     };
   });
+}
+
+function applyRoutineToSession(current: ActiveExercise[], prescribed: ActiveExercise[]): ActiveExercise[] {
+  const remaining = [...current];
+  const updated = prescribed.map(exercise => {
+    const index = remaining.findIndex(entry => entry.exercise.id === exercise.exercise.id);
+    if (index < 0) return exercise;
+
+    const [previous] = remaining.splice(index, 1);
+    const sets = [...previous.sets];
+    const difference = exercise.targetSets - previous.targetSets;
+
+    if (difference > 0) {
+      sets.push(...exercise.sets.slice(-difference));
+    } else if (difference < 0) {
+      let setsToRemove = -difference;
+      for (let i = sets.length - 1; i >= 0 && setsToRemove > 0; i--) {
+        if (!sets[i].completed && sets[i].type !== 'Warmup') {
+          sets.splice(i, 1);
+          setsToRemove--;
+        }
+      }
+    }
+
+    return {
+      ...exercise,
+      instanceId: previous.instanceId,
+      notes: previous.notes,
+      sets: sets.map((set, setIndex) => {
+        const updateTargets = !set.completed && set.type !== 'Warmup';
+        return {
+          ...set,
+          setNumber: setIndex + 1,
+          weight: updateTargets && exercise.targetWeight !== previous.targetWeight ? exercise.targetWeight : set.weight,
+          reps: updateTargets && exercise.targetReps !== previous.targetReps ? exercise.targetReps : set.reps,
+        };
+      }),
+    };
+  });
+
+  // Removed exercises with logged sets still belong to the current workout.
+  return [...updated, ...remaining.filter(exercise => exercise.sets.some(set => set.completed))];
 }
 
 // Backward compatibility helper
@@ -928,6 +995,8 @@ function exportCSV(workouts: CompletedWorkout[]) {
 }
 
 const ACTIVE_SESSION_STORAGE_KEY = 'mit2fit_active_session_v2';
+const ROUTINES_STORAGE_KEY = 'mit2fit_workout_routines_v4';
+const ROUTINE_SAVE_ERROR = 'Could not save the routine to this browser. Check site storage and try again.';
 
 interface StoredActiveSession {
   activeExercises: ActiveExercise[];
@@ -944,11 +1013,8 @@ function loadSavedActiveSession(): StoredActiveSession | null {
     const raw = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
     if (raw) {
       const parsed: StoredActiveSession = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.activeExercises) && parsed.activeExercises.length > 0) {
-        // Keep active session valid if within last 24 hours
-        if (Date.now() - (parsed.savedAt || 0) < 24 * 60 * 60 * 1000) {
-          return parsed;
-        }
+      if (parsed && Array.isArray(parsed.activeExercises)) {
+        return parsed;
       }
     }
   } catch (e) {
@@ -972,7 +1038,7 @@ function loadInitialHistory(): CompletedWorkout[] {
 
 function loadInitialRoutines(): RoutineTemplate[] {
   const defaults = getDefaultRoutines();
-  const saved = localStorage.getItem('mit2fit_workout_routines_v4') || localStorage.getItem('mit2fit_workout_routines_v3');
+  const saved = localStorage.getItem(ROUTINES_STORAGE_KEY) || localStorage.getItem('mit2fit_workout_routines_v3');
   if (saved) {
     try {
       const parsed: RoutineTemplate[] = JSON.parse(saved);
@@ -985,7 +1051,8 @@ function loadInitialRoutines(): RoutineTemplate[] {
           }));
         const defaultIds = new Set(defaults.map(d => d.id));
         const userCustom = customRoutines.filter(r => !defaultIds.has(r.id));
-        return [...defaults, ...userCustom];
+        const customById = new Map(customRoutines.map(routine => [routine.id, routine]));
+        return [...defaults.map(routine => customById.get(routine.id) ?? routine), ...userCustom];
       }
     } catch (e) {
       console.error('Failed to parse saved routines', e);
@@ -996,6 +1063,8 @@ function loadInitialRoutines(): RoutineTemplate[] {
 
 export default function ExerciseTracker() {
   const initialSession = useMemo(() => loadSavedActiveSession(), []);
+  const recentSession = initialSession && initialSession.activeExercises.length > 0 &&
+    Date.now() - (initialSession.savedAt || 0) < 24 * 60 * 60 * 1000 ? initialSession : null;
 
   // Workout History from localStorage (loaded first so routines auto-adjust to it)
   const [history, setHistory] = useState<CompletedWorkout[]>(loadInitialHistory);
@@ -1007,11 +1076,18 @@ export default function ExerciseTracker() {
 
   // Routines state (preset + custom routines)
   const [routines, setRoutines] = useState<RoutineTemplate[]>(loadInitialRoutines);
+  const initialRoutine = routines.find(routine => routine.id === initialSession?.activeTemplateId) ?? routines[0];
 
-  // Sync routines to localStorage
-  useEffect(() => {
-    localStorage.setItem('mit2fit_workout_routines_v4', JSON.stringify(routines));
-  }, [routines]);
+  const saveRoutines = (nextRoutines: RoutineTemplate[]) => {
+    try {
+      localStorage.setItem(ROUTINES_STORAGE_KEY, JSON.stringify(nextRoutines));
+    } catch (error) {
+      console.error('Failed to save workout routines', error);
+      return false;
+    }
+    setRoutines(nextRoutines);
+    return true;
+  };
 
   // Experience level filter for routine library
   const [selectedRoutineLevel, setSelectedRoutineLevel] = useState<'All' | ExperienceLevel>('All');
@@ -1051,8 +1127,8 @@ export default function ExerciseTracker() {
 
   const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
-  const [sessionTitle, setSessionTitle] = useState(initialSession?.sessionTitle || 'Upper Day A (Classic Hypertrophy)');
-  const [activeTemplateId, setActiveTemplateId] = useState<string>(initialSession?.activeTemplateId || 'upper-day-a');
+  const [sessionTitle, setSessionTitle] = useState(recentSession?.sessionTitle || initialRoutine.name);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(recentSession?.activeTemplateId || initialRoutine.id);
   
   // Workout UI Layout & Drawer States (Streamlined Space Management)
   const [isRoutinePickerExpanded, setIsRoutinePickerExpanded] = useState<boolean>(false);
@@ -1061,19 +1137,13 @@ export default function ExerciseTracker() {
   const [activeExerciseMenuId, setActiveExerciseMenuId] = useState<string | null>(null);
   
   // Stopwatch State: NEVER auto-starts, user initiates via "Start Workout"
-  const [elapsedSeconds, setElapsedSeconds] = useState(initialSession?.elapsedSeconds || 0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(recentSession?.elapsedSeconds || 0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [hasStartedWorkout, setHasStartedWorkout] = useState(initialSession?.hasStartedWorkout || false);
+  const [hasStartedWorkout, setHasStartedWorkout] = useState(recentSession?.hasStartedWorkout || false);
 
   // Active exercises in workout session
   const [activeExercises, setActiveExercises] = useState<ActiveExercise[]>(() => {
-    if (initialSession?.activeExercises && initialSession.activeExercises.length > 0) {
-      return initialSession.activeExercises;
-    }
-    const initialRoutines = loadInitialRoutines();
-    const initialHist = loadInitialHistory();
-    const routine = initialRoutines.find(r => r.id === (initialSession?.activeTemplateId || 'upper-day-a')) || initialRoutines[0];
-    return buildRoutineExercises(routine, initialHist);
+    return recentSession?.activeExercises ?? buildRoutineExercises(initialRoutine, history);
   });
 
   // Routine Creator / Editor Modal State
@@ -1087,13 +1157,8 @@ export default function ExerciseTracker() {
     daysPerWeek?: string;
     durationMin?: number;
     description: string;
-    exerciseConfigs: {
-      exerciseId: string;
-      targetSets: number;
-      targetReps: number;
-      targetWeight: number;
-      equipment: string;
-    }[];
+    exerciseConfigs: RoutineExerciseConfig[];
+    error?: string;
     isPickerOpen: boolean;
     pickerSearch: string;
     pickerSplit: string;
@@ -1681,13 +1746,9 @@ export default function ExerciseTracker() {
   // Dynamic selection of parametric routines driven by relational lookup table
   const handleSelectParametricRoutine = (defId: string, level: ExperienceLevel) => {
     setRoutineTierMap(prev => ({ ...prev, [defId]: level }));
-    const routine = buildParametricRoutine(defId, level);
-    setActiveTemplateId(routine.id);
-    setSessionTitle(routine.name);
-    setActiveExercises(buildRoutineExercises(routine, history));
-    setElapsedSeconds(0);
-    setIsTimerRunning(false);
-    setHasStartedWorkout(false);
+    const preset = buildParametricRoutine(defId, level);
+    const routine = routines.find(entry => entry.id === preset.id) ?? preset;
+    activateRoutine(routine);
     setAlertNotice(`Loaded "${routine.name}" (${level} tier)!`);
     setTimeout(() => setAlertNotice(null), 3000);
   };
@@ -1697,18 +1758,29 @@ export default function ExerciseTracker() {
     handleSelectParametricRoutine(activeParametricDef.id, newTier);
   };
 
-  // 1-Click Load Routine with Automatic History Auto-Adjustment
-  const handleLoadRoutine = (routineId: string) => {
-    const routine = routines.find(r => r.id === routineId) || routines[0];
-    if (!routine) return;
+  const activateRoutine = (routine: RoutineTemplate) => {
     setActiveTemplateId(routine.id);
     setSessionTitle(routine.name);
     setActiveExercises(buildRoutineExercises(routine, history));
     setElapsedSeconds(0);
     setIsTimerRunning(false);
     setHasStartedWorkout(false);
-    setAlertNotice(`Loaded "${routine.name}" with history auto-loaded!`);
+    setRestSecondsLeft(null);
+    setActiveHoldTimer(null);
+  };
+
+  // 1-Click Load Routine with Automatic History Auto-Adjustment
+  const handleLoadRoutine = (routineId: string) => {
+    const routine = routines.find(r => r.id === routineId) || routines[0];
+    if (!routine) return;
+    activateRoutine(routine);
+    setAlertNotice(`Loaded "${routine.name}"!`);
     setTimeout(() => setAlertNotice(null), 3000);
+  };
+
+  const showRoutineSaveError = () => {
+    setAlertNotice(ROUTINE_SAVE_ERROR);
+    setTimeout(() => setAlertNotice(null), 4000);
   };
 
   const handleLoadTemplate = handleLoadRoutine;
@@ -1733,16 +1805,17 @@ export default function ExerciseTracker() {
 
   // Open Routine Editor Modal (modify existing routine)
   const handleOpenEditRoutine = (routine: RoutineTemplate) => {
-    const configs = routine.exerciseIds.map(exId => {
-      const existingCfg = routine.exerciseConfigs?.find(c => c.exerciseId === exId);
-      const def = EXERCISE_DATABASE.find(e => e.id === exId);
+    const configs = routine.exerciseIds.map((exId, index) => {
+      const existingCfg = getRoutineExerciseConfig(routine, exId, index);
+      const def = existingCfg?.exercise ?? EXERCISE_DATABASE.find(e => e.id === exId);
       const prevPerf = getPreviousExercisePerformance(exId, def?.name || '', history);
       return {
+        ...existingCfg,
         exerciseId: exId,
-        targetSets: existingCfg?.targetSets || prevPerf?.targetSets || def?.defaultTarget?.targetSets || 3,
-        targetReps: existingCfg?.targetReps || prevPerf?.targetReps || def?.defaultTarget?.targetReps || 10,
-        targetWeight: existingCfg?.targetWeight || prevPerf?.maxWeight || def?.defaultTarget?.defaultWeight || 45,
-        equipment: existingCfg?.equipment || def?.defaultEquipment || 'Barbell'
+        targetSets: existingCfg?.targetSets ?? prevPerf?.targetSets ?? def?.defaultTarget?.targetSets ?? 3,
+        targetReps: existingCfg?.targetReps ?? prevPerf?.targetReps ?? def?.defaultTarget?.targetReps ?? 10,
+        targetWeight: existingCfg?.targetWeight ?? prevPerf?.maxWeight ?? def?.defaultTarget?.defaultWeight ?? 45,
+        equipment: existingCfg?.equipment ?? def?.defaultEquipment ?? 'Barbell'
       };
     });
 
@@ -1765,14 +1838,6 @@ export default function ExerciseTracker() {
 
   // Open Routine Modal pre-populated with currently active workout
   const handleOpenSaveActiveAsRoutine = () => {
-    const configs = activeExercises.map(ae => ({
-      exerciseId: ae.exercise.id,
-      targetSets: ae.targetSets,
-      targetReps: ae.targetReps,
-      targetWeight: ae.targetWeight,
-      equipment: ae.equipment
-    }));
-
     setRoutineModal({
       isOpen: true,
       mode: 'save_active',
@@ -1782,7 +1847,7 @@ export default function ExerciseTracker() {
       daysPerWeek: '4 days / week',
       durationMin: 55,
       description: `Custom routine with ${activeExercises.length} exercises`,
-      exerciseConfigs: configs,
+      exerciseConfigs: activeExercises.map(toRoutineExerciseConfig),
       isPickerOpen: false,
       pickerSearch: '',
       pickerSplit: 'All'
@@ -1796,20 +1861,22 @@ export default function ExerciseTracker() {
       handleOpenSaveActiveAsRoutine();
       return;
     }
-    const updatedConfigs = activeExercises.map(ae => ({
-      exerciseId: ae.exercise.id,
-      targetSets: ae.targetSets,
-      targetReps: ae.targetReps,
-      targetWeight: ae.targetWeight,
-      equipment: ae.equipment
-    }));
+    if (activeExercises.length === 0) {
+      setAlertNotice('Add at least one exercise before saving this routine.');
+      setTimeout(() => setAlertNotice(null), 3000);
+      return;
+    }
     const updatedRoutine: RoutineTemplate = {
       ...currentRoutine,
       exerciseIds: activeExercises.map(ae => ae.exercise.id),
-      exerciseConfigs: updatedConfigs,
+      exerciseConfigs: activeExercises.map(toRoutineExerciseConfig),
+      isCustom: true,
       description: `${activeExercises.map(e => e.exercise.name).slice(0, 4).join(', ')}${activeExercises.length > 4 ? '...' : ''}`
     };
-    setRoutines(prev => prev.map(r => r.id === currentRoutine.id ? updatedRoutine : r));
+    if (!saveRoutines(routines.map(r => r.id === currentRoutine.id ? updatedRoutine : r))) {
+      showRoutineSaveError();
+      return;
+    }
     setAlertNotice(`Saved changes to "${currentRoutine.name}" routine!`);
     setTimeout(() => setAlertNotice(null), 3000);
   };
@@ -1819,58 +1886,49 @@ export default function ExerciseTracker() {
     if (!routineModal) return;
     const trimmedName = routineModal.name.trim();
     if (!trimmedName) {
-      setAlertNotice('Please provide a name for this routine.');
-      setTimeout(() => setAlertNotice(null), 3000);
+      setRoutineModal({ ...routineModal, error: 'Enter a name for this routine.' });
       return;
     }
     if (routineModal.exerciseConfigs.length === 0) {
-      setAlertNotice('Please add at least 1 exercise to this routine.');
-      setTimeout(() => setAlertNotice(null), 3000);
+      setRoutineModal({ ...routineModal, error: 'Add at least one exercise to this routine.' });
       return;
     }
 
-    if (routineModal.mode === 'create' || routineModal.mode === 'save_active') {
-      const newId = `routine-${Date.now()}`;
-      const newRoutine: RoutineTemplate = {
-        id: newId,
-        name: trimmedName,
-        split: routineModal.split,
-        level: routineModal.level,
-        daysPerWeek: routineModal.daysPerWeek,
-        durationMin: routineModal.durationMin,
-        description: routineModal.description || `${routineModal.exerciseConfigs.length} exercises (${routineModal.split})`,
-        exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
-        exerciseConfigs: routineModal.exerciseConfigs,
-        isCustom: true
-      };
-      setRoutines(prev => [...prev, newRoutine]);
-      setActiveTemplateId(newId);
-      setSessionTitle(trimmedName);
-      if (routineModal.mode === 'create') {
-        setActiveExercises(buildRoutineExercises(newRoutine, history));
-      }
-      setAlertNotice(`Routine "${trimmedName}" created and loaded!`);
-    } else if (routineModal.mode === 'edit' && routineModal.routineId) {
-      const existing = routines.find(r => r.id === routineModal.routineId);
-      const updatedRoutine: RoutineTemplate = {
-        id: routineModal.routineId,
-        name: trimmedName,
-        split: routineModal.split,
-        level: routineModal.level,
-        daysPerWeek: routineModal.daysPerWeek || existing?.daysPerWeek,
-        durationMin: routineModal.durationMin || existing?.durationMin,
-        description: routineModal.description,
-        exerciseIds: routineModal.exerciseConfigs.map(c => c.exerciseId),
-        exerciseConfigs: routineModal.exerciseConfigs,
-        isCustom: true
-      };
-      setRoutines(prev => prev.map(r => r.id === routineModal.routineId ? updatedRoutine : r));
-      if (activeTemplateId === routineModal.routineId) {
-        setSessionTitle(trimmedName);
-      }
-      setAlertNotice(`Routine "${trimmedName}" updated!`);
+    const existing = routines.find(routine => routine.id === routineModal.routineId);
+    if (routineModal.mode === 'edit' && !existing) {
+      setRoutineModal({ ...routineModal, error: 'This routine is no longer in your library.' });
+      return;
     }
 
+    const routine: RoutineTemplate = {
+      id: existing?.id ?? `routine-${Date.now()}`,
+      name: trimmedName,
+      split: routineModal.split,
+      level: routineModal.level,
+      daysPerWeek: routineModal.daysPerWeek ?? existing?.daysPerWeek,
+      durationMin: routineModal.durationMin ?? existing?.durationMin,
+      description: routineModal.description || `${routineModal.exerciseConfigs.length} exercises (${routineModal.split})`,
+      exerciseIds: routineModal.exerciseConfigs.map(config => config.exerciseId),
+      exerciseConfigs: routineModal.exerciseConfigs,
+      isCustom: true,
+    };
+    const nextRoutines = existing
+      ? routines.map(entry => entry.id === routine.id ? routine : entry)
+      : [...routines, routine];
+    if (!saveRoutines(nextRoutines)) {
+      setRoutineModal({ ...routineModal, error: ROUTINE_SAVE_ERROR });
+      return;
+    }
+
+    if (routineModal.mode === 'create') {
+      activateRoutine(routine);
+    } else if (routineModal.mode === 'save_active' || routine.id === activeTemplateId) {
+      const prescribed = buildRoutineExercises(routine, history);
+      setActiveTemplateId(routine.id);
+      setSessionTitle(routine.name);
+      setActiveExercises(current => applyRoutineToSession(current, prescribed));
+    }
+    setAlertNotice(`Routine "${trimmedName}" ${existing ? 'updated' : 'saved'}!`);
     setTimeout(() => setAlertNotice(null), 3000);
     setRoutineModal(null);
   };
@@ -1887,19 +1945,16 @@ export default function ExerciseTracker() {
       confirmText: 'Delete Routine',
       isDanger: true,
       onConfirm: () => {
-        setRoutines(prev => {
-          const filtered = prev.filter(r => r.id !== routineId);
-          if (filtered.length === 0) return getDefaultRoutines();
-          return filtered;
-        });
-        if (activeTemplateId === routineId) {
-          const remaining = routines.filter(r => r.id !== routineId);
-          const next = remaining[0] || getDefaultRoutines()[0];
-          setActiveTemplateId(next.id);
-          setSessionTitle(next.name);
-          setActiveExercises(buildRoutineExercises(next, history));
-        }
+        const remaining = routines.filter(r => r.id !== routineId);
+        const nextRoutines = remaining.length > 0 ? remaining : getDefaultRoutines();
         setConfirmModal(null);
+        if (!saveRoutines(nextRoutines)) {
+          showRoutineSaveError();
+          return;
+        }
+        if (activeTemplateId === routineId) {
+          activateRoutine(nextRoutines[0]);
+        }
         setAlertNotice(`Routine "${toDelete.name}" deleted.`);
         setTimeout(() => setAlertNotice(null), 3000);
       }
@@ -1916,9 +1971,12 @@ export default function ExerciseTracker() {
       isDanger: false,
       onConfirm: () => {
         const defaults = getDefaultRoutines();
-        setRoutines(defaults);
-        handleLoadRoutine(defaults[0].id);
         setConfirmModal(null);
+        if (!saveRoutines(defaults)) {
+          showRoutineSaveError();
+          return;
+        }
+        activateRoutine(defaults[0]);
         setAlertNotice('Default routines restored.');
         setTimeout(() => setAlertNotice(null), 3000);
       }
@@ -2166,49 +2224,43 @@ export default function ExerciseTracker() {
   };
 
   const toggleSetCompleted = (exIdx: number, setIdx: number) => {
+    const exercise = activeExercises[exIdx];
+    const targetSet = exercise.sets[setIdx];
+    const completed = !targetSet.completed;
+
     if (!hasStartedWorkout) {
       setHasStartedWorkout(true);
       setIsTimerRunning(true);
     }
 
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const targetSet = next[exIdx].sets[setIdx];
-      const willBeCompleted = !targetSet.completed;
-      next[exIdx].sets[setIdx] = { ...targetSet, completed: willBeCompleted };
-      
-      if (willBeCompleted) {
-        // Superset pairing flow: if this exercise is paired (e.g. A1) and followed by A2, transition with 0s rest
-        const currentEx = next[exIdx];
-        const nextEx = next[exIdx + 1];
-        const isSupersetFirstPart = 
-          Boolean(currentEx.supersetTag) && 
-          Boolean(nextEx?.supersetTag) && 
-          currentEx.supersetTag?.slice(0, 1) === nextEx?.supersetTag?.slice(0, 1) &&
-          currentEx.supersetTag?.endsWith('1');
+    setActiveExercises(current => current.map(entry =>
+      entry.instanceId === exercise.instanceId
+        ? { ...entry, sets: entry.sets.map(set => set.id === targetSet.id ? { ...set, completed } : set) }
+        : entry
+    ));
 
-        if (isSupersetFirstPart) {
-          setAlertNotice(`⚡ SUPERSET TRANSITION: Move immediately to ${nextEx.exercise.name}! (0s rest between pairs)`);
-          setTimeout(() => setAlertNotice(null), 3500);
-        } else if (autoRestTimerEnabled) {
-          setRestSecondsLeft(restInitialSeconds);
-        }
+    if (!completed) return;
 
-        // Instant PR detection for completed working sets
-        if (targetSet.type !== 'Warmup' && targetSet.weight > 0 && targetSet.reps > 0) {
-          const pr = getExerciseAllTimePR(next[exIdx].exercise.id, next[exIdx].exercise.name, history);
-          const currentE1RM = calculateE1RM(targetSet.weight, targetSet.reps);
-          if (pr.maxWeight > 0 && targetSet.weight > pr.maxWeight) {
-            setAlertNotice(`🏆 ALL-TIME WEIGHT PR: ${next[exIdx].exercise.name} ${targetSet.weight} ${unit}! (Previous: ${pr.maxWeight} ${unit})`);
-            setTimeout(() => setAlertNotice(null), 4500);
-          } else if (pr.bestE1RM > 0 && currentE1RM > pr.bestE1RM) {
-            setAlertNotice(`🏆 NEW ESTIMATED 1RM PR: ${next[exIdx].exercise.name} ${currentE1RM} ${unit}! (${targetSet.weight}×${targetSet.reps})`);
-            setTimeout(() => setAlertNotice(null), 4500);
-          }
-        }
+    const nextExercise = activeExercises[exIdx + 1];
+    const supersetTag = exercise.supersetTag;
+    if (supersetTag?.endsWith('1') && nextExercise?.supersetTag?.startsWith(supersetTag.slice(0, 1))) {
+      setAlertNotice(`⚡ SUPERSET TRANSITION: Move immediately to ${nextExercise.exercise.name}! (0s rest between pairs)`);
+      setTimeout(() => setAlertNotice(null), 3500);
+    } else if (autoRestTimerEnabled) {
+      setRestSecondsLeft(restInitialSeconds);
+    }
+
+    if (targetSet.type !== 'Warmup' && targetSet.weight > 0 && targetSet.reps > 0) {
+      const pr = getExerciseAllTimePR(exercise.exercise.id, exercise.exercise.name, history);
+      const currentE1RM = calculateE1RM(targetSet.weight, targetSet.reps);
+      if (pr.maxWeight > 0 && targetSet.weight > pr.maxWeight) {
+        setAlertNotice(`🏆 ALL-TIME WEIGHT PR: ${exercise.exercise.name} ${targetSet.weight} ${unit}! (Previous: ${pr.maxWeight} ${unit})`);
+        setTimeout(() => setAlertNotice(null), 4500);
+      } else if (pr.bestE1RM > 0 && currentE1RM > pr.bestE1RM) {
+        setAlertNotice(`🏆 NEW ESTIMATED 1RM PR: ${exercise.exercise.name} ${currentE1RM} ${unit}! (${targetSet.weight}×${targetSet.reps})`);
+        setTimeout(() => setAlertNotice(null), 4500);
       }
-      return next;
-    });
+    }
   };
 
   const cloneSet = (exIdx: number, setIdx: number) => {
@@ -2314,11 +2366,39 @@ export default function ExerciseTracker() {
 
   // Substitute Exercise Handler
   const handleSubstituteExercise = (exIdx: number, newExercise: ExerciseDefinition) => {
+    const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
+    const newWeight = prevPerf?.maxWeight ?? newExercise.defaultTarget?.defaultWeight ?? 45;
+    const newReps = prevPerf?.targetReps ?? newExercise.defaultTarget?.targetReps ?? 10;
+
+    if (substituteModal?.updateRoutineTemplate) {
+      const nextRoutines = routines.map(routine => {
+        if (routine.id !== activeTemplateId) return routine;
+        const exerciseIds = [...routine.exerciseIds];
+        exerciseIds[exIdx] = newExercise.id;
+        const exerciseConfigs = routine.exerciseConfigs ? [...routine.exerciseConfigs] : [];
+        if (exerciseConfigs[exIdx]) {
+          exerciseConfigs[exIdx] = {
+            ...exerciseConfigs[exIdx],
+            exerciseId: newExercise.id,
+            exercise: newExercise.custom ? newExercise : undefined,
+            equipment: newExercise.defaultEquipment,
+            targetWeight: newWeight,
+            targetReps: newReps,
+            minReps: newExercise.defaultTarget?.minReps,
+            maxReps: newExercise.defaultTarget?.maxReps,
+          };
+        }
+        return { ...routine, exerciseIds, exerciseConfigs, isCustom: true };
+      });
+      if (!saveRoutines(nextRoutines)) {
+        setSubstituteModal(null);
+        showRoutineSaveError();
+        return;
+      }
+    }
+
     setActiveExercises(prev => {
       const next = [...prev];
-      const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
-      const newWeight = prevPerf ? prevPerf.maxWeight : (newExercise.defaultTarget?.defaultWeight || 45);
-      const newReps = prevPerf ? prevPerf.targetReps : (newExercise.defaultTarget?.targetReps || 10);
 
       next[exIdx] = {
         ...next[exIdx],
@@ -2338,32 +2418,6 @@ export default function ExerciseTracker() {
       return next;
     });
 
-    if (substituteModal?.updateRoutineTemplate) {
-      setRoutines(prev => prev.map(r => {
-        if (r.id !== activeTemplateId) return r;
-        const newIds = [...r.exerciseIds];
-        newIds[exIdx] = newExercise.id;
-        const newConfigs = r.exerciseConfigs ? [...r.exerciseConfigs] : [];
-        const prevPerf = getPreviousExercisePerformance(newExercise.id, newExercise.name, history);
-        const newWeight = prevPerf ? prevPerf.maxWeight : (newExercise.defaultTarget?.defaultWeight || 45);
-        const newReps = prevPerf ? prevPerf.targetReps : (newExercise.defaultTarget?.targetReps || 10);
-        if (newConfigs[exIdx]) {
-          newConfigs[exIdx] = {
-            ...newConfigs[exIdx],
-            exerciseId: newExercise.id,
-            equipment: newExercise.defaultEquipment,
-            targetWeight: newWeight,
-            targetReps: newReps
-          };
-        }
-        return {
-          ...r,
-          exerciseIds: newIds,
-          exerciseConfigs: newConfigs
-        };
-      }));
-    }
-
     setSubstituteModal(null);
     setAlertNotice(`Swapped to ${newExercise.name}!${substituteModal?.updateRoutineTemplate ? ' (Routine template updated)' : ''}`);
     setTimeout(() => setAlertNotice(null), 3500);
@@ -2376,10 +2430,11 @@ export default function ExerciseTracker() {
     const existingCfg = routineModal.exerciseConfigs[cfgIdx];
     const newConfig = {
       exerciseId: newExercise.id,
-      targetSets: existingCfg?.targetSets || 3,
-      targetReps: existingCfg?.targetReps || 10,
-      targetWeight: prevPerf?.maxWeight || newExercise.defaultTarget?.defaultWeight || 45,
-      equipment: newExercise.defaultEquipment
+      targetSets: existingCfg?.targetSets ?? 3,
+      targetReps: existingCfg?.targetReps ?? 10,
+      targetWeight: prevPerf?.maxWeight ?? newExercise.defaultTarget?.defaultWeight ?? 45,
+      equipment: newExercise.defaultEquipment,
+      supersetTag: existingCfg?.supersetTag,
     };
     const updated = [...routineModal.exerciseConfigs];
     updated[cfgIdx] = newConfig;
@@ -2393,7 +2448,7 @@ export default function ExerciseTracker() {
     const prevPerf = getPreviousExercisePerformance(exercise.id, exercise.name, history);
     const targetSets = prevPerf ? prevPerf.targetSets : (exercise.defaultTarget?.targetSets || 3);
     const targetReps = prevPerf ? prevPerf.targetReps : (exercise.defaultTarget?.targetReps || 10);
-    const defaultWeight = prevPerf ? prevPerf.maxWeight : (exercise.defaultTarget?.defaultWeight || 45);
+    const defaultWeight = prevPerf?.maxWeight ?? exercise.defaultTarget?.defaultWeight ?? 45;
 
     const newActive: ActiveExercise = {
       instanceId: `inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -2602,13 +2657,16 @@ export default function ExerciseTracker() {
           let restoredWorkouts = 0;
           let restoredRoutines = 0;
 
+          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) {
+            if (!saveRoutines(parsed.routines)) {
+              showRoutineSaveError();
+              return;
+            }
+            restoredRoutines = parsed.routines.length;
+          }
           if (Array.isArray(parsed.history)) {
             setHistory(parsed.history);
             restoredWorkouts = parsed.history.length;
-          }
-          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) {
-            setRoutines(parsed.routines);
-            restoredRoutines = parsed.routines.length;
           }
 
           if (restoredWorkouts > 0 || restoredRoutines > 0) {
@@ -2729,41 +2787,30 @@ export default function ExerciseTracker() {
     });
   };
 
-  // Custom Split Builder Handler: Convert slots to active exercises and mount immediately
+  // Save the builder's prescription as a reusable routine before activating it.
   const handleSaveCustomRoutine = (customRoutine: CustomRoutineOutput) => {
-    const newExercises: ActiveExercise[] = customRoutine.slots.map((slot, index) => {
-      const sets: WorkoutSet[] = Array.from({ length: Math.max(1, slot.targetSets || 3) }, (_, sIdx) => ({
-        id: `set-${Date.now()}-${index}-${sIdx}`,
-        setNumber: sIdx + 1,
-        weight: slot.targetWeight || 0,
-        reps: slot.targetReps || 10,
-        completed: false,
-        type: 'Working' as const,
-        rpe: 8
-      }));
+    const routine: RoutineTemplate = {
+      id: customRoutine.id,
+      name: customRoutine.name,
+      split: customRoutine.split,
+      description: customRoutine.description,
+      level: 'Intermediate',
+      isCustom: true,
+      exerciseIds: customRoutine.slots.map(slot => slot.exercise.id),
+      exerciseConfigs: customRoutine.slots.map(({ exercise, ...config }) => ({
+        ...config,
+        exerciseId: exercise.id,
+        exercise: exercise.custom ? exercise : undefined,
+      })),
+    };
+    if (!saveRoutines([...routines, routine])) return false;
 
-      return {
-        instanceId: `inst-${Date.now()}-${index}`,
-        exercise: slot.exercise,
-        equipment: slot.equipment || slot.exercise.defaultEquipment || 'Barbell',
-        targetSets: slot.targetSets || 3,
-        targetReps: slot.targetReps || 10,
-        targetWeight: slot.targetWeight || 0,
-        minReps: slot.minReps || 8,
-        maxReps: slot.maxReps || 12,
-        sets,
-        supersetTag: slot.supersetTag,
-        notes: ''
-      };
-    });
-
-    setActiveExercises(newExercises);
-    setSessionTitle(customRoutine.name);
-    setActiveTemplateId(`custom-${customRoutine.id}`);
+    activateRoutine(routine);
     setActiveTab('workout');
-    setAlertNotice(`Activated custom split: "${customRoutine.name}" (${newExercises.length} movements)`);
-    setIsCustomSplitBuilderOpen(false);
+    setIsRoutinePickerExpanded(false);
+    setAlertNotice(`Saved and activated "${routine.name}" (${routine.exerciseIds.length} movements)`);
     setTimeout(() => setAlertNotice(null), 4000);
+    return true;
   };
 
   // Companion HUD helper handlers and active exercise projection
@@ -3631,7 +3678,10 @@ export default function ExerciseTracker() {
                           <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-800/80">
                             <button
                               type="button"
-                              onClick={() => handleOpenEditRoutine(buildParametricRoutine(def.id, cardTier))}
+                              onClick={() => {
+                                const preset = buildParametricRoutine(def.id, cardTier);
+                                handleOpenEditRoutine(routines.find(routine => routine.id === preset.id) ?? preset);
+                              }}
                               className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition flex items-center gap-1.5 text-xs"
                               title="Customize this tier in Routine Builder"
                             >
@@ -8812,7 +8862,7 @@ export default function ExerciseTracker() {
                                   exerciseId: ex.id,
                                   targetSets: prevPerf?.targetSets || ex.defaultTarget?.targetSets || 3,
                                   targetReps: prevPerf?.targetReps || ex.defaultTarget?.targetReps || 10,
-                                  targetWeight: prevPerf?.maxWeight || ex.defaultTarget?.defaultWeight || 45,
+                                  targetWeight: prevPerf?.maxWeight ?? ex.defaultTarget?.defaultWeight ?? 45,
                                   equipment: ex.defaultEquipment
                                 };
                                 setRoutineModal({
@@ -8847,7 +8897,7 @@ export default function ExerciseTracker() {
                 ) : (
                   <div className="space-y-2">
                     {routineModal.exerciseConfigs.map((cfg, cfgIdx) => {
-                      const def = EXERCISE_DATABASE.find(e => e.id === cfg.exerciseId) || EXERCISE_DATABASE[0];
+                      const def = cfg.exercise ?? EXERCISE_DATABASE.find(e => e.id === cfg.exerciseId) ?? EXERCISE_DATABASE[0];
                       const prevPerf = getPreviousExercisePerformance(cfg.exerciseId, def.name, history);
                       return (
                         <div
@@ -8935,9 +8985,10 @@ export default function ExerciseTracker() {
                               <span className="text-stone-400 text-[10px]">{unit}:</span>
                               <input
                                 type="number"
+                                min={0}
                                 value={cfg.targetWeight}
                                 onChange={(e) => {
-                                  const val = parseFloat(e.target.value) || 0;
+                                  const val = Math.max(0, parseFloat(e.target.value) || 0);
                                   const updated = [...routineModal.exerciseConfigs];
                                   updated[cfgIdx].targetWeight = val;
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
@@ -9023,6 +9074,11 @@ export default function ExerciseTracker() {
             </div>
 
             {/* Modal Footer */}
+            {routineModal.error && (
+              <p role="alert" className="px-5 py-2 text-sm text-red-300 bg-red-950/50">
+                {routineModal.error}
+              </p>
+            )}
             <div className="p-5 border-t border-stone-800 bg-stone-950 flex items-center justify-between gap-3">
               <div>
                 {routineModal.mode === 'edit' && routineModal.routineId && (
@@ -9464,7 +9520,6 @@ export default function ExerciseTracker() {
         isOpen={isCustomSplitBuilderOpen}
         onClose={() => setIsCustomSplitBuilderOpen(false)}
         onSaveRoutine={handleSaveCustomRoutine}
-        unit={unit}
       />
 
       </div>

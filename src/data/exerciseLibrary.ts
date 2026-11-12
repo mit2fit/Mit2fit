@@ -8955,9 +8955,12 @@ export type ExperienceLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 
 export interface RoutineExerciseConfig {
   exerciseId: string;
+  exercise?: ExerciseDefinition;
   targetSets: number;
   targetReps: number;
   targetWeight: number;
+  minReps?: number;
+  maxReps?: number;
   equipment?: string;
   supersetTag?: string;
 }

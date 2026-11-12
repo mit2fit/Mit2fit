@@ -7,11 +7,8 @@ import {
   Dumbbell, 
   Check, 
   Layers, 
-  Zap, 
   ArrowUp, 
-  ArrowDown, 
-  Sparkles,
-  Sliders
+  ArrowDown
 } from 'lucide-react';
 import { 
   EXERCISE_DATABASE, 
@@ -42,23 +39,20 @@ export interface CustomRoutineOutput {
 interface CustomSplitBuilderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSaveRoutine: (routine: CustomRoutineOutput) => void;
-  unit: 'lbs' | 'kg';
+  onSaveRoutine: (routine: CustomRoutineOutput) => boolean;
 }
 
 export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = ({
   isOpen,
   onClose,
-  onSaveRoutine,
-  unit
+  onSaveRoutine
 }) => {
   const [routineName, setRoutineName] = useState('');
   const [selectedSplit, setSelectedSplit] = useState<SplitCategory>('Upper Body');
   const [equipmentFilter, setEquipmentFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [routineSlots, setRoutineSlots] = useState<CustomRoutineSlot[]>([]);
-
-  if (!isOpen) return null;
+  const [saveFailed, setSaveFailed] = useState(false);
 
   // Filter exercise database by split, equipment, and search
   const availableExercises = useMemo(() => {
@@ -88,10 +82,9 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
     });
   }, [selectedSplit, equipmentFilter, searchQuery]);
 
-  const handleAddExercise = (exercise: ExerciseDefinition) => {
-    const isAlreadyAdded = routineSlots.some(s => s.exercise.id === exercise.id);
-    if (isAlreadyAdded) return;
+  if (!isOpen) return null;
 
+  const handleAddExercise = (exercise: ExerciseDefinition) => {
     const newSlot: CustomRoutineSlot = {
       exercise,
       targetSets: exercise.defaultTarget?.targetSets || 3,
@@ -102,7 +95,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
       equipment: exercise.defaultEquipment
     };
 
-    setRoutineSlots(prev => [...prev, newSlot]);
+    setRoutineSlots(prev => prev.some(slot => slot.exercise.id === exercise.id) ? prev : [...prev, newSlot]);
   };
 
   const handleRemoveSlot = (index: number) => {
@@ -139,13 +132,23 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
       slots: routineSlots
     };
 
-    onSaveRoutine(newRoutine);
+    if (!onSaveRoutine(newRoutine)) {
+      setSaveFailed(true);
+      return;
+    }
+
+    setRoutineName('');
+    setSelectedSplit('Upper Body');
+    setEquipmentFilter('All');
+    setSearchQuery('');
+    setRoutineSlots([]);
+    setSaveFailed(false);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-in fade-in">
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-4xl w-full p-5 sm:p-6 space-y-4 shadow-2xl max-h-[92vh] flex flex-col">
+    <div role="dialog" aria-modal="true" aria-labelledby="custom-split-title" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md animate-in fade-in">
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-4xl w-full p-5 sm:p-6 space-y-4 shadow-2xl max-h-[92dvh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-start justify-between border-b border-stone-800 pb-3">
           <div className="flex items-center gap-2.5">
@@ -153,7 +156,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
               <Layers className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-white text-base">Custom Routine Architect</h3>
+              <h3 id="custom-split-title" className="font-bold text-white text-base">Custom Routine Architect</h3>
               <p className="text-xs text-stone-400">
                 Design custom workout days filtered by equipment from the 161-exercise library
               </p>
@@ -171,10 +174,11 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
         {/* Inputs Strip: Routine Name & Split */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div>
-            <label className="text-[11px] font-mono text-stone-400 block mb-1">
+            <label htmlFor="custom-split-name" className="text-[11px] font-mono text-stone-400 block mb-1">
               Routine Name:
             </label>
             <input
+              id="custom-split-name"
               type="text"
               placeholder={`e.g. Hypertrophy ${selectedSplit} Blitz`}
               value={routineName}
@@ -184,10 +188,11 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
           </div>
 
           <div>
-            <label className="text-[11px] font-mono text-stone-400 block mb-1">
+            <label htmlFor="custom-split-category" className="text-[11px] font-mono text-stone-400 block mb-1">
               Split Category:
             </label>
             <select
+              id="custom-split-category"
               value={selectedSplit}
               onChange={(e) => setSelectedSplit(e.target.value as SplitCategory)}
               className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-amber-400 font-bold focus:outline-none focus:border-amber-500"
@@ -202,9 +207,9 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
         </div>
 
         {/* Split 2 Columns: Left is Added Sequence, Right is Exercise Library Browser */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden text-xs">
+        <div className="flex flex-col md:grid md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-y-auto md:overflow-hidden text-xs">
           {/* LEFT: Current Routine Sequence */}
-          <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col min-h-0">
+          <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col shrink-0 min-h-0">
             <div className="flex items-center justify-between pb-2 border-b border-stone-800/80 mb-2">
               <span className="font-bold text-white text-xs flex items-center gap-1.5">
                 <span>Routine Sequence</span>
@@ -226,7 +231,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
                 </p>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 no-scrollbar">
+              <div className="md:flex-1 max-h-52 md:max-h-none overflow-y-auto space-y-2.5 pr-1 no-scrollbar">
                 {routineSlots.map((slot, sIdx) => (
                   <div 
                     key={slot.exercise.id}
@@ -281,10 +286,11 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
                         <span className="text-[9px] text-stone-500 block">SETS</span>
                         <input
                           type="number"
+                          aria-label={`Sets for ${slot.exercise.name}`}
                           value={slot.targetSets}
                           min={1}
                           max={10}
-                          onChange={(e) => handleUpdateSlot(sIdx, { targetSets: parseInt(e.target.value) || 1 })}
+                          onChange={(e) => handleUpdateSlot(sIdx, { targetSets: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })}
                           className="w-full bg-stone-950 border border-stone-800 rounded px-1.5 py-0.5 text-amber-400 font-bold text-center"
                         />
                       </div>
@@ -293,10 +299,11 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
                         <span className="text-[9px] text-stone-500 block">REPS</span>
                         <input
                           type="number"
+                          aria-label={`Reps for ${slot.exercise.name}`}
                           value={slot.targetReps}
                           min={1}
                           max={50}
-                          onChange={(e) => handleUpdateSlot(sIdx, { targetReps: parseInt(e.target.value) || 1 })}
+                          onChange={(e) => handleUpdateSlot(sIdx, { targetReps: Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)) })}
                           className="w-full bg-stone-950 border border-stone-800 rounded px-1.5 py-0.5 text-stone-200 font-bold text-center"
                         />
                       </div>
@@ -304,6 +311,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
                       <div>
                         <span className="text-[9px] text-stone-500 block">SUPERSET</span>
                         <select
+                          aria-label={`Superset for ${slot.exercise.name}`}
                           value={slot.supersetTag || ''}
                           onChange={(e) => handleUpdateSlot(sIdx, { supersetTag: e.target.value || undefined })}
                           className="w-full bg-stone-950 border border-stone-800 rounded px-1 py-0.5 text-[10px] text-cyan-300"
@@ -323,7 +331,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
           </div>
 
           {/* RIGHT: Exercise Library Browser */}
-          <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col min-h-0">
+          <div className="bg-stone-950 p-4 rounded-2xl border border-stone-800 flex flex-col shrink-0 min-h-0">
             {/* Filter Tools */}
             <div className="space-y-2 pb-2 border-b border-stone-800/80 mb-2">
               <div className="flex items-center justify-between">
@@ -367,7 +375,7 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
             </div>
 
             {/* List of Selectable Exercises */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
+            <div className="md:flex-1 max-h-52 md:max-h-none overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
               {availableExercises.map(ex => {
                 const isAdded = routineSlots.some(s => s.exercise.id === ex.id);
 
@@ -412,6 +420,9 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
         </div>
 
         {/* Modal Footer */}
+        {saveFailed && (
+          <p role="alert" className="text-xs text-red-300">Could not save the routine to this browser. Check site storage and try again.</p>
+        )}
         <div className="flex items-center justify-between pt-3 border-t border-stone-800 text-xs">
           <span className="text-stone-400 text-[11px]">
             {routineSlots.length} exercises ready to assemble

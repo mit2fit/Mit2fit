@@ -50,3 +50,62 @@
 .markdown-body h2 { @apply text-xs font-black uppercase tracking-widest text-zinc-500 mb-6; }
 .markdown-body p { @apply text-zinc-400 text-lg leading-relaxed mb-6; }
 .markdown-body ul { @apply list-disc list-inside mb-6 text-zinc-400; }
+
+.workout-set-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "identity actions"
+    "weight reps";
+}
+
+.workout-set-grid[data-rpe] {
+  grid-template-areas:
+    "identity actions"
+    "weight reps"
+    "effort effort";
+}
+
+.workout-set-grid[data-timed] {
+  grid-template-areas:
+    "identity identity"
+    "weight reps"
+    "actions actions";
+}
+
+.workout-set-grid[data-timed][data-rpe] {
+  grid-template-areas:
+    "identity identity"
+    "weight reps"
+    "effort effort"
+    "actions actions";
+}
+
+.workout-set-identity { grid-area: identity; }
+.workout-set-weight { grid-area: weight; }
+.workout-set-reps { grid-area: reps; }
+.workout-set-effort { grid-area: effort; }
+.workout-set-actions { grid-area: actions; }
+
+@media (min-width: 48rem) {
+  .workout-set-grid {
+    --workout-actions-width: 7rem;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 1.1fr)) var(--workout-actions-width);
+    grid-template-areas: "identity weight reps actions";
+  }
+
+  .workout-set-grid[data-rpe] {
+    --workout-actions-width: 2.75rem;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 1.1fr)) minmax(0, 0.85fr) var(--workout-actions-width);
+    grid-template-areas: "identity weight reps effort actions";
+  }
+
+  .workout-set-grid[data-timed] {
+    --workout-actions-width: 10rem;
+    grid-template-areas: "identity weight reps actions";
+  }
+
+  .workout-set-grid[data-timed][data-rpe] {
+    --workout-actions-width: 8rem;
+    grid-template-areas: "identity weight reps effort actions";
+  }
+}

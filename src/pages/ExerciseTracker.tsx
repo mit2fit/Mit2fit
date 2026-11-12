@@ -2498,7 +2498,6 @@ export default function ExerciseTracker() {
     if (allTargetCompleted) {
       if (activeEx.targetSets === 2) {
         return {
-          status: 'ready-add-set',
           badge: 'Step 1 Hit: Expand Sets',
           color: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
           advice: `Mastered 2 sets of ${activeEx.targetReps}${repsSuffix}! Next session: Add a 3rd set at ${topWeight} ${unit} before increasing weight.`,
@@ -2507,7 +2506,6 @@ export default function ExerciseTracker() {
         };
       } else {
         return {
-          status: 'ready-add-weight',
           badge: 'Step 2 Hit: Overload Weight',
           color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
           advice: `Incredible! Completed all ${activeEx.targetSets} sets @ ${activeEx.targetReps}${repsSuffix}. You earned a weight increase of +5 ${unit} (+2.5 kg) for next week!`,
@@ -2522,7 +2520,6 @@ export default function ExerciseTracker() {
         completedWorkingSets.reduce((sum, s) => sum + s.reps, 0) / completedWorkingSets.length
       );
       return {
-        status: 'building',
         badge: `${completedWorkingSets.length}/${activeEx.targetSets} Sets Logged`,
         color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
         advice: `Averaging ${avgReps}${repsSuffix}. Keep weight at ${topWeight} ${unit}. Focus on hitting ${activeEx.targetReps} clean reps across all sets.`,
@@ -2531,14 +2528,7 @@ export default function ExerciseTracker() {
       };
     }
 
-    return {
-      status: 'pending',
-      badge: `Target: ${activeEx.targetSets} sets × ${activeEx.minReps}–${activeEx.maxReps}${repsSuffix}`,
-      color: 'text-stone-400 bg-stone-800 border-stone-700',
-      advice: `Target is ${activeEx.targetSets} sets of ${activeEx.minReps}–${activeEx.maxReps}${repsSuffix}. Check off sets as you complete them to receive coaching advice.`,
-      actionLabel: null,
-      action: null
-    };
+    return null;
   };
 
   // Finish Workout
@@ -4139,6 +4129,15 @@ export default function ExerciseTracker() {
                     activeEx.exercise.loadType === 'bodyweight_timed';
                   const prevPerf = getPreviousExercisePerformance(activeEx.exercise.id, activeEx.exercise.name, history);
                   const isMenuOpen = activeExerciseMenuId === activeEx.instanceId;
+                  const weightLabel = isBodyweight ? `Load (+${unit})` : `Weight (${unit})`;
+                  const repsLabel = isTimedHold ? 'Hold (sec)' : repsUnit === 'reps' ? 'Reps' : `Reps (${repsUnit})`;
+                  const targetLoad = isBodyweight && activeEx.targetWeight === 0
+                    ? 'Bodyweight'
+                    : `${activeEx.targetWeight} ${unit}`;
+                  const setGridOptions = {
+                    'data-rpe': showRpeColumn || undefined,
+                    'data-timed': isTimedHold || undefined,
+                  };
 
                   const overloadLadder = generateProgressiveOverloadLadder({
                     exerciseId: activeEx.exercise.id,
@@ -4165,8 +4164,8 @@ export default function ExerciseTracker() {
                       }`}
                     >
                       {/* Exercise Header: Number, Name, Unboxed Metadata, and Clean Action Cluster */}
-                      <div className="p-4 sm:p-5 border-b border-stone-800/80 bg-stone-900/90 flex flex-col md:flex-row md:items-center justify-between gap-3.5">
-                        <div className="space-y-1 flex-1">
+                      <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-stone-800/80 bg-stone-900/90 flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1 basis-40 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-xs font-bold text-stone-500 bg-stone-950 px-2 py-0.5 rounded border border-stone-800">
                               #{String(exIdx + 1).padStart(2, '0')}
@@ -4189,24 +4188,11 @@ export default function ExerciseTracker() {
                             )}
                           </div>
 
-                          {/* Zero-Pill Unboxed Metadata Line with · Separators */}
-                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-400">
-                            <span>{activeEx.exercise.split}</span>
-                            <span>·</span>
-                            <span>{activeEx.exercise.subCategory}</span>
-                            <span>·</span>
-                            <span className="text-stone-300 font-medium">{activeEx.equipment}</span>
-                            <span>·</span>
-                            <span>Prime: <strong className="text-stone-200">{activeEx.exercise.primaryMuscle}</strong></span>
-                            <span>·</span>
-                            <span className="text-amber-400/90 font-mono font-semibold">
-                              Target Window: {activeEx.minReps}–{activeEx.maxReps} {repsUnit}
-                            </span>
-                          </div>
+                          <p className="text-xs text-stone-400">{activeEx.equipment}</p>
                         </div>
 
                         {/* Clean High-Tactile Action Cluster */}
-                        <div className="flex items-center gap-1.5 self-end md:self-center relative">
+                        <div className="ml-auto flex shrink-0 items-center gap-1.5 relative">
                           <button
                             type="button"
                             onClick={() => openExerciseGuide(activeEx.exercise, 'overload')}
@@ -4370,164 +4356,185 @@ export default function ExerciseTracker() {
                         </div>
                       </div>
 
-                      {/* Unified Target Prescription Strip & Quick Overload Controls */}
-                      <div className="bg-stone-950/80 px-4 py-2.5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-                        {/* Target Steppers */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                          {/* Sets */}
-                          <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
-                            <span className="text-stone-400 font-medium">Sets:</span>
-                            <button 
-                              onClick={() => updateTargetSets(exIdx, -1)}
-                              className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                              title="Decrease target sets"
-                            >
-                              -
-                            </button>
-                            <span className="font-mono font-bold text-amber-400 px-1">
-                              {activeEx.targetSets}
+                      <details className="group/setup border-b border-stone-800/80 bg-stone-950/40">
+                        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 text-xs hover:bg-stone-800/40 focus-visible:outline-amber-400 sm:px-5 [&::-webkit-details-marker]:hidden">
+                          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className="font-semibold text-stone-200">Setup & progression</span>
+                            <span className="font-mono text-[11px] text-stone-400">
+                              {activeEx.targetSets} {activeEx.targetSets === 1 ? 'set' : 'sets'} · {activeEx.targetReps} {repsUnit} · {targetLoad}
                             </span>
-                            <button 
-                              onClick={() => updateTargetSets(exIdx, 1)}
-                              className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                              title="Increase target sets"
-                            >
-                              +
-                            </button>
-                          </div>
+                          </span>
+                          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-stone-400 transition-transform group-open/setup:rotate-180" />
+                        </summary>
 
-                          {/* Reps */}
-                          <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
-                            <span className="text-stone-400 font-medium">Reps:</span>
-                            <button 
-                              onClick={() => updateTargetReps(exIdx, -1)}
-                              className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                              title="Decrease target reps"
-                            >
-                              -
-                            </button>
-                            <span className="font-mono font-bold text-amber-400 px-1">
-                              {activeEx.targetReps}
-                            </span>
-                            <button 
-                              onClick={() => updateTargetReps(exIdx, 1)}
-                              className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                              title="Increase target reps"
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          {/* Weight */}
-                          <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
-                            <span className="text-stone-400 font-medium">Target:</span>
-                            <button 
-                              onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? -5 : -2.5)}
-                              className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[10px] flex items-center justify-center font-bold"
-                              title={`Minus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
-                            >
-                              -{unit === 'lbs' ? '5' : '2.5'}
-                            </button>
-                            <input
-                              type="number"
-                              value={activeEx.targetWeight}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value) || 0;
-                                updateTargetWeight(exIdx, val - activeEx.targetWeight);
-                              }}
-                              className="w-12 sm:w-14 bg-stone-950 border border-stone-700 text-center font-mono font-bold text-amber-400 text-xs rounded py-0.5 focus:outline-none focus:border-amber-500"
-                            />
-                            <span className="text-[10px] text-stone-500 font-mono">{unit}</span>
-                            <button 
-                              onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? 5 : 2.5)}
-                              className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[10px] flex items-center justify-center font-bold"
-                              title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
-                            >
-                              +{unit === 'lbs' ? '5' : '2.5'}
-                            </button>
-                          </div>
+                        <div className="flex flex-wrap gap-x-2 gap-y-1 border-t border-stone-800/80 px-4 pt-3 text-xs text-stone-400">
+                          <span>{activeEx.exercise.split} · {activeEx.exercise.subCategory}</span>
+                          <span>Prime: <strong className="text-stone-200">{activeEx.exercise.primaryMuscle}</strong></span>
+                          <span className="font-mono text-amber-400">
+                            Target range {activeEx.minReps}–{activeEx.maxReps} {repsUnit}
+                          </span>
                         </div>
-
-                        {/* Frictionless Micro Overload Shortcuts & History Note */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {prevPerf ? (
-                            <div className="flex items-center gap-1 text-[11px] text-stone-400 mr-1">
-                              <History className="w-3 h-3 text-amber-400" />
-                              <span>Last: <strong className="text-amber-300 font-mono">{prevPerf.summary} {unit}</strong></span>
+                        {/* Unified Target Prescription Strip & Quick Overload Controls */}
+                        <div className="bg-stone-950/80 px-4 py-2.5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          {/* Target Steppers */}
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            {/* Sets */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
+                              <span className="text-stone-400 font-medium">Sets:</span>
+                              <button
+                                onClick={() => updateTargetSets(exIdx, -1)}
+                                className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
+                                title="Decrease target sets"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono font-bold text-amber-400 px-1">
+                                {activeEx.targetSets}
+                              </span>
+                              <button
+                                onClick={() => updateTargetSets(exIdx, 1)}
+                                className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
+                                title="Increase target sets"
+                              >
+                                +
+                              </button>
                             </div>
-                          ) : (
-                            <span className="text-[10px] text-stone-500 font-mono mr-1">Baseline</span>
-                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => applyOverloadWeightToExercise(exIdx, unit === 'lbs' ? 5 : 2.5)}
-                            className="px-2 py-0.5 rounded-lg bg-emerald-950/70 border border-emerald-500/40 hover:bg-emerald-900/80 text-emerald-300 text-[10px] font-bold font-mono transition"
-                            title="Add +5 lbs / 2.5 kg across all uncompleted sets"
-                          >
-                            +{unit === 'lbs' ? '5' : '2.5'} {unit} All
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => applyOverloadRepsToExercise(exIdx, 1)}
-                            className="px-2 py-0.5 rounded-lg bg-cyan-950/70 border border-cyan-500/40 hover:bg-cyan-900/80 text-cyan-300 text-[10px] font-bold font-mono transition"
-                            title="Add +1 rep across all uncompleted sets"
-                          >
-                            +1 Rep All
-                          </button>
-                          {prevPerf && (
+                            {/* Reps */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
+                              <span className="text-stone-400 font-medium">{isTimedHold ? 'Hold:' : 'Reps:'}</span>
+                              <button
+                                onClick={() => updateTargetReps(exIdx, -1)}
+                                className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
+                                title="Decrease target reps"
+                              >
+                                -
+                              </button>
+                              <span className="font-mono font-bold text-amber-400 px-1">
+                                {activeEx.targetReps}
+                              </span>
+                              <button
+                                onClick={() => updateTargetReps(exIdx, 1)}
+                                className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
+                                title="Increase target reps"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {/* Weight */}
+                            <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
+                              <span className="text-stone-400 font-medium">Target:</span>
+                              <button
+                                onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? -5 : -2.5)}
+                                className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[10px] flex items-center justify-center font-bold"
+                                title={`Minus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
+                              >
+                                -{unit === 'lbs' ? '5' : '2.5'}
+                              </button>
+                              <input
+                                type="number"
+                                aria-label="Target weight"
+                                value={activeEx.targetWeight}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value) || 0;
+                                  updateTargetWeight(exIdx, val - activeEx.targetWeight);
+                                }}
+                                className="w-12 sm:w-14 bg-stone-950 border border-stone-700 text-center font-mono font-bold text-amber-400 text-xs rounded py-0.5 focus:outline-none focus:border-amber-500"
+                              />
+                              <span className="text-[10px] text-stone-500 font-mono">{unit}</span>
+                              <button
+                                onClick={() => updateTargetWeight(exIdx, unit === 'lbs' ? 5 : 2.5)}
+                                className="w-6 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-[10px] flex items-center justify-center font-bold"
+                                title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
+                              >
+                                +{unit === 'lbs' ? '5' : '2.5'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Frictionless Micro Overload Shortcuts & History Note */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {prevPerf ? (
+                              <div className="flex items-center gap-1 text-[11px] text-stone-400 mr-1">
+                                <History className="w-3 h-3 text-amber-400" />
+                                <span>Last: <strong className="text-amber-300 font-mono">{prevPerf.summary} {unit}</strong></span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-stone-500 font-mono mr-1">Baseline</span>
+                            )}
+
                             <button
                               type="button"
-                              onClick={() => matchPreviousSessionForExercise(exIdx)}
-                              className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-medium transition"
-                              title="Restore sets to match previous session"
+                              onClick={() => applyOverloadWeightToExercise(exIdx, unit === 'lbs' ? 5 : 2.5)}
+                              className="px-2 py-0.5 rounded-lg bg-emerald-950/70 border border-emerald-500/40 hover:bg-emerald-900/80 text-emerald-300 text-[10px] font-bold font-mono transition"
+                              title="Add +5 lbs / 2.5 kg across all uncompleted sets"
                             >
-                              Match Last
+                              +{unit === 'lbs' ? '5' : '2.5'} {unit} All
                             </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Double Progression Coach Bar */}
-                      <div className={`px-4 py-2 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${progressionAdvice.color}`}>
-                        <div className="flex items-start sm:items-center gap-2">
-                          <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5 sm:mt-0 text-amber-400" />
-                          <div>
-                            <span className="font-bold mr-2 uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-black/40">
-                              {progressionAdvice.badge}
-                            </span>
-                            <span className="text-stone-200">
-                              {progressionAdvice.advice}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => applyOverloadRepsToExercise(exIdx, 1)}
+                              className="px-2 py-0.5 rounded-lg bg-cyan-950/70 border border-cyan-500/40 hover:bg-cyan-900/80 text-cyan-300 text-[10px] font-bold font-mono transition"
+                              title="Add +1 rep across all uncompleted sets"
+                            >
+                              +1 Rep All
+                            </button>
+                            {prevPerf && (
+                              <button
+                                type="button"
+                                onClick={() => matchPreviousSessionForExercise(exIdx)}
+                                className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-medium transition"
+                                title="Restore sets to match previous session"
+                              >
+                                Match Last
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        {progressionAdvice.actionLabel && (
-                          <button
-                            onClick={progressionAdvice.action || undefined}
-                            className="self-start sm:self-center px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-lg text-xs whitespace-nowrap transition"
-                          >
-                            {progressionAdvice.actionLabel}
-                          </button>
-                        )}
-                      </div>
+                        {progressionAdvice && (
+                          <div className={`px-4 py-2 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${progressionAdvice.color}`}>
+                            <div className="flex items-start sm:items-center gap-2">
+                              <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5 sm:mt-0 text-amber-400" />
+                              <div>
+                                <span className="font-bold mr-2 uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-black/40">
+                                  {progressionAdvice.badge}
+                                </span>
+                                <span className="text-stone-200">
+                                  {progressionAdvice.advice}
+                                </span>
+                              </div>
+                            </div>
 
-                      {/* Progressive Overload Pathway & Rep-Weight Combination Ladder */}
-                      <div className="px-4 sm:px-5 pt-3.5 pb-1 border-b border-stone-800/80 bg-stone-950/40">
-                        <ProgressiveOverloadPathwayDrawer
-                          ladder={overloadLadder}
-                          unit={unit}
-                          onApplyStage={(stage) => applyOverloadStageToExercise(exIdx, stage)}
-                          isCollapsible={true}
-                          defaultExpanded={false}
-                        />
-                      </div>
+                            {progressionAdvice.actionLabel && (
+                              <button
+                                onClick={progressionAdvice.action || undefined}
+                                className="self-start sm:self-center px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-lg text-xs whitespace-nowrap transition"
+                              >
+                                {progressionAdvice.actionLabel}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Progressive Overload Pathway & Rep-Weight Combination Ladder */}
+                        <div className="px-4 sm:px-5 py-3 bg-stone-950/40">
+                          <ProgressiveOverloadPathwayDrawer
+                            ladder={overloadLadder}
+                            unit={unit}
+                            onApplyStage={(stage) => applyOverloadStageToExercise(exIdx, stage)}
+                            isCollapsible={true}
+                            defaultExpanded={false}
+                          />
+                        </div>
+                      </details>
 
                       {/* Interactive Sets Table */}
-                      <div className="p-4 sm:p-5">
+                      <div className="px-3 py-3 sm:p-5">
                         {/* Target Progress Bar */}
-                        <div className="mb-3 flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
+                        <div className="mb-2.5 flex items-center justify-between gap-2 text-xs">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-stone-400">Progress:</span>
                             <span className="font-bold text-white font-mono">
                               {completedWorkingCount} of {activeEx.targetSets} sets completed
@@ -4538,7 +4545,7 @@ export default function ExerciseTracker() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex shrink-0 items-center gap-1" aria-hidden="true">
                             {Array.from({ length: activeEx.targetSets }).map((_, i) => (
                               <div 
                                 key={i}
@@ -4558,23 +4565,12 @@ export default function ExerciseTracker() {
 
                         {/* Sets Grid */}
                         <div className="space-y-1.5">
-                          <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider px-2 pb-1 border-b border-stone-800">
-                            <div className="col-span-1 text-center">Set</div>
-                            <div className="col-span-2">Type</div>
-                            <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} text-center`}>
-                              {isTimedHold ? `Load (+${unit})` : isBodyweight ? `Load (+${unit})` : `Weight (${unit})`}
-                            </div>
-                            <div className="col-span-3 text-center">
-                              {isTimedHold ? 'Hold (sec)' : `Reps (${repsUnit})`}
-                            </div>
-                            {showRpeColumn && (
-                              <div className="col-span-2 text-center" title="Rate of Perceived Exertion / Reps In Reserve">
-                                RPE / RIR
-                              </div>
-                            )}
-                            <div className={`${showRpeColumn ? 'col-span-1' : 'col-span-2'} text-right`}>
-                              {isTimedHold ? 'Hold / Log' : 'Log'}
-                            </div>
+                          <div {...setGridOptions} className="workout-set-grid hidden gap-2 border-b border-stone-800 px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 md:grid" aria-hidden="true">
+                            <div className="workout-set-identity">Set / Type</div>
+                            <div className="workout-set-weight text-center">{weightLabel}</div>
+                            <div className="workout-set-reps text-center">{repsLabel}</div>
+                            {showRpeColumn && <div className="workout-set-effort text-center">RPE / RIR</div>}
+                            <div className="workout-set-actions text-right">{isTimedHold ? 'Hold / Log' : 'Log'}</div>
                           </div>
 
                           {activeEx.sets.map((set, sIdx) => {
@@ -4582,61 +4578,68 @@ export default function ExerciseTracker() {
                             return (
                               <div 
                                 key={set.id}
-                                className={`grid grid-cols-12 gap-2 items-center p-2 rounded-xl transition ${
+                                {...setGridOptions}
+                                className={`workout-set-grid grid items-center gap-2 rounded-xl p-2 transition ${
                                   set.completed 
                                     ? 'bg-emerald-950/20 border border-emerald-500/25' 
                                     : 'bg-stone-950/60 hover:bg-stone-950/90 border border-stone-800/80'
                                 }`}
                               >
-                                {/* Set Number & Clickable Previous Log */}
-                                <div className="col-span-1 text-center font-mono font-bold text-stone-400 text-xs flex flex-col items-center justify-center">
-                                  <span>{set.setNumber}</span>
-                                  {prevSet && (
-                                    <button
-                                      type="button"
-                                      onClick={() => applyPreviousSetToCurrent(exIdx, sIdx, prevSet)}
-                                      className="text-[9px] font-mono text-stone-500 hover:text-amber-400 hover:underline transition truncate max-w-full"
-                                      title={`Last time: ${prevSet.weight} × ${prevSet.reps}. Tap to copy to this set.`}
-                                    >
-                                      {prevSet.weight}×{prevSet.reps}
-                                    </button>
-                                  )}
-                                </div>
+                                <div className="workout-set-identity flex min-w-0 items-center gap-2">
+                                  {/* Set Number & Clickable Previous Log */}
+                                  <div className="flex shrink-0 flex-col items-start text-xs font-bold text-stone-300">
+                                    <span className="whitespace-nowrap">Set {set.setNumber}</span>
+                                    {prevSet && (
+                                      <button
+                                        type="button"
+                                        onClick={() => applyPreviousSetToCurrent(exIdx, sIdx, prevSet)}
+                                        className="text-[9px] font-mono text-stone-500 hover:text-amber-400 hover:underline transition whitespace-nowrap"
+                                        title={`Last time: ${prevSet.weight} × ${prevSet.reps}. Tap to copy to this set.`}
+                                      >
+                                        {prevSet.weight}×{prevSet.reps}
+                                      </button>
+                                    )}
+                                  </div>
 
-                                {/* Set Type */}
-                                <div className="col-span-2">
-                                  <select
-                                    value={set.type}
-                                    onChange={(e) => {
-                                      const val = e.target.value as WorkoutSet['type'];
-                                      setActiveExercises(prev => {
-                                        const next = [...prev];
-                                        next[exIdx].sets[sIdx].type = val;
-                                        return next;
-                                      });
-                                    }}
-                                    className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-[11px] rounded px-1.5 py-1 focus:outline-none focus:border-amber-500 font-medium"
-                                  >
-                                    <option value="Working">Working</option>
-                                    <option value="Warmup">Warmup</option>
-                                    <option value="Drop Set">Drop</option>
-                                    <option value="Failure">Failure</option>
-                                  </select>
+                                  {/* Set Type */}
+                                  <div className="min-w-0 flex-1">
+                                    <select
+                                      aria-label={`Set ${set.setNumber} type`}
+                                      value={set.type}
+                                      onChange={(e) => {
+                                        const val = e.target.value as WorkoutSet['type'];
+                                        setActiveExercises(prev => {
+                                          const next = [...prev];
+                                          next[exIdx].sets[sIdx].type = val;
+                                          return next;
+                                        });
+                                      }}
+                                      className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-[11px] min-h-8 rounded px-1 py-1 focus:outline-none focus:border-amber-500 font-medium"
+                                    >
+                                      <option value="Working">Working</option>
+                                      <option value="Warmup">Warmup</option>
+                                      <option value="Drop Set">Drop</option>
+                                      <option value="Failure">Failure</option>
+                                    </select>
+                                  </div>
                                 </div>
 
                                 {/* Weight Adjuster */}
-                                <div className={`${showRpeColumn ? 'col-span-3' : 'col-span-4'} flex flex-col items-center justify-center`}>
-                                  <div className="flex items-center justify-center gap-1 w-full">
+                                <div className="workout-set-weight flex min-w-0 flex-col items-center justify-center gap-1">
+                                  <span className="w-full text-[10px] font-semibold text-stone-400 md:hidden">{weightLabel}</span>
+                                  <div className="flex w-full min-w-0 items-center justify-center gap-1">
                                     <button
                                       type="button"
                                       onClick={() => updateIndividualSetWeight(exIdx, sIdx, unit === 'lbs' ? -5 : -2.5)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
+                                      className="h-8 w-7 shrink-0 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
                                       title={`Minus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                                     >
                                       -{unit === 'lbs' ? '5' : '2.5'}
                                     </button>
                                     <input
                                       type="number"
+                                      inputMode="decimal"
+                                      aria-label={`Set ${set.setNumber} ${weightLabel.toLowerCase()}`}
                                       value={set.weight === 0 ? '' : set.weight}
                                       placeholder={prevSet ? String(prevSet.weight) : String(activeEx.targetWeight || 135)}
                                       onChange={(e) => {
@@ -4647,12 +4650,12 @@ export default function ExerciseTracker() {
                                           return next;
                                         });
                                       }}
-                                      className="w-14 sm:w-16 bg-stone-900 border border-stone-700 text-center text-white placeholder-stone-500 font-mono font-bold text-xs rounded py-1 focus:outline-none focus:border-amber-500 tabular-nums"
+                                      className="h-8 min-w-0 flex-1 appearance-none rounded border border-stone-700 bg-stone-900 text-center font-mono text-xs font-bold text-white tabular-nums placeholder-stone-500 focus:border-amber-500 focus:outline-none md:max-w-20"
                                     />
                                     <button
                                       type="button"
                                       onClick={() => updateIndividualSetWeight(exIdx, sIdx, unit === 'lbs' ? 5 : 2.5)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
+                                      className="h-8 w-7 shrink-0 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center font-semibold"
                                       title={`Plus ${unit === 'lbs' ? '5 lbs' : '2.5 kg'}`}
                                     >
                                       +{unit === 'lbs' ? '5' : '2.5'}
@@ -4671,7 +4674,7 @@ export default function ExerciseTracker() {
                                     </button>
                                   </div>
 
-                                  <div className="flex items-center gap-1 mt-0.5">
+                                  <div className="flex items-center gap-1 empty:hidden">
                                     {(() => {
                                       const allTimePR = getExerciseAllTimePR(activeEx.exercise.id, activeEx.exercise.name, history);
                                       const isSetPR = set.completed && set.type !== 'Warmup' && set.weight > 0 && (
@@ -4699,18 +4702,21 @@ export default function ExerciseTracker() {
                                 </div>
 
                                 {/* Reps Adjuster */}
-                                <div className="col-span-3 flex flex-col items-center justify-center">
-                                  <div className="flex items-center justify-center gap-1 w-full">
+                                <div className="workout-set-reps flex min-w-0 flex-col items-center justify-center gap-1">
+                                  <span className="w-full text-[10px] font-semibold text-stone-400 md:hidden">{repsLabel}</span>
+                                  <div className="flex w-full min-w-0 items-center justify-center gap-1">
                                     <button
                                       type="button"
                                       onClick={() => updateIndividualSetReps(exIdx, sIdx, -1)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      className="h-8 w-7 shrink-0 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
                                       title="Minus 1 rep"
                                     >
                                       -1
                                     </button>
                                     <input
                                       type="number"
+                                      inputMode="numeric"
+                                      aria-label={`Set ${set.setNumber} ${repsLabel.toLowerCase()}`}
                                       value={set.reps === 0 ? '' : set.reps}
                                       placeholder={prevSet ? String(prevSet.reps) : String(activeEx.targetReps || 10)}
                                       onChange={(e) => {
@@ -4721,21 +4727,21 @@ export default function ExerciseTracker() {
                                           return next;
                                         });
                                       }}
-                                      className={`w-12 bg-stone-900 border text-center font-mono font-bold text-xs rounded py-1 placeholder-stone-500 focus:outline-none focus:border-amber-500 tabular-nums ${
+                                      className={`h-8 min-w-0 flex-1 appearance-none rounded border bg-stone-900 text-center font-mono text-xs font-bold tabular-nums placeholder-stone-500 focus:border-amber-500 focus:outline-none md:max-w-16 ${
                                         set.reps >= activeEx.targetReps ? 'text-emerald-400 border-emerald-500/50' : 'text-white border-stone-700'
                                       }`}
                                     />
                                     <button
                                       type="button"
                                       onClick={() => updateIndividualSetReps(exIdx, sIdx, 1)}
-                                      className="w-6 h-7 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
+                                      className="h-8 w-7 shrink-0 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs flex items-center justify-center"
                                       title="Plus 1 rep"
                                     >
                                       +1
                                     </button>
                                   </div>
 
-                                  <div className="flex items-center gap-1 mt-0.5">
+                                  <div className="flex items-center gap-1 empty:hidden">
                                     {set.completed && set.weight > 0 && set.reps > 0 && (
                                       <span className="text-[9px] font-mono text-stone-400" title="Estimated 1-Rep Max">
                                         e1RM: <strong className="text-stone-300">{calculateE1RM(set.weight, set.reps)}</strong>
@@ -4746,8 +4752,10 @@ export default function ExerciseTracker() {
 
                                 {/* RPE / RIR Dropdown */}
                                 {showRpeColumn && (
-                                  <div className="col-span-2 flex flex-col items-center justify-center">
+                                  <div className="workout-set-effort flex min-w-0 items-center gap-2">
+                                    <span className="shrink-0 text-[10px] font-semibold text-stone-400 md:hidden">RPE / RIR</span>
                                     <select
+                                      aria-label={`Set ${set.setNumber} RPE / RIR`}
                                       value={set.rpe ?? ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
@@ -4781,7 +4789,7 @@ export default function ExerciseTracker() {
                                 )}
 
                                 {/* High-Tactile Complete Checkmark (min 44px hitbox) & Hold Button */}
-                                <div className={`${showRpeColumn ? "col-span-1" : "col-span-2"} flex items-center justify-end gap-1.5`}>
+                                <div className="workout-set-actions flex flex-wrap items-center justify-end gap-1">
                                   {isTimedHold && (
                                     activeHoldTimer && activeHoldTimer.instanceId === activeEx.instanceId && activeHoldTimer.setIndex === sIdx ? (
                                       <div className="flex items-center gap-1">
@@ -4818,8 +4826,9 @@ export default function ExerciseTracker() {
 
                                   {!showRpeColumn && !isTimedHold && (
                                     <button
+                                      type="button"
                                       onClick={() => cloneSet(exIdx, sIdx)}
-                                      className="p-2 rounded-xl text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition min-h-[44px] min-w-[36px] flex items-center justify-center"
+                                      className="flex h-11 w-8 shrink-0 items-center justify-center rounded-lg text-stone-400 transition hover:bg-stone-800 hover:text-stone-200"
                                       title="Duplicate Set"
                                     >
                                       <Copy className="w-3.5 h-3.5" />
@@ -4829,7 +4838,7 @@ export default function ExerciseTracker() {
                                   {/* High-tactile completion checkbox: 44px min hit zone */}
                                   <button
                                     onClick={() => toggleSetCompleted(exIdx, sIdx)}
-                                    className={`min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl flex items-center justify-center transition font-bold shrink-0 ${
+                                    className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center transition font-bold ${
                                       set.completed 
                                         ? "bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/30 scale-105" 
                                         : "bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-white border border-stone-700/60"
@@ -4841,8 +4850,9 @@ export default function ExerciseTracker() {
 
                                   {activeEx.sets.length > 1 && !showRpeColumn && (
                                     <button
+                                      type="button"
                                       onClick={() => removeSet(exIdx, sIdx)}
-                                      className="p-1.5 rounded-lg text-stone-600 hover:text-red-400 transition"
+                                      className="flex h-11 w-7 shrink-0 items-center justify-center rounded-lg text-stone-500 transition hover:text-red-400"
                                       title="Delete Set"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />

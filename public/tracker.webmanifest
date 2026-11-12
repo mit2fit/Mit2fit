@@ -1,0 +1,15 @@
+{
+  "id": "/tracker",
+  "name": "Mit2Fit Workout Tracker",
+  "short_name": "Mit2Fit",
+  "description": "Log sets, build routines, and track your workouts.",
+  "start_url": "/tracker",
+  "scope": "/tracker",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    { "src": "/tracker-icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/tracker-icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

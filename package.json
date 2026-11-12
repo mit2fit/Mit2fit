@@ -8,9 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "build:ios": "vite build --mode ios --outDir dist-ios && cap sync ios"
   },
   "dependencies": {
+    "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0",
     "@formspree/react": "^3.0.0",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
@@ -25,6 +28,7 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",

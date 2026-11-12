@@ -101,6 +101,7 @@ import {
 } from '../data/progressiveOverloadEngine';
 import { ProgressiveOverloadPathwayDrawer } from '../components/ProgressiveOverloadPathwayDrawer';
 import { TrainingHeatmapAndPRTrophyRoom } from '../components/TrainingHeatmapAndPRTrophyRoom';
+import { TrackerHomeScreen } from '../components/TrackerHomeScreen';
 import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionHUD';
 import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
 import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
@@ -3365,6 +3366,7 @@ export default function ExerciseTracker() {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        <TrackerHomeScreen />
 
         {/* ============================================================== */}
         {/* TAB 1: ACTIVE WORKOUT ROUTINE                                  */}

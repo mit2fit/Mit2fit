@@ -4157,14 +4157,14 @@ export default function ExerciseTracker() {
                   return (
                     <div 
                       key={activeEx.instanceId}
-                      className={`bg-stone-900/60 border rounded-2xl overflow-hidden shadow-xl transition-all ${
+                      className={`bg-stone-900/60 border rounded-2xl shadow-xl transition-all ${
                         activeEx.supersetTag 
                           ? 'border-cyan-500/50 shadow-cyan-950/10' 
                           : 'border-stone-800/90'
                       }`}
                     >
                       {/* Exercise Header: Number, Name, Unboxed Metadata, and Clean Action Cluster */}
-                      <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-stone-800/80 bg-stone-900/90 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-stone-800/80 bg-stone-900/90 px-4 py-3 sm:px-5 sm:py-4">
                         <div className="min-w-0 flex-1 basis-40 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="font-mono text-xs font-bold text-stone-500 bg-stone-950 px-2 py-0.5 rounded border border-stone-800">

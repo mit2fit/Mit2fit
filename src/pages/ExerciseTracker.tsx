@@ -102,6 +102,8 @@ import {
 import { ProgressiveOverloadPathwayDrawer } from '../components/ProgressiveOverloadPathwayDrawer';
 import { TrainingHeatmapAndPRTrophyRoom } from '../components/TrainingHeatmapAndPRTrophyRoom';
 import { TrackerHomeScreen } from '../components/TrackerHomeScreen';
+import { SaveWorkoutToAppleHealth } from '../components/SaveWorkoutToAppleHealth';
+import { syncNativeRestTimer, trackerNative, type RestActivityStatus } from '../native/tracker';
 import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionHUD';
 import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
 import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
@@ -1062,7 +1064,7 @@ function loadInitialRoutines(): RoutineTemplate[] {
   return defaults;
 }
 
-export default function ExerciseTracker() {
+export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boolean }) {
   const initialSession = useMemo(() => loadSavedActiveSession(), []);
   const recentSession = initialSession && initialSession.activeExercises.length > 0 &&
     Date.now() - (initialSession.savedAt || 0) < 24 * 60 * 60 * 1000 ? initialSession : null;
@@ -1138,8 +1140,32 @@ export default function ExerciseTracker() {
   const [activeExerciseMenuId, setActiveExerciseMenuId] = useState<string | null>(null);
   
   // Stopwatch State: NEVER auto-starts, user initiates via "Start Workout"
-  const [elapsedSeconds, setElapsedSeconds] = useState(recentSession?.elapsedSeconds || 0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [workoutClock, setWorkoutClock] = useState({
+    startedAt: null as number | null,
+    elapsedMs: (recentSession?.elapsedSeconds || 0) * 1000,
+  });
+  const [workoutNow, setWorkoutNow] = useState(Date.now);
+  const isTimerRunning = workoutClock.startedAt !== null;
+  const getWorkoutElapsedMs = (now: number) =>
+    workoutClock.elapsedMs + (workoutClock.startedAt === null ? 0 : Math.max(0, now - workoutClock.startedAt));
+  const elapsedSeconds = Math.floor(getWorkoutElapsedMs(workoutNow) / 1000);
+
+  const startWorkoutTimer = () => {
+    const now = Date.now();
+    setWorkoutNow(now);
+    setWorkoutClock(clock => clock.startedAt === null ? { ...clock, startedAt: now } : clock);
+  };
+  const toggleWorkoutTimer = () => {
+    if (workoutClock.startedAt === null) {
+      startWorkoutTimer();
+    } else {
+      setWorkoutClock({
+        startedAt: null,
+        elapsedMs: workoutClock.elapsedMs + Math.max(0, Date.now() - workoutClock.startedAt),
+      });
+    }
+  };
+  const resetWorkoutTimer = () => setWorkoutClock({ startedAt: null, elapsedMs: 0 });
   const [hasStartedWorkout, setHasStartedWorkout] = useState(recentSession?.hasStartedWorkout || false);
 
   // Active exercises in workout session
@@ -1165,11 +1191,32 @@ export default function ExerciseTracker() {
     pickerSplit: string;
   } | null>(null);
 
-  // Rest Timer State
-  const [restSecondsLeft, setRestSecondsLeft] = useState<number | null>(null);
+  // Keep a single interval for the in-app countdown and the iPhone Live Activity.
+  const [restInterval, setRestInterval] = useState<{ startsAt: number; endsAt: number } | null>(null);
+  const [restActivity, setRestActivity] = useState<RestActivityStatus>('inactive');
+  const [restNow, setRestNow] = useState(Date.now);
+  const restSecondsLeft = restInterval === null ? null
+    : Math.max(0, Math.ceil((restInterval.endsAt - Math.max(restNow, restInterval.startsAt)) / 1000));
+
+  const startRestTimer = (seconds: number) => {
+    const now = Date.now();
+    setRestNow(now);
+    setRestInterval(seconds > 0 ? { startsAt: now, endsAt: now + seconds * 1000 } : null);
+  };
+  const adjustRestTimer = (seconds: number, defaultSeconds = 0) => {
+    const now = Date.now();
+    setRestNow(now);
+    setRestInterval(previous => {
+      const running = previous && previous.endsAt > now ? previous : null;
+      const end = running?.endsAt ?? (now + defaultSeconds * 1000);
+      const next = end + seconds * 1000;
+      return next > now ? { startsAt: running?.startsAt ?? now, endsAt: next } : null;
+    });
+  };
   const [restInitialSeconds, setRestInitialSeconds] = useState<number>(() => {
     try {
-      return parseInt(localStorage.getItem('mit2fit_default_rest') || '90', 10);
+      const saved = parseInt(localStorage.getItem('mit2fit_default_rest') || '90', 10);
+      return saved > 0 ? saved : 90;
     } catch {
       return 90;
     }
@@ -1287,11 +1334,25 @@ export default function ExerciseTracker() {
 
   // Browser Notification Permission for Rest Timer
   const [notificationPermission, setNotificationPermission] = useState<string>(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      return Notification.permission;
-    }
-    return 'default';
+    return !nativeApp && 'Notification' in window ? Notification.permission : 'default';
   });
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    let active = true;
+    const checkPermission = () => {
+      if (document.hidden) return;
+      void trackerNative.restAlertPermission().then(({ permission }) => {
+        if (active) setNotificationPermission(permission);
+      }).catch(() => {});
+    };
+    checkPermission();
+    document.addEventListener('visibilitychange', checkPermission);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', checkPermission);
+    };
+  }, [nativeApp]);
 
   // History Tab: Selected Exercise for e1RM Progression Analytics
   const [historyAnalyticsExercise, setHistoryAnalyticsExercise] = useState<string>('');
@@ -1379,75 +1440,102 @@ export default function ExerciseTracker() {
     }
   }, [activeExercises, sessionTitle, activeTemplateId, elapsedSeconds, hasStartedWorkout, unit]);
 
-  // Workout Duration Stopwatch
   useEffect(() => {
     if (!isTimerRunning) return;
-    const timer = setInterval(() => {
-      setElapsedSeconds(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
+    const tick = () => setWorkoutNow(Date.now());
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, [isTimerRunning]);
 
-  // Rest Timer Countdown & Audio Chime + Haptic Vibration
   useEffect(() => {
-    if (restSecondsLeft === null || restSecondsLeft <= 0) return;
-    const timer = setInterval(() => {
-      setRestSecondsLeft(prev => {
-        if (prev === null || prev <= 1) {
-          // Play harmonic bell chime if audio enabled
-          if (isRestSoundEnabled) {
-            try {
-              const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-              const ctx = new AudioCtx();
-              
-              const playTone = (freq: number, start: number, duration: number, vol = 0.14) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, ctx.currentTime + start);
-                gain.gain.setValueAtTime(vol, ctx.currentTime + start);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.start(ctx.currentTime + start);
-                osc.stop(ctx.currentTime + start + duration);
-              };
-
-              // Triple rising chime (E5 -> A5 -> C#6)
-              playTone(659.25, 0, 0.28, 0.12);
-              playTone(880.0, 0.16, 0.32, 0.14);
-              playTone(1108.73, 0.34, 0.45, 0.15);
-            } catch (e) {
-              // Audio context safely ignored if blocked by browser policy
-            }
+    if (!nativeApp) return;
+    let current = true;
+    let lastStatus: RestActivityStatus = 'inactive';
+    const update = () => {
+      void syncNativeRestTimer(restInterval, notificationPermission === 'granted', isRestSoundEnabled)
+        .then(activity => {
+          if (current && activity) {
+            lastStatus = activity;
+            setRestActivity(activity);
           }
+        });
+    };
+    const refresh = () => {
+      if (!document.hidden && restInterval && restInterval.endsAt > Date.now() && lastStatus !== 'active') update();
+    };
+    setRestActivity('inactive');
+    update();
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      current = false;
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [nativeApp, restInterval, notificationPermission, isRestSoundEnabled]);
 
-          // Haptic vibration feedback on mobile
-          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-            try {
-              navigator.vibrate([200, 100, 200]);
-            } catch (e) {}
+  useEffect(() => {
+    if (restInterval === null) return;
+    let timer: number | undefined;
+    let finished = false;
+    const tick = () => {
+      if (finished) return;
+      window.clearTimeout(timer);
+      const now = Date.now();
+      const msLeft = restInterval.endsAt - now;
+      if (msLeft > 0) {
+        setRestNow(now);
+        timer = window.setTimeout(tick, msLeft % 1000 || 1000);
+        return;
+      }
+
+      finished = true;
+      setRestInterval(current => current === restInterval ? null : current);
+      if (isRestSoundEnabled && !document.hidden) {
+        try {
+          const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          const ctx = new AudioCtx();
+          for (const [frequency, delay, duration, volume] of [
+            [659.25, 0, 0.28, 0.12],
+            [880, 0.16, 0.32, 0.14],
+            [1108.73, 0.34, 0.45, 0.15],
+          ]) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const start = ctx.currentTime + delay;
+            osc.frequency.setValueAtTime(frequency, start);
+            gain.gain.setValueAtTime(volume, start);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(start);
+            osc.stop(start + duration);
           }
+          window.setTimeout(() => { void ctx.close().catch(() => {}); }, 1000);
+        } catch {}
+      }
+      try { navigator.vibrate?.([200, 100, 200]); } catch {}
+      if (!nativeApp && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('Rest Complete — Mit2Fit', {
+            body: 'Rest countdown complete. Ready for your next set.',
+            icon: '/tracker-icons/icon-192.png',
+          });
+        } catch {}
+      }
+      setAlertNotice('⏰ Rest interval complete! Ready for your next set.');
+      window.setTimeout(() => setAlertNotice(null), 3500);
+    };
 
-          // Desktop/mobile web notification if permission granted
-          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-            try {
-              new Notification('⏰ Rest Complete — Mit2Fit', {
-                body: 'Rest countdown complete! Time to crush your next set.',
-                icon: '/favicon.ico'
-              });
-            } catch (e) {}
-          }
-
-          setAlertNotice('⏰ Rest interval complete! Ready for your next set.');
-          setTimeout(() => setAlertNotice(null), 3500);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [restSecondsLeft, isRestSoundEnabled]);
+    document.addEventListener('visibilitychange', tick);
+    tick();
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [restInterval, isRestSoundEnabled, nativeApp]);
 
   // Timed Hold Countdown with 3-2-1 Audio Ticks, Haptic Pulse, and Completion Chime
   useEffect(() => {
@@ -1507,7 +1595,7 @@ export default function ExerciseTracker() {
 
           // Trigger rest countdown if auto-rest is active
           if (autoRestTimerEnabled) {
-            setRestSecondsLeft(restInitialSeconds);
+            startRestTimer(restInitialSeconds);
           }
 
           setAlertNotice(`⏱️ Hold Complete (${prev.initialSeconds}s) for ${prev.exerciseName}! Rest started.`);
@@ -1557,7 +1645,7 @@ export default function ExerciseTracker() {
     });
     if (!hasStartedWorkout) {
       setHasStartedWorkout(true);
-      setIsTimerRunning(true);
+      startWorkoutTimer();
     }
   };
 
@@ -1763,10 +1851,9 @@ export default function ExerciseTracker() {
     setActiveTemplateId(routine.id);
     setSessionTitle(routine.name);
     setActiveExercises(buildRoutineExercises(routine, history));
-    setElapsedSeconds(0);
-    setIsTimerRunning(false);
+    resetWorkoutTimer();
     setHasStartedWorkout(false);
-    setRestSecondsLeft(null);
+    setRestInterval(null);
     setActiveHoldTimer(null);
   };
 
@@ -2231,7 +2318,7 @@ export default function ExerciseTracker() {
 
     if (!hasStartedWorkout) {
       setHasStartedWorkout(true);
-      setIsTimerRunning(true);
+      startWorkoutTimer();
     }
 
     setActiveExercises(current => current.map(entry =>
@@ -2248,7 +2335,7 @@ export default function ExerciseTracker() {
       setAlertNotice(`⚡ SUPERSET TRANSITION: Move immediately to ${nextExercise.exercise.name}! (0s rest between pairs)`);
       setTimeout(() => setAlertNotice(null), 3500);
     } else if (autoRestTimerEnabled) {
-      setRestSecondsLeft(restInitialSeconds);
+      startRestTimer(restInitialSeconds);
     }
 
     if (targetSet.type !== 'Warmup' && targetSet.weight > 0 && targetSet.reps > 0) {
@@ -2540,7 +2627,7 @@ export default function ExerciseTracker() {
       weekNumber: getWeekNumber(now),
       year: now.getFullYear(),
       title: sessionTitle || 'MIT2FIT Workout Session',
-      durationSeconds: elapsedSeconds,
+      durationSeconds: Math.ceil(getWorkoutElapsedMs(now.getTime()) / 1000),
       totalVolume,
       totalSets: totalCompletedSets,
       totalReps: activeExercises.reduce((sum, ex) => {
@@ -2570,9 +2657,10 @@ export default function ExerciseTracker() {
 
     setHistory(prev => [workoutRecord, ...prev]);
     setCompletedModalData(workoutRecord);
-    setIsTimerRunning(false);
+    resetWorkoutTimer();
     setHasStartedWorkout(false);
-    setElapsedSeconds(0);
+    setRestInterval(null);
+    setActiveHoldTimer(null);
     setSessionNotes('');
     setActiveExercises(prev => prev.map(ex => ({
       ...ex,
@@ -2759,9 +2847,10 @@ export default function ExerciseTracker() {
       confirmText: 'Reset Session',
       isDanger: false,
       onConfirm: () => {
-        setIsTimerRunning(false);
+        resetWorkoutTimer();
         setHasStartedWorkout(false);
-        setElapsedSeconds(0);
+        setRestInterval(null);
+        setActiveHoldTimer(null);
         setActiveExercises(prev => prev.map(ex => ({
           ...ex,
           sets: ex.sets.map(s => ({ ...s, completed: false }))
@@ -2828,13 +2917,7 @@ export default function ExerciseTracker() {
   }, [activeExercises]);
 
   const handleAdjustRestHUD = (delta: number) => {
-    setRestSecondsLeft(prev => {
-      if (prev === null) {
-        return Math.max(15, 60 + delta);
-      }
-      const next = prev + delta;
-      return next > 0 ? next : null;
-    });
+    adjustRestTimer(delta, Math.max(15 - delta, 60));
   };
 
   const handleOpenPlateCalculatorHUD = () => {
@@ -3001,10 +3084,10 @@ export default function ExerciseTracker() {
   }, [history]);
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 pt-20 pb-28 print:pt-0 print:pb-0 print:bg-white print:text-black">
+    <div className={`min-h-screen bg-stone-950 text-stone-100 pb-28 print:pt-0 print:pb-0 print:bg-white print:text-black ${nativeApp ? '' : 'pt-20'}`}>
       <div className="print:hidden">
         {/* Top Banner / Session Header */}
-        <div className="border-b border-stone-800 bg-stone-900/60 backdrop-blur sticky top-16 z-30">
+        <div className={`border-b border-stone-800 bg-stone-900/60 backdrop-blur sticky z-30 ${nativeApp ? 'top-0' : 'top-16'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
@@ -3053,7 +3136,7 @@ export default function ExerciseTracker() {
               <button
                 onClick={() => {
                   setHasStartedWorkout(true);
-                  setIsTimerRunning(true);
+                  startWorkoutTimer();
                 }}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-extrabold rounded-xl text-xs transition shadow-lg shadow-emerald-500/20 whitespace-nowrap"
               >
@@ -3063,7 +3146,7 @@ export default function ExerciseTracker() {
             ) : (
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => setIsTimerRunning(!isTimerRunning)}
+                  onClick={() => toggleWorkoutTimer()}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
                     isTimerRunning 
                       ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 hover:bg-amber-500/30' 
@@ -3078,7 +3161,7 @@ export default function ExerciseTracker() {
                 {restSecondsLeft === null && (
                   <button
                     type="button"
-                    onClick={() => setRestSecondsLeft(restInitialSeconds)}
+                    onClick={() => startRestTimer(restInitialSeconds)}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-800 transition whitespace-nowrap"
                     title={`Start ${restInitialSeconds}s Rest Timer`}
                   >
@@ -3165,12 +3248,30 @@ export default function ExerciseTracker() {
                   Rest Period: <strong className="font-mono text-amber-400 text-sm ml-1">{formatTime(restSecondsLeft)}</strong>
                 </span>
               </div>
+              {nativeApp && (
+                <div className="text-[11px] text-stone-300" aria-live="polite">
+                  {restActivity === 'active' && <span className="text-emerald-300">Lock Screen timer on</span>}
+                  {restActivity === 'disabled' && (
+                    <button
+                      type="button"
+                      onClick={() => void trackerNative.openAppSettings().catch(() =>
+                        setAlertNotice('Open Settings → Apps → Mit2Fit Tracker → Live Activities.')
+                      )}
+                      className="rounded px-1 py-1 text-amber-300 underline"
+                    >
+                      Enable Live Activities in Settings
+                    </button>
+                  )}
+                  {restActivity === 'unavailable' && <span>Lock Screen timer unavailable. Try restarting rest with the app open.</span>}
+                  {restActivity === 'inactive' && <span>Starting Lock Screen timer…</span>}
+                </div>
+              )}
               <div className="flex items-center gap-1">
                 {[60, 90, 120, 180].map(s => (
                   <button
                     key={s}
                     onClick={() => {
-                      setRestSecondsLeft(s);
+                      startRestTimer(s);
                       setRestInitialSeconds(s);
                       try { localStorage.setItem('mit2fit_default_rest', String(s)); } catch {}
                     }}
@@ -3184,7 +3285,7 @@ export default function ExerciseTracker() {
                 ))}
                 <button
                   type="button"
-                  onClick={() => setRestSecondsLeft(prev => (prev || 0) + 30)}
+                  onClick={() => adjustRestTimer(30)}
                   className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-800 hover:bg-stone-700 text-amber-300 font-semibold"
                   title="Add 30 seconds rest"
                 >
@@ -3235,7 +3336,18 @@ export default function ExerciseTracker() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (typeof window !== 'undefined' && 'Notification' in window) {
+                  if (nativeApp) {
+                    try {
+                      const { permission } = await trackerNative.requestRestAlerts();
+                      setNotificationPermission(permission);
+                      setAlertNotice(permission === 'granted'
+                        ? 'Rest alerts enabled.'
+                        : 'You can allow rest alerts in iPhone Settings → Notifications → Mit2Fit Tracker.');
+                    } catch {
+                      setAlertNotice('Could not request rest alert permission.');
+                    }
+                    setTimeout(() => setAlertNotice(null), 3000);
+                  } else if ('Notification' in window) {
                     try {
                       const res = await Notification.requestPermission();
                       setNotificationPermission(res);
@@ -3243,7 +3355,7 @@ export default function ExerciseTracker() {
                         setAlertNotice('Background Rest Notifications Enabled!');
                         try {
                           new Notification('Mit2Fit Notifications Enabled', {
-                            body: 'You will receive an alert whenever rest ends!',
+                            body: 'Rest alerts are available while the tracker is running.',
                             icon: '/favicon.ico'
                           });
                         } catch {}
@@ -3264,7 +3376,7 @@ export default function ExerciseTracker() {
                     ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
                     : 'bg-stone-800/80 hover:bg-stone-700 text-stone-400'
                 }`}
-                title={notificationPermission === 'granted' ? 'Background browser notifications active' : 'Click to enable background browser notifications when rest finishes'}
+                title={notificationPermission === 'granted' ? 'Rest alerts active' : 'Enable alerts when rest finishes'}
               >
                 {notificationPermission === 'granted' ? (
                   <>
@@ -3280,7 +3392,7 @@ export default function ExerciseTracker() {
               </button>
 
               <button 
-                onClick={() => setRestSecondsLeft(null)}
+                onClick={() => setRestInterval(null)}
                 className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1 bg-stone-800/50 hover:bg-stone-800 px-2 py-1 rounded"
               >
                 <X className="w-3.5 h-3.5" /> Skip
@@ -3356,7 +3468,7 @@ export default function ExerciseTracker() {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <TrackerHomeScreen />
+        {!nativeApp && <TrackerHomeScreen />}
 
         {/* ============================================================== */}
         {/* TAB 1: ACTIVE WORKOUT ROUTINE                                  */}
@@ -3894,7 +4006,7 @@ export default function ExerciseTracker() {
                       type="button"
                       onClick={() => {
                         if (!hasStartedWorkout) setHasStartedWorkout(true);
-                        setIsTimerRunning(!isTimerRunning);
+                        toggleWorkoutTimer();
                       }}
                       className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-400 transition"
                       title={isTimerRunning ? "Pause stopwatch" : "Start stopwatch"}
@@ -6946,6 +7058,8 @@ export default function ExerciseTracker() {
                           </div>
                         </div>
 
+                        {nativeApp && !workout.id.startsWith('seed-') && <SaveWorkoutToAppleHealth workout={workout} />}
+
                         {/* Send / Share Individual Workout Dropdown / Buttons */}
                         <div className="flex items-center gap-1 border-l border-stone-800 pl-3">
                           <button
@@ -8215,7 +8329,7 @@ export default function ExerciseTracker() {
       {/* ============================================================== */}
       {completedModalData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl text-center">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl max-w-lg w-full max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 sm:p-8 space-y-6 shadow-2xl text-center">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
               <Award className="w-8 h-8" />
             </div>
@@ -8223,7 +8337,7 @@ export default function ExerciseTracker() {
             <div className="space-y-1">
               <h3 className="text-2xl font-extrabold text-white">Workout Completed!</h3>
               <p className="text-xs text-stone-400">
-                Session automatically saved to your browser on this device.
+                {nativeApp ? 'Session saved on this iPhone.' : 'Session automatically saved to your browser on this device.'}
               </p>
             </div>
 
@@ -8247,6 +8361,8 @@ export default function ExerciseTracker() {
                 </div>
               </div>
             </div>
+
+            {nativeApp && <SaveWorkoutToAppleHealth workout={completedModalData} />}
 
             {/* Session PR Showcase */}
             {(() => {
@@ -9509,9 +9625,9 @@ export default function ExerciseTracker() {
         unit={unit}
         currentExerciseIndex={currentHUDExerciseIndex}
         activeExercises={activeExercisesHUD}
-        onToggleTimer={() => setIsTimerRunning(prev => !prev)}
+        onToggleTimer={toggleWorkoutTimer}
         onAdjustRest={handleAdjustRestHUD}
-        onSkipRest={() => setRestSecondsLeft(null)}
+        onSkipRest={() => setRestInterval(null)}
         onOpenPlateCalculator={handleOpenPlateCalculatorHUD}
         isRestSoundEnabled={isRestSoundEnabled}
         onToggleRestSound={() => setIsRestSoundEnabled(prev => !prev)}

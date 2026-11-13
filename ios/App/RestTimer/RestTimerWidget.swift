@@ -54,12 +54,25 @@ struct RestTimerWidget: Widget {
     }
 
     private func countdown(_ context: ActivityViewContext<RestTimerAttributes>) -> some View {
-        Text(
-            timerInterval: context.state.startsAt...context.state.endsAt,
-            pauseTime: context.state.endsAt,
-            countsDown: true,
-            showsHours: false
-        )
+        Group {
+            if context.isStale {
+                Text("0:00")
+            } else if #available(iOS 18.0, *) {
+                Text(.currentDate, format: .timer(
+                    countingDownIn: context.state.startsAt..<context.state.endsAt,
+                    showsHours: false
+                ))
+            } else {
+                Text(
+                    timerInterval: context.state.startsAt...context.state.endsAt,
+                    pauseTime: context.state.endsAt,
+                    countsDown: true,
+                    showsHours: false
+                )
+            }
+        }
+        // Recreate the system-rendered timer when the deadline changes.
+        .id(context.state.endsAt)
         .monospacedDigit()
         .foregroundStyle(accent)
     }

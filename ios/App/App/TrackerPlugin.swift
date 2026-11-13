@@ -96,14 +96,18 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func syncRestTimer(_ call: CAPPluginCall) {
-        let timestamp = call.getDouble("endsAt")
+        let interval = call.getObject("interval")
+        let startsAt = interval?["startsAt"] as? Double
+        let endsAt = interval?["endsAt"] as? Double
         let notify = call.getBool("notify") ?? false
         let sound = call.getBool("sound") ?? true
         Task { @MainActor in
             notifications.removePendingNotificationRequests(withIdentifiers: [notificationID])
             let now = Date()
             let activities = Activity<RestTimerAttributes>.activities
-            guard let timestamp, timestamp.isFinite, timestamp / 1000 > now.timeIntervalSince1970 else {
+            guard let startsAt, let endsAt,
+                  startsAt.isFinite, endsAt.isFinite, startsAt < endsAt,
+                  endsAt / 1000 > now.timeIntervalSince1970 else {
                 for activity in activities {
                     await activity.end(nil, dismissalPolicy: .immediate)
                 }
@@ -111,15 +115,18 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            let end = Date(timeIntervalSince1970: timestamp / 1000)
+            let start = Date(timeIntervalSince1970: startsAt / 1000)
+            let end = Date(timeIntervalSince1970: endsAt / 1000)
             var status = "disabled"
             if ActivityAuthorizationInfo().areActivitiesEnabled {
                 let content = ActivityContent(
-                    state: RestTimerAttributes.ContentState(startsAt: now, endsAt: end),
+                    state: RestTimerAttributes.ContentState(startsAt: start, endsAt: end),
                     staleDate: end
                 )
                 if let activity = activities.first(where: { $0.activityState == .active || $0.activityState == .stale }) {
-                    await activity.update(content)
+                    if activity.content.state != content.state {
+                        await activity.update(content)
+                    }
                     status = "active"
                 } else {
                     do {
@@ -132,13 +139,14 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
 
-            if notify, end > Date() {
+            let secondsLeft = end.timeIntervalSinceNow
+            if notify, secondsLeft > 0 {
                 let content = UNMutableNotificationContent()
                 content.title = "Rest complete"
                 content.body = "Ready for your next set."
                 content.sound = sound ? .default : nil
                 let trigger = UNTimeIntervalNotificationTrigger(
-                    timeInterval: max(1, end.timeIntervalSinceNow), repeats: false
+                    timeInterval: secondsLeft, repeats: false
                 )
                 do {
                     try await notifications.add(UNNotificationRequest(

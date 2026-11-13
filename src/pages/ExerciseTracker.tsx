@@ -1191,22 +1191,26 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     pickerSplit: string;
   } | null>(null);
 
-  // Rest Timer State
-  const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  // Keep a single interval for the in-app countdown and the iPhone Live Activity.
+  const [restInterval, setRestInterval] = useState<{ startsAt: number; endsAt: number } | null>(null);
   const [restActivity, setRestActivity] = useState<RestActivityStatus>('inactive');
-  const [displayedRestSeconds, setDisplayedRestSeconds] = useState(0);
-  const restSecondsLeft = restEndsAt === null ? null : displayedRestSeconds;
+  const [restNow, setRestNow] = useState(Date.now);
+  const restSecondsLeft = restInterval === null ? null
+    : Math.max(0, Math.ceil((restInterval.endsAt - Math.max(restNow, restInterval.startsAt)) / 1000));
 
   const startRestTimer = (seconds: number) => {
-    setRestEndsAt(seconds > 0 ? Date.now() + seconds * 1000 : null);
-    setDisplayedRestSeconds(seconds);
+    const now = Date.now();
+    setRestNow(now);
+    setRestInterval(seconds > 0 ? { startsAt: now, endsAt: now + seconds * 1000 } : null);
   };
   const adjustRestTimer = (seconds: number, defaultSeconds = 0) => {
     const now = Date.now();
-    setRestEndsAt(previous => {
-      const end = Math.max(now + (previous === null ? defaultSeconds * 1000 : 0), previous ?? now);
+    setRestNow(now);
+    setRestInterval(previous => {
+      const running = previous && previous.endsAt > now ? previous : null;
+      const end = running?.endsAt ?? (now + defaultSeconds * 1000);
       const next = end + seconds * 1000;
-      return next > now ? next : null;
+      return next > now ? { startsAt: running?.startsAt ?? now, endsAt: next } : null;
     });
   };
   const [restInitialSeconds, setRestInitialSeconds] = useState<number>(() => {
@@ -1450,14 +1454,18 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   useEffect(() => {
     if (!nativeApp) return;
     let current = true;
+    let lastStatus: RestActivityStatus = 'inactive';
     const update = () => {
-      void syncNativeRestTimer(restEndsAt, notificationPermission === 'granted', isRestSoundEnabled)
+      void syncNativeRestTimer(restInterval, notificationPermission === 'granted', isRestSoundEnabled)
         .then(activity => {
-          if (current && activity) setRestActivity(activity);
+          if (current && activity) {
+            lastStatus = activity;
+            setRestActivity(activity);
+          }
         });
     };
     const refresh = () => {
-      if (!document.hidden && restEndsAt !== null && restEndsAt > Date.now()) update();
+      if (!document.hidden && restInterval && restInterval.endsAt > Date.now() && lastStatus !== 'active') update();
     };
     setRestActivity('inactive');
     update();
@@ -1466,24 +1474,25 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       current = false;
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [nativeApp, restEndsAt, notificationPermission, isRestSoundEnabled]);
+  }, [nativeApp, restInterval, notificationPermission, isRestSoundEnabled]);
 
   useEffect(() => {
-    if (restEndsAt === null) return;
+    if (restInterval === null) return;
     let timer: number | undefined;
     let finished = false;
     const tick = () => {
       if (finished) return;
       window.clearTimeout(timer);
-      const msLeft = restEndsAt - Date.now();
+      const now = Date.now();
+      const msLeft = restInterval.endsAt - now;
       if (msLeft > 0) {
-        setDisplayedRestSeconds(Math.ceil(msLeft / 1000));
+        setRestNow(now);
         timer = window.setTimeout(tick, msLeft % 1000 || 1000);
         return;
       }
 
       finished = true;
-      setRestEndsAt(current => current === restEndsAt ? null : current);
+      setRestInterval(current => current === restInterval ? null : current);
       if (isRestSoundEnabled && !document.hidden) {
         try {
           const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -1526,7 +1535,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', tick);
     };
-  }, [restEndsAt, isRestSoundEnabled, nativeApp]);
+  }, [restInterval, isRestSoundEnabled, nativeApp]);
 
   // Timed Hold Countdown with 3-2-1 Audio Ticks, Haptic Pulse, and Completion Chime
   useEffect(() => {
@@ -1844,7 +1853,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     setActiveExercises(buildRoutineExercises(routine, history));
     resetWorkoutTimer();
     setHasStartedWorkout(false);
-    setRestEndsAt(null);
+    setRestInterval(null);
     setActiveHoldTimer(null);
   };
 
@@ -2650,7 +2659,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     setCompletedModalData(workoutRecord);
     resetWorkoutTimer();
     setHasStartedWorkout(false);
-    setRestEndsAt(null);
+    setRestInterval(null);
     setActiveHoldTimer(null);
     setSessionNotes('');
     setActiveExercises(prev => prev.map(ex => ({
@@ -2840,7 +2849,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       onConfirm: () => {
         resetWorkoutTimer();
         setHasStartedWorkout(false);
-        setRestEndsAt(null);
+        setRestInterval(null);
         setActiveHoldTimer(null);
         setActiveExercises(prev => prev.map(ex => ({
           ...ex,
@@ -3383,7 +3392,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
               </button>
 
               <button 
-                onClick={() => setRestEndsAt(null)}
+                onClick={() => setRestInterval(null)}
                 className="text-stone-400 hover:text-stone-200 text-xs flex items-center gap-1 bg-stone-800/50 hover:bg-stone-800 px-2 py-1 rounded"
               >
                 <X className="w-3.5 h-3.5" /> Skip
@@ -9618,7 +9627,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         activeExercises={activeExercisesHUD}
         onToggleTimer={toggleWorkoutTimer}
         onAdjustRest={handleAdjustRestHUD}
-        onSkipRest={() => setRestEndsAt(null)}
+        onSkipRest={() => setRestInterval(null)}
         onOpenPlateCalculator={handleOpenPlateCalculatorHUD}
         isRestSoundEnabled={isRestSoundEnabled}
         onToggleRestSound={() => setIsRestSoundEnabled(prev => !prev)}

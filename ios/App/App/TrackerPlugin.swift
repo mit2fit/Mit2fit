@@ -1,6 +1,7 @@
 import ActivityKit
 import Capacitor
 import HealthKit
+import UIKit
 import UserNotifications
 
 @objc(TrackerPlugin)
@@ -11,7 +12,8 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "saveWorkout", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "restAlertPermission", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestRestAlerts", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "syncRestTimer", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "syncRestTimer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise)
     ]
 
     private lazy var healthStore = HKHealthStore()
@@ -82,6 +84,17 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func openAppSettings(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard let url = URL(string: UIApplication.openSettingsURLString),
+                  await UIApplication.shared.open(url) else {
+                call.reject("Could not open Mit2Fit Tracker settings.")
+                return
+            }
+            call.resolve()
+        }
+    }
+
     @objc func syncRestTimer(_ call: CAPPluginCall) {
         let timestamp = call.getDouble("endsAt")
         let notify = call.getBool("notify") ?? false
@@ -90,46 +103,52 @@ final class TrackerPlugin: CAPPlugin, CAPBridgedPlugin {
             notifications.removePendingNotificationRequests(withIdentifiers: [notificationID])
             let now = Date()
             let activities = Activity<RestTimerAttributes>.activities
-            if let timestamp, timestamp.isFinite, timestamp / 1000 > now.timeIntervalSince1970 {
-                let end = Date(timeIntervalSince1970: timestamp / 1000)
-                if notify {
-                    let content = UNMutableNotificationContent()
-                    content.title = "Rest complete"
-                    content.body = "Ready for your next set."
-                    content.sound = sound ? .default : nil
-                    let trigger = UNTimeIntervalNotificationTrigger(
-                        timeInterval: max(1, end.timeIntervalSinceNow), repeats: false
-                    )
-                    do {
-                        try await notifications.add(UNNotificationRequest(
-                            identifier: notificationID, content: content, trigger: trigger
-                        ))
-                    } catch {
-                        NSLog("Mit2Fit rest notification could not be scheduled: %@", error.localizedDescription)
-                    }
-                }
-
-                if ActivityAuthorizationInfo().areActivitiesEnabled {
-                    let content = ActivityContent(
-                        state: RestTimerAttributes.ContentState(startsAt: now, endsAt: end),
-                        staleDate: end
-                    )
-                    if let activity = activities.first {
-                        await activity.update(content)
-                    } else {
-                        do {
-                            _ = try Activity.request(attributes: RestTimerAttributes(), content: content, pushType: nil)
-                        } catch {
-                            NSLog("Mit2Fit Live Activity could not start: %@", error.localizedDescription)
-                        }
-                    }
-                }
-            } else {
+            guard let timestamp, timestamp.isFinite, timestamp / 1000 > now.timeIntervalSince1970 else {
                 for activity in activities {
                     await activity.end(nil, dismissalPolicy: .immediate)
                 }
+                call.resolve(["activity": "inactive"])
+                return
             }
-            call.resolve()
+
+            let end = Date(timeIntervalSince1970: timestamp / 1000)
+            var status = "disabled"
+            if ActivityAuthorizationInfo().areActivitiesEnabled {
+                let content = ActivityContent(
+                    state: RestTimerAttributes.ContentState(startsAt: now, endsAt: end),
+                    staleDate: end
+                )
+                if let activity = activities.first(where: { $0.activityState == .active || $0.activityState == .stale }) {
+                    await activity.update(content)
+                    status = "active"
+                } else {
+                    do {
+                        _ = try Activity.request(attributes: RestTimerAttributes(), content: content, pushType: nil)
+                        status = "active"
+                    } catch {
+                        status = "unavailable"
+                        NSLog("Mit2Fit Live Activity could not start: %@", error.localizedDescription)
+                    }
+                }
+            }
+
+            if notify, end > Date() {
+                let content = UNMutableNotificationContent()
+                content.title = "Rest complete"
+                content.body = "Ready for your next set."
+                content.sound = sound ? .default : nil
+                let trigger = UNTimeIntervalNotificationTrigger(
+                    timeInterval: max(1, end.timeIntervalSinceNow), repeats: false
+                )
+                do {
+                    try await notifications.add(UNNotificationRequest(
+                        identifier: notificationID, content: content, trigger: trigger
+                    ))
+                } catch {
+                    NSLog("Mit2Fit rest notification could not be scheduled: %@", error.localizedDescription)
+                }
+            }
+            call.resolve(["activity": status])
         }
     }
 

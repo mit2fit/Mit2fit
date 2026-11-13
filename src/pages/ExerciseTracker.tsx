@@ -103,7 +103,7 @@ import { ProgressiveOverloadPathwayDrawer } from '../components/ProgressiveOverl
 import { TrainingHeatmapAndPRTrophyRoom } from '../components/TrainingHeatmapAndPRTrophyRoom';
 import { TrackerHomeScreen } from '../components/TrackerHomeScreen';
 import { SaveWorkoutToAppleHealth } from '../components/SaveWorkoutToAppleHealth';
-import { syncNativeRestTimer, trackerNative } from '../native/tracker';
+import { syncNativeRestTimer, trackerNative, type RestActivityStatus } from '../native/tracker';
 import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionHUD';
 import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
 import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
@@ -1146,10 +1146,9 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   });
   const [workoutNow, setWorkoutNow] = useState(Date.now);
   const isTimerRunning = workoutClock.startedAt !== null;
-  const getWorkoutElapsed = (now: number) => Math.floor((
-    workoutClock.elapsedMs + (workoutClock.startedAt === null ? 0 : Math.max(0, now - workoutClock.startedAt))
-  ) / 1000);
-  const elapsedSeconds = getWorkoutElapsed(workoutNow);
+  const getWorkoutElapsedMs = (now: number) =>
+    workoutClock.elapsedMs + (workoutClock.startedAt === null ? 0 : Math.max(0, now - workoutClock.startedAt));
+  const elapsedSeconds = Math.floor(getWorkoutElapsedMs(workoutNow) / 1000);
 
   const startWorkoutTimer = () => {
     const now = Date.now();
@@ -1194,6 +1193,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
   // Rest Timer State
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  const [restActivity, setRestActivity] = useState<RestActivityStatus>('inactive');
   const [displayedRestSeconds, setDisplayedRestSeconds] = useState(0);
   const restSecondsLeft = restEndsAt === null ? null : displayedRestSeconds;
 
@@ -1448,7 +1448,24 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   }, [isTimerRunning]);
 
   useEffect(() => {
-    if (nativeApp) syncNativeRestTimer(restEndsAt, notificationPermission === 'granted', isRestSoundEnabled);
+    if (!nativeApp) return;
+    let current = true;
+    const update = () => {
+      void syncNativeRestTimer(restEndsAt, notificationPermission === 'granted', isRestSoundEnabled)
+        .then(activity => {
+          if (current && activity) setRestActivity(activity);
+        });
+    };
+    const refresh = () => {
+      if (!document.hidden && restEndsAt !== null && restEndsAt > Date.now()) update();
+    };
+    setRestActivity('inactive');
+    update();
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      current = false;
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [nativeApp, restEndsAt, notificationPermission, isRestSoundEnabled]);
 
   useEffect(() => {
@@ -2601,7 +2618,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       weekNumber: getWeekNumber(now),
       year: now.getFullYear(),
       title: sessionTitle || 'MIT2FIT Workout Session',
-      durationSeconds: getWorkoutElapsed(now.getTime()),
+      durationSeconds: Math.ceil(getWorkoutElapsedMs(now.getTime()) / 1000),
       totalVolume,
       totalSets: totalCompletedSets,
       totalReps: activeExercises.reduce((sum, ex) => {
@@ -3222,6 +3239,24 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   Rest Period: <strong className="font-mono text-amber-400 text-sm ml-1">{formatTime(restSecondsLeft)}</strong>
                 </span>
               </div>
+              {nativeApp && (
+                <div className="text-[11px] text-stone-300" aria-live="polite">
+                  {restActivity === 'active' && <span className="text-emerald-300">Lock Screen timer on</span>}
+                  {restActivity === 'disabled' && (
+                    <button
+                      type="button"
+                      onClick={() => void trackerNative.openAppSettings().catch(() =>
+                        setAlertNotice('Open Settings → Apps → Mit2Fit Tracker → Live Activities.')
+                      )}
+                      className="rounded px-1 py-1 text-amber-300 underline"
+                    >
+                      Enable Live Activities in Settings
+                    </button>
+                  )}
+                  {restActivity === 'unavailable' && <span>Lock Screen timer unavailable. Try restarting rest with the app open.</span>}
+                  {restActivity === 'inactive' && <span>Starting Lock Screen timer…</span>}
+                </div>
+              )}
               <div className="flex items-center gap-1">
                 {[60, 90, 120, 180].map(s => (
                   <button
@@ -3298,7 +3333,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                       setNotificationPermission(permission);
                       setAlertNotice(permission === 'granted'
                         ? 'Rest alerts enabled.'
-                        : 'You can allow rest alerts in iPhone Settings → Notifications → Mit2Fit.');
+                        : 'You can allow rest alerts in iPhone Settings → Notifications → Mit2Fit Tracker.');
                     } catch {
                       setAlertNotice('Could not request rest alert permission.');
                     }
@@ -8318,6 +8353,8 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
               </div>
             </div>
 
+            {nativeApp && <SaveWorkoutToAppleHealth workout={completedModalData} />}
+
             {/* Session PR Showcase */}
             {(() => {
               const prsInSession: string[] = [];
@@ -8355,8 +8392,6 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
               }
               return null;
             })()}
-
-            {nativeApp && <SaveWorkoutToAppleHealth workout={completedModalData} />}
 
             {/* Generate Shareable Milestone Card */}
             <button

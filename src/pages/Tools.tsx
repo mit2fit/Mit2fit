@@ -67,6 +67,8 @@ import {
   kgToLbs,
   lbsToKg
 } from '../utils/fitnessStorage';
+import { BackupSyncModal, BackupSyncPreview } from '../components/BackupSyncModal';
+import { mergeBiometricHistories } from '../utils/backupMerge';
 
 type ToolType = 'DASHBOARD' | 'HISTORY' | 'WHR' | 'BMI' | 'BODYFAT' | 'CALORIES' | 'MACROS' | 'WATER';
 
@@ -137,6 +139,12 @@ export default function Tools() {
     confirmText: string;
     isDanger?: boolean;
     onConfirm: () => void;
+  } | null>(null);
+
+  const [pendingBackupImport, setPendingBackupImport] = useState<{
+    profile?: BiometricProfile;
+    history?: BiometricSnapshot[];
+    preview: BackupSyncPreview;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -555,7 +563,7 @@ export default function Tools() {
     setTimeout(() => setAlertNotice(null), 3000);
   };
 
-  // Import JSON backup
+  // Import JSON backup (with Append & Merge vs Replace preview)
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -564,16 +572,20 @@ export default function Tools() {
       try {
         const raw = event.target?.result as string;
         const parsed = JSON.parse(raw);
-        if (parsed.profile && typeof parsed.profile.weightKg === 'number') {
-          setProfile(parsed.profile);
-          saveStoredProfile(parsed.profile);
-        }
-        if (Array.isArray(parsed.history)) {
-          setHistory(parsed.history);
-          saveStoredBiometricHistory(parsed.history);
-        }
-        setAlertNotice('Biometric backup restored successfully!');
-        setTimeout(() => setAlertNotice(null), 3500);
+        const incomingHist: BiometricSnapshot[] = Array.isArray(parsed.history) ? parsed.history : [];
+        const diff = mergeBiometricHistories(history, incomingHist);
+
+        setPendingBackupImport({
+          profile: parsed.profile && typeof parsed.profile.weightKg === 'number' ? parsed.profile : undefined,
+          history: incomingHist,
+          preview: {
+            fileName: file.name,
+            exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : undefined,
+            incomingSessions: incomingHist.length,
+            newSessionsToAdd: diff.addedCount,
+            duplicateSessions: diff.duplicateCount,
+          },
+        });
       } catch (err) {
         setAlertNotice('Failed to import backup file. Invalid JSON format.');
         setTimeout(() => setAlertNotice(null), 4000);
@@ -581,6 +593,31 @@ export default function Tools() {
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const confirmToolsMerge = () => {
+    if (!pendingBackupImport) return;
+    const res = mergeBiometricHistories(history, pendingBackupImport.history || []);
+    setHistory(res.merged);
+    saveStoredBiometricHistory(res.merged);
+    setPendingBackupImport(null);
+    setAlertNotice(`Merged +${res.addedCount} new biometric check-ins (${res.duplicateCount} duplicates skipped).`);
+    setTimeout(() => setAlertNotice(null), 4000);
+  };
+
+  const confirmToolsReplace = () => {
+    if (!pendingBackupImport) return;
+    if (pendingBackupImport.profile) {
+      setProfile(pendingBackupImport.profile);
+      saveStoredProfile(pendingBackupImport.profile);
+    }
+    if (pendingBackupImport.history) {
+      setHistory(pendingBackupImport.history);
+      saveStoredBiometricHistory(pendingBackupImport.history);
+    }
+    setPendingBackupImport(null);
+    setAlertNotice('Full biometric backup restored successfully!');
+    setTimeout(() => setAlertNotice(null), 3500);
   };
 
   // Regenerate Protocol Key
@@ -2448,6 +2485,15 @@ export default function Tools() {
           </div>
         </div>
       )}
+
+      <BackupSyncModal
+        isOpen={Boolean(pendingBackupImport)}
+        preview={pendingBackupImport?.preview || null}
+        onMerge={confirmToolsMerge}
+        onReplace={confirmToolsReplace}
+        onCancel={() => setPendingBackupImport(null)}
+        entityNoun="biometric check-ins"
+      />
 
     </main>
   );

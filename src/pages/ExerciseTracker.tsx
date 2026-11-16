@@ -109,6 +109,7 @@ import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionH
 import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
 import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
 import { MonthlyScheduleTab } from '../components/MonthlyScheduleTab';
+import { BackupSyncModal, BackupSyncPreview } from '../components/BackupSyncModal';
 import { findBlogPostById } from '../data/blogPosts';
 import {
   BLUEPRINT_STORAGE_KEY,
@@ -120,6 +121,12 @@ import {
   loadStoredSchedule,
   toLocalDateKey,
 } from '../utils/workoutScheduler';
+import {
+  mergeRoutineLibraries,
+  mergeScheduledWorkouts,
+  mergeWeeklyBlueprints,
+  mergeWorkoutHistories,
+} from '../utils/backupMerge';
 
 interface WorkoutSet {
   id: string;
@@ -1291,6 +1298,13 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   const [alertNotice, setAlertNotice] = useState<string | null>(null);
   const [isCustomSplitBuilderOpen, setIsCustomSplitBuilderOpen] = useState(false);
   const [shareCardWorkout, setShareCardWorkout] = useState<CompletedWorkout | null>(null);
+  const [pendingBackupImport, setPendingBackupImport] = useState<{
+    history?: CompletedWorkout[];
+    routines?: RoutineTemplate[];
+    scheduledWorkouts?: ScheduledWorkoutItem[];
+    weeklyBlueprint?: WeeklyBlueprint;
+    preview: BackupSyncPreview;
+  } | null>(null);
 
   // Browser Persistent Storage & Backup Reminder State
   const [isStoragePersisted, setIsStoragePersisted] = useState<boolean>(false);
@@ -2980,7 +2994,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     setTimeout(() => setAlertNotice(null), 5000);
   };
 
-  // Import JSON Backup (Supports both legacy array format and comprehensive backup)
+  // Import JSON Backup (Supports both legacy array format and comprehensive backup with Append vs Replace choice)
   const handleImportData = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2989,42 +3003,70 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
+        let incomingHistory: CompletedWorkout[] | undefined;
+        let incomingRoutines: RoutineTemplate[] | undefined;
+        let incomingSchedule: ScheduledWorkoutItem[] | undefined;
+        let incomingBlueprint: WeeklyBlueprint | undefined;
+        let exportedAt: string | undefined;
+
         if (Array.isArray(parsed)) {
-          setHistory(parsed);
-          setAlertNotice(`Restored ${parsed.length} workouts successfully!`);
-          setTimeout(() => setAlertNotice(null), 4000);
+          incomingHistory = parsed;
         } else if (parsed && typeof parsed === 'object') {
-          let restoredWorkouts = 0;
-          let restoredRoutines = 0;
-
-          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) {
-            if (!saveRoutines(parsed.routines)) {
-              showRoutineSaveError();
-              return;
-            }
-            restoredRoutines = parsed.routines.length;
-          }
-          if (Array.isArray(parsed.history)) {
-            setHistory(parsed.history);
-            restoredWorkouts = parsed.history.length;
-          }
-          if (Array.isArray(parsed.scheduledWorkouts)) {
-            setScheduledWorkouts(parsed.scheduledWorkouts);
-          }
+          if (Array.isArray(parsed.history)) incomingHistory = parsed.history;
+          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) incomingRoutines = parsed.routines;
+          if (Array.isArray(parsed.scheduledWorkouts)) incomingSchedule = parsed.scheduledWorkouts;
           if (parsed.weeklyBlueprint && typeof parsed.weeklyBlueprint === 'object') {
-            setWeeklyBlueprint(parsed.weeklyBlueprint);
+            incomingBlueprint = parsed.weeklyBlueprint;
           }
-
-          if (restoredWorkouts > 0 || restoredRoutines > 0) {
-            setAlertNotice(`Restored ${restoredWorkouts} workouts and ${restoredRoutines} custom routines successfully!`);
-          } else {
-            setAlertNotice('No workout or routine records found in this backup file.');
-          }
-          setTimeout(() => setAlertNotice(null), 4000);
+          if (typeof parsed.exportedAt === 'string') exportedAt = parsed.exportedAt;
         } else {
           setAlertNotice('Invalid backup file. Please select a valid JSON export.');
           setTimeout(() => setAlertNotice(null), 4000);
+          return;
         }
+
+        const hasAnyData =
+          (incomingHistory && incomingHistory.length > 0) ||
+          (incomingRoutines && incomingRoutines.length > 0) ||
+          (incomingSchedule && incomingSchedule.length > 0);
+
+        if (!hasAnyData) {
+          setAlertNotice('No workout, routine, or schedule records found in this backup file.');
+          setTimeout(() => setAlertNotice(null), 4000);
+          return;
+        }
+
+        const histDiff = incomingHistory
+          ? mergeWorkoutHistories(history, incomingHistory)
+          : { addedCount: 0, duplicateCount: 0 };
+        const routDiff = incomingRoutines
+          ? mergeRoutineLibraries(routines, incomingRoutines)
+          : { addedCount: 0 };
+        const schedDiff = incomingSchedule
+          ? mergeScheduledWorkouts(scheduledWorkouts, incomingSchedule)
+          : { addedCount: 0, updatedCount: 0 };
+
+        const extraParts: string[] = [];
+        if (routDiff.addedCount > 0) extraParts.push(`+${routDiff.addedCount} routines`);
+        if (schedDiff.addedCount > 0 || schedDiff.updatedCount > 0) {
+          extraParts.push(`+${schedDiff.addedCount + schedDiff.updatedCount} calendar dates`);
+        }
+
+        setPendingBackupImport({
+          history: incomingHistory,
+          routines: incomingRoutines,
+          scheduledWorkouts: incomingSchedule,
+          weeklyBlueprint: incomingBlueprint,
+          preview: {
+            fileName: file.name,
+            exportedAt,
+            incomingSessions: incomingHistory?.length || 0,
+            newSessionsToAdd: histDiff.addedCount,
+            duplicateSessions: histDiff.duplicateCount,
+            extraLabel: extraParts.length > 0 ? 'Routines & Calendar Sync' : undefined,
+            extraSummary: extraParts.length > 0 ? extraParts.join(' · ') : undefined,
+          },
+        });
       } catch (err) {
         setAlertNotice('Invalid backup file format. Please select a valid JSON export.');
         setTimeout(() => setAlertNotice(null), 4000);
@@ -3032,6 +3074,73 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const confirmBackupMerge = () => {
+    if (!pendingBackupImport) return;
+    let addedSessions = 0;
+    let addedRoutines = 0;
+    let addedDates = 0;
+
+    if (pendingBackupImport.routines) {
+      const res = mergeRoutineLibraries(routines, pendingBackupImport.routines);
+      if (!saveRoutines(res.merged)) {
+        showRoutineSaveError();
+        return;
+      }
+      addedRoutines = res.addedCount;
+    }
+    if (pendingBackupImport.history) {
+      const res = mergeWorkoutHistories(history, pendingBackupImport.history);
+      setHistory(res.merged);
+      addedSessions = res.addedCount;
+    }
+    if (pendingBackupImport.scheduledWorkouts) {
+      const res = mergeScheduledWorkouts(scheduledWorkouts, pendingBackupImport.scheduledWorkouts);
+      setScheduledWorkouts(res.merged);
+      addedDates = res.addedCount + res.updatedCount;
+    }
+    if (pendingBackupImport.weeklyBlueprint) {
+      setWeeklyBlueprint((prev) =>
+        mergeWeeklyBlueprints(prev, pendingBackupImport.weeklyBlueprint!)
+      );
+    }
+
+    setPendingBackupImport(null);
+    setAlertNotice(
+      `Merged device backup: +${addedSessions} sessions, +${addedRoutines} routines, +${addedDates} calendar dates synced.`
+    );
+    setTimeout(() => setAlertNotice(null), 5000);
+  };
+
+  const confirmBackupReplace = () => {
+    if (!pendingBackupImport) return;
+    let countSessions = 0;
+    let countRoutines = 0;
+
+    if (pendingBackupImport.routines && pendingBackupImport.routines.length > 0) {
+      if (!saveRoutines(pendingBackupImport.routines)) {
+        showRoutineSaveError();
+        return;
+      }
+      countRoutines = pendingBackupImport.routines.length;
+    }
+    if (pendingBackupImport.history) {
+      setHistory(pendingBackupImport.history);
+      countSessions = pendingBackupImport.history.length;
+    }
+    if (pendingBackupImport.scheduledWorkouts) {
+      setScheduledWorkouts(pendingBackupImport.scheduledWorkouts);
+    }
+    if (pendingBackupImport.weeklyBlueprint) {
+      setWeeklyBlueprint(pendingBackupImport.weeklyBlueprint);
+    }
+
+    setPendingBackupImport(null);
+    setAlertNotice(
+      `Restored full backup snapshot: ${countSessions} workouts and ${countRoutines} routines replaced.`
+    );
+    setTimeout(() => setAlertNotice(null), 5000);
   };
 
   // Dismiss Backup Safety Banner for 14 Days
@@ -6961,7 +7070,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-semibold transition"
                 >
                   <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                  Restore JSON
+                  Sync / Restore JSON
                 </button>
                 <input
                   type="file"
@@ -7656,7 +7765,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   }}
                   className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 underline"
                 >
-                  Import Backup File
+                  Merge / Restore JSON File
                 </button>
               </div>
 
@@ -10011,6 +10120,16 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         isOpen={isCustomSplitBuilderOpen}
         onClose={() => setIsCustomSplitBuilderOpen(false)}
         onSaveRoutine={handleSaveCustomRoutine}
+      />
+
+      {/* Device Backup Append / Replace Confirmation Modal */}
+      <BackupSyncModal
+        isOpen={Boolean(pendingBackupImport)}
+        preview={pendingBackupImport?.preview || null}
+        onMerge={confirmBackupMerge}
+        onReplace={confirmBackupReplace}
+        onCancel={() => setPendingBackupImport(null)}
+        entityNoun="workout sessions"
       />
 
       </div>

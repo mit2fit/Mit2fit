@@ -51,6 +51,8 @@ import {
   PROFILE_STORAGE_KEY,
   HISTORY_STORAGE_KEY
 } from '../utils/fitnessStorage';
+import { BackupSyncModal, BackupSyncPreview } from '../components/BackupSyncModal';
+import { mergeBiometricHistories } from '../utils/backupMerge';
 
 interface BenchmarkData {
   age: number;
@@ -132,6 +134,13 @@ export default function Dashboard() {
     confirmText: string;
     isDanger?: boolean;
     onConfirm: () => void;
+  } | null>(null);
+
+  const [pendingBackupImport, setPendingBackupImport] = useState<{
+    protocolKey?: string;
+    benchmarks?: BenchmarkData;
+    history?: BiometricSnapshot[];
+    preview: BackupSyncPreview;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -348,7 +357,7 @@ export default function Dashboard() {
     setTimeout(() => setAlertNotice(null), 3000);
   };
 
-  // Import JSON backup
+  // Import JSON backup (with Append & Merge vs Replace preview)
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -357,20 +366,21 @@ export default function Dashboard() {
       try {
         const raw = event.target?.result as string;
         const parsed = JSON.parse(raw);
-        if (parsed.protocolKey) {
-          setProtocolKey(parsed.protocolKey);
-          saveStoredProtocolKey(parsed.protocolKey);
-        }
-        if (parsed.benchmarks && typeof parsed.benchmarks.age === 'number') {
-          setBenchmarks(parsed.benchmarks);
-          localStorage.setItem('mit2fit_benchmarks', JSON.stringify(parsed.benchmarks));
-        }
-        if (Array.isArray(parsed.history)) {
-          setHistory(parsed.history);
-          saveStoredBiometricHistory(parsed.history);
-        }
-        setAlertNotice('Backup successfully restored to dashboard!');
-        setTimeout(() => setAlertNotice(null), 3500);
+        const incomingHist: BiometricSnapshot[] = Array.isArray(parsed.history) ? parsed.history : [];
+        const diff = mergeBiometricHistories(history, incomingHist);
+
+        setPendingBackupImport({
+          protocolKey: typeof parsed.protocolKey === 'string' ? parsed.protocolKey : undefined,
+          benchmarks: parsed.benchmarks && typeof parsed.benchmarks.age === 'number' ? parsed.benchmarks : undefined,
+          history: incomingHist,
+          preview: {
+            fileName: file.name,
+            exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : undefined,
+            incomingSessions: incomingHist.length,
+            newSessionsToAdd: diff.addedCount,
+            duplicateSessions: diff.duplicateCount,
+          },
+        });
       } catch (err) {
         setAlertNotice('Failed to import backup file. Invalid format.');
         setTimeout(() => setAlertNotice(null), 4000);
@@ -378,6 +388,35 @@ export default function Dashboard() {
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const confirmDashboardMerge = () => {
+    if (!pendingBackupImport) return;
+    const res = mergeBiometricHistories(history, pendingBackupImport.history || []);
+    setHistory(res.merged);
+    saveStoredBiometricHistory(res.merged);
+    setPendingBackupImport(null);
+    setAlertNotice(`Merged +${res.addedCount} new biometric check-ins (${res.duplicateCount} duplicates skipped).`);
+    setTimeout(() => setAlertNotice(null), 4000);
+  };
+
+  const confirmDashboardReplace = () => {
+    if (!pendingBackupImport) return;
+    if (pendingBackupImport.protocolKey) {
+      setProtocolKey(pendingBackupImport.protocolKey);
+      saveStoredProtocolKey(pendingBackupImport.protocolKey);
+    }
+    if (pendingBackupImport.benchmarks) {
+      setBenchmarks(pendingBackupImport.benchmarks);
+      localStorage.setItem('mit2fit_benchmarks', JSON.stringify(pendingBackupImport.benchmarks));
+    }
+    if (pendingBackupImport.history) {
+      setHistory(pendingBackupImport.history);
+      saveStoredBiometricHistory(pendingBackupImport.history);
+    }
+    setPendingBackupImport(null);
+    setAlertNotice('Full dashboard backup restored.');
+    setTimeout(() => setAlertNotice(null), 3500);
   };
 
   return (
@@ -1183,6 +1222,15 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        <BackupSyncModal
+          isOpen={Boolean(pendingBackupImport)}
+          preview={pendingBackupImport?.preview || null}
+          onMerge={confirmDashboardMerge}
+          onReplace={confirmDashboardReplace}
+          onCancel={() => setPendingBackupImport(null)}
+          entityNoun="biometric check-ins"
+        />
 
       </div>
     </div>

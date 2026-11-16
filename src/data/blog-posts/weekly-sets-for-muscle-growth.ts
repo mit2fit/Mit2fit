@@ -1,13 +1,15 @@
 import type { FitnessSciencePost } from '../blogPosts';
+import weeklySetsImg from '../../assets/images/protocol_weekly_sets_1794839054507.jpg';
 
 export default {
   id: 'weekly-sets-for-muscle-growth',
   title: 'How Many Weekly Sets Build Muscle?',
-  excerpt: 'Research links more weekly sets to more muscle growth on average. Here’s how to decide whether adding sets makes sense for your training.',
+  excerpt:
+    'Research links more weekly sets to more muscle growth on average. Here is how to calibrate your weekly working volume productively.',
   publishedOn: '2026-11-10',
   category: 'TRAINING SCIENCE',
-  readTime: '3 MIN READ',
-  image: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&q=80&w=800',
+  readTime: '4 MIN READ',
+  image: weeklySetsImg,
   sections: [
     {
       heading: 'Count sets across the week',
@@ -26,7 +28,7 @@ export default {
     {
       heading: 'Use your training log to make one change at a time',
       paragraphs: [
-        'Record your working sets, loads, and reps for a few weeks. Compare performances at a similar effort and with consistent technique. If reps or load are moving up and you’re recovering between sessions, keep your current set count for another training block.',
+        'Record your working sets, loads, and reps for a few weeks. Compare performances at a similar effort and with consistent technique. If reps or load are moving up and you are recovering between sessions, keep your current set count for another training block.',
         'If progress has stalled for several weeks, check your attendance and recovery first. If both have been steady, try adding one working set per week for the target muscle and see how you respond. Reps and load are useful markers for a training log. Changes in muscle size take longer to assess.',
       ],
     },
@@ -41,4 +43,49 @@ export default {
       url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC12965823/',
     },
   ],
+  protocolSpec: {
+    code: 'HYP-VOL-10',
+    objective:
+      'Establish an individualized weekly working-set baseline and scale volume by +1 set per week only when overload stalls.',
+    metrics: [
+      { label: 'Weekly Target', value: '10–18', unit: 'sets / muscle' },
+      { label: 'Effort Proximity', value: '1–3', unit: 'RIR / set' },
+      { label: 'Rest Interval', value: '90–150', unit: 'sec' },
+      { label: 'Evaluation Block', value: '3–4', unit: 'weeks' },
+    ],
+    steps: [
+      {
+        id: 'ws-step-1',
+        title: 'Audit Working Sets Only',
+        instruction:
+          'Log only challenging working sets taken within 1–3 reps of technical failure; exclude warm-up sets.',
+      },
+      {
+        id: 'ws-step-2',
+        title: 'Separate Direct vs. Indirect Volume',
+        instruction:
+          'Count isolation and primary compound work at full credit; track synergistic muscles as fractional overlap.',
+      },
+      {
+        id: 'ws-step-3',
+        title: 'Hold Volume While Progressing',
+        instruction:
+          'Maintain your current set count for the entire block as long as reps or load advance week over week.',
+      },
+      {
+        id: 'ws-step-4',
+        title: 'Titrate +1 Set on Plateaus',
+        instruction:
+          'If strength and reps flatten for 2+ consecutive weeks despite solid sleep, add 1 working set per week to the lagging group.',
+      },
+    ],
+    trackerPreset: {
+      id: 'weekly-sets-for-muscle-growth',
+      label: 'Load Upper Hypertrophy Volume Split',
+      routineDefId: 'upper-split',
+      level: 'Intermediate',
+      enableDeload: false,
+      note: 'Protocol HYP-VOL-10 Active: Count 10-18 direct weekly sets at 1-3 RIR. Add +1 set only if progression stalls for 2 weeks.',
+    },
+  },
 } satisfies FitnessSciencePost;

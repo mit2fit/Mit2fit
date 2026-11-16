@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, ChangeEvent } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Dumbbell, 
@@ -107,6 +108,18 @@ import { syncNativeRestTimer, trackerNative, type RestActivityStatus } from '../
 import { ActiveWorkoutCompanionHUD } from '../components/ActiveWorkoutCompanionHUD';
 import { WorkoutShareCardModal } from '../components/WorkoutShareCardModal';
 import { CustomSplitBuilderModal, CustomRoutineOutput } from '../components/CustomSplitBuilderModal';
+import { MonthlyScheduleTab } from '../components/MonthlyScheduleTab';
+import { findBlogPostById } from '../data/blogPosts';
+import {
+  BLUEPRINT_STORAGE_KEY,
+  SCHEDULE_STORAGE_KEY,
+  ScheduledWorkoutItem,
+  WeeklyBlueprint,
+  downloadScheduleICS,
+  loadStoredBlueprint,
+  loadStoredSchedule,
+  toLocalDateKey,
+} from '../utils/workoutScheduler';
 
 interface WorkoutSet {
   id: string;
@@ -1128,7 +1141,30 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     isRunning: boolean;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'workout' | 'weekly' | 'library' | 'history'>('workout');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'workout' | 'schedule' | 'weekly' | 'library' | 'history'>(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('tab') === 'schedule') return 'schedule';
+    } catch {}
+    return 'workout';
+  });
+  const [scheduledWorkouts, setScheduledWorkouts] = useState<ScheduledWorkoutItem[]>(loadStoredSchedule);
+  const [weeklyBlueprint, setWeeklyBlueprint] = useState<WeeklyBlueprint>(loadStoredBlueprint);
+  const [isTodayBannerDismissed, setIsTodayBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(scheduledWorkouts));
+    } catch {}
+  }, [scheduledWorkouts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BLUEPRINT_STORAGE_KEY, JSON.stringify(weeklyBlueprint));
+    } catch {}
+  }, [weeklyBlueprint]);
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialSession?.unit || 'lbs');
   const [sessionTitle, setSessionTitle] = useState(recentSession?.sessionTitle || initialRoutine.name);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(recentSession?.activeTemplateId || initialRoutine.id);
@@ -1398,6 +1434,220 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     } else {
       setAlertNotice('⚡ Standard Overload Protocol Restored: Full volume and progressive overload active.');
     }
+    setTimeout(() => setAlertNotice(null), 4000);
+  };
+
+  // Consume Fitness Science Protocol launch (?protocol=<id> or mit2fit_pending_protocol)
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const queryProtocol = searchParams.get('protocol');
+    let pendingProtocol: string | null = null;
+    try {
+      pendingProtocol = localStorage.getItem('mit2fit_pending_protocol');
+    } catch {
+      pendingProtocol = null;
+    }
+
+    const targetProtocolId = queryProtocol || pendingProtocol;
+    if (!targetProtocolId) return;
+
+    try {
+      localStorage.removeItem('mit2fit_pending_protocol');
+    } catch {}
+
+    const post = findBlogPostById(targetProtocolId);
+    if (!post) {
+      if (queryProtocol) navigate('/tracker', { replace: true });
+      return;
+    }
+
+    const preset = post.protocolSpec.trackerPreset;
+    const routine = buildParametricRoutine(preset.routineDefId, preset.level);
+    setRoutineTierMap(prev => ({ ...prev, [preset.routineDefId]: preset.level }));
+    setActiveTemplateId(routine.id);
+    setSessionTitle(routine.name);
+
+    let nextExercises = buildRoutineExercises(routine, history);
+    const shouldDeload = Boolean(preset.enableDeload);
+    if (shouldDeload) {
+      nextExercises = nextExercises.map(ex =>
+        ex.sets.length > 2 ? { ...ex, sets: ex.sets.slice(0, 2) } : ex
+      );
+    }
+
+    setActiveExercises(nextExercises);
+    setIsDeloadActive(shouldDeload);
+    try {
+      localStorage.setItem('mit2fit_deload_active', String(shouldDeload));
+    } catch {}
+
+    setSessionNotes(preset.note);
+    setIsReadinessNotesExpanded(true);
+    setActiveTab('workout');
+    resetWorkoutTimer();
+    setHasStartedWorkout(false);
+    setAlertNotice(
+      `Science Protocol Applied (${post.protocolSpec.code}): ${preset.label}${shouldDeload ? ' · Deload Mode Enabled' : ''}`
+    );
+
+    if (queryProtocol) {
+      navigate('/tracker', { replace: true });
+    }
+
+    const clearTimer = window.setTimeout(() => setAlertNotice(null), 5000);
+    return () => window.clearTimeout(clearTimer);
+  }, [location.search]);
+
+  // Active-tab Reminder Watcher for Today's Scheduled Workout
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      const todayKey = toLocalDateKey(now);
+      const dueItem = scheduledWorkouts.find(
+        (item) =>
+          item.date === todayKey &&
+          item.status === 'scheduled' &&
+          item.reminderMinutesBefore >= 0 &&
+          !item.notifiedAt
+      );
+      if (!dueItem) return;
+
+      const [hh, mm] = (dueItem.time || '07:00').split(':').map(Number);
+      const scheduledAt = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        hh || 7,
+        mm || 0,
+        0
+      );
+      const triggerAt = new Date(scheduledAt.getTime() - dueItem.reminderMinutesBefore * 60000);
+      const windowEnd = new Date(scheduledAt.getTime() + 10 * 60000);
+
+      if (now >= triggerAt && now <= windowEnd) {
+        const stampedAt = now.toISOString();
+        setScheduledWorkouts((prev) =>
+          prev.map((item) => (item.id === dueItem.id ? { ...item, notifiedAt: stampedAt } : item))
+        );
+        setAlertNotice(
+          `Workout Reminder: "${dueItem.title}" scheduled at ${dueItem.time}.`
+        );
+        if (
+          typeof window !== 'undefined' &&
+          'Notification' in window &&
+          Notification.permission === 'granted'
+        ) {
+          try {
+            new Notification(`Mit2Fit Reminder: ${dueItem.title}`, {
+              body: `Scheduled for ${dueItem.time}. Open Tracker to start your session.`,
+            });
+          } catch {}
+        }
+      }
+    };
+
+    checkReminders();
+    const interval = window.setInterval(checkReminders, 30000);
+    return () => window.clearInterval(interval);
+  }, [scheduledWorkouts]);
+
+  const handleRequestScheduleAlerts = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setAlertNotice('Browser notifications are unavailable here. Use Export Month (.ics) for phone calendar alarms.');
+      setTimeout(() => setAlertNotice(null), 4500);
+      return;
+    }
+    try {
+      const res = await Notification.requestPermission();
+      setNotificationPermission(res);
+      if (res === 'granted') {
+        setAlertNotice('Browser workout reminders enabled! For closed-app phone reminders, also export .ics.');
+      } else {
+        setAlertNotice('Browser notifications declined. Use Export Month (.ics) for native phone alerts.');
+      }
+    } catch {
+      setAlertNotice('Could not request browser notifications.');
+    }
+    setTimeout(() => setAlertNotice(null), 4500);
+  };
+
+  const handleSaveCustomTemplateFromSchedule = (
+    name: string,
+    split: SplitCategory,
+    exerciseIds: string[]
+  ): RoutineTemplate => {
+    const newId = `custom-sched-${Date.now()}`;
+    const configs = exerciseIds.map((exId) => {
+      const def = EXERCISE_DATABASE.find((e) => e.id === exId);
+      return {
+        exerciseId: exId,
+        targetSets: def?.defaultTarget?.targetSets || 3,
+        targetReps: def?.defaultTarget?.targetReps || 10,
+        targetWeight: def?.defaultTarget?.defaultWeight || 45,
+        equipment: def?.defaultEquipment || 'Barbell',
+      };
+    });
+    const newTemplate: RoutineTemplate = {
+      id: newId,
+      name,
+      split,
+      level: 'Intermediate',
+      daysPerWeek: '3–4 days / week',
+      durationMin: Math.max(30, exerciseIds.length * 10),
+      description: `Scheduled custom workout (${exerciseIds.length} movements)`,
+      exerciseIds,
+      exerciseConfigs: configs,
+      isCustom: true,
+    };
+    saveRoutines([newTemplate, ...routines]);
+    return newTemplate;
+  };
+
+  const handleStartScheduledWorkout = (item: ScheduledWorkoutItem) => {
+    if (item.sourceType === 'parametric' && item.routineId) {
+      const tier = item.level || 'Intermediate';
+      const routine = buildParametricRoutine(item.routineId, tier);
+      setRoutineTierMap((prev) => ({ ...prev, [item.routineId!]: tier }));
+      setActiveTemplateId(routine.id);
+      setSessionTitle(routine.name);
+      setActiveExercises(buildRoutineExercises(routine, history));
+    } else if (item.sourceType === 'custom_routine' && item.routineId) {
+      const found = routines.find((r) => r.id === item.routineId);
+      if (found) {
+        setActiveTemplateId(found.id);
+        setSessionTitle(found.name);
+        setActiveExercises(buildRoutineExercises(found, history));
+      } else {
+        setAlertNotice(`Custom routine "${item.title}" was not found—loaded default template.`);
+      }
+    } else {
+      const ids =
+        item.customExerciseIds && item.customExerciseIds.length > 0
+          ? item.customExerciseIds
+          : EXERCISE_DATABASE.filter((e) => e.split === (item.split === 'Custom' ? 'Upper Body' : item.split))
+              .slice(0, 4)
+              .map((e) => e.id);
+      const adHocTemplate: RoutineTemplate = {
+        id: `adhoc-${item.id}`,
+        name: item.title,
+        split: item.split === 'Custom' ? 'Upper Body' : item.split,
+        level: 'Intermediate',
+        description: item.notes || 'Scheduled custom workout',
+        exerciseIds: ids,
+      };
+      setActiveTemplateId(adHocTemplate.id);
+      setSessionTitle(item.title);
+      setActiveExercises(buildRoutineExercises(adHocTemplate, history));
+    }
+
+    if (item.notes) {
+      setSessionNotes(item.notes);
+      setIsReadinessNotesExpanded(true);
+    }
+    resetWorkoutTimer();
+    setHasStartedWorkout(false);
+    setActiveTab('workout');
+    setAlertNotice(`Loaded scheduled workout: "${item.title}"`);
     setTimeout(() => setAlertNotice(null), 4000);
   };
 
@@ -2656,6 +2906,14 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     };
 
     setHistory(prev => [workoutRecord, ...prev]);
+    const todayKey = toLocalDateKey(now);
+    setScheduledWorkouts(prev =>
+      prev.map(item =>
+        item.date === todayKey && item.status !== 'completed'
+          ? { ...item, status: 'completed' }
+          : item
+      )
+    );
     setCompletedModalData(workoutRecord);
     resetWorkoutTimer();
     setHasStartedWorkout(false);
@@ -2697,9 +2955,12 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       exportedAt: nowIso,
       totalWorkouts: history.length,
       totalRoutines: routines.length,
+      totalScheduledWorkouts: scheduledWorkouts.length,
       unit,
       history,
-      routines
+      routines,
+      scheduledWorkouts,
+      weeklyBlueprint
     };
     const dataStr = JSON.stringify(backupPayload, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -2746,6 +3007,12 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
           if (Array.isArray(parsed.history)) {
             setHistory(parsed.history);
             restoredWorkouts = parsed.history.length;
+          }
+          if (Array.isArray(parsed.scheduledWorkouts)) {
+            setScheduledWorkouts(parsed.scheduledWorkouts);
+          }
+          if (parsed.weeklyBlueprint && typeof parsed.weeklyBlueprint === 'object') {
+            setWeeklyBlueprint(parsed.weeklyBlueprint);
           }
 
           if (restoredWorkouts > 0 || restoredRoutines > 0) {
@@ -3182,16 +3449,27 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
               </div>
             )}
 
-            <div className="bg-stone-950 p-1 rounded-xl border border-stone-800 flex items-center text-xs">
+            <div className="bg-stone-950 p-1 rounded-xl border border-stone-800 flex items-center text-xs overflow-x-auto no-scrollbar max-w-full">
               <button
                 onClick={() => setActiveTab('workout')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition ${
+                className={`px-3 py-1.5 rounded-lg font-semibold transition whitespace-nowrap shrink-0 ${
                   activeTab === 'workout' 
                     ? 'bg-amber-500 text-stone-950 shadow-sm' 
                     : 'text-stone-400 hover:text-white'
                 }`}
               >
                 Active Routine ({activeExercises.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('schedule')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  activeTab === 'schedule'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Schedule ({scheduledWorkouts.filter(s => s.status === 'scheduled').length})</span>
               </button>
               <button
                 onClick={() => setActiveTab('weekly')}
@@ -3466,8 +3744,74 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         )}
       </div>
 
+      {alertNotice && (
+        <div className="fixed bottom-5 right-5 z-[80] max-w-md bg-stone-950/95 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="font-medium">{alertNotice}</span>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {(() => {
+          if (isTodayBannerDismissed || activeTab === 'schedule') return null;
+          const todayKey = toLocalDateKey(new Date());
+          const todayWorkout = scheduledWorkouts.find(
+            (s) => s.date === todayKey && s.status === 'scheduled'
+          );
+          if (!todayWorkout) return null;
+          return (
+            <div className="mb-5 bg-stone-900/80 border border-amber-500/40 rounded-2xl px-4 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                  <BellRing className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-mono text-[11px] text-amber-400 uppercase tracking-wider">
+                    Scheduled Today · {todayWorkout.time}
+                  </div>
+                  <div className="font-bold text-white text-sm">
+                    {todayWorkout.title}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleStartScheduledWorkout(todayWorkout)}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold transition flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Load & Start</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadScheduleICS([todayWorkout], routines, `mit2fit-${todayWorkout.date}.ics`)}
+                  className="px-3 py-1.5 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800 text-stone-200 font-medium transition flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Calendar (.ics)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('schedule')}
+                  className="px-3 py-1.5 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800 text-stone-300 font-medium transition whitespace-nowrap"
+                >
+                  Open Calendar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsTodayBannerDismissed(true)}
+                  aria-label="Dismiss reminder banner"
+                  className="p-1.5 rounded-lg text-stone-500 hover:text-white hover:bg-stone-800 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          );
+        })()}
         {!nativeApp && <TrackerHomeScreen />}
 
         {/* ============================================================== */}
@@ -5056,6 +5400,25 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         )}
 
         {/* ============================================================== */}
+        {activeTab === 'schedule' && (
+          <MonthlyScheduleTab
+            scheduledWorkouts={scheduledWorkouts}
+            onChangeSchedule={setScheduledWorkouts}
+            weeklyBlueprint={weeklyBlueprint}
+            onChangeBlueprint={setWeeklyBlueprint}
+            routines={routines}
+            onSaveCustomTemplateFromSchedule={handleSaveCustomTemplateFromSchedule}
+            onStartScheduledWorkout={handleStartScheduledWorkout}
+            onOpenCustomSplitBuilder={() => setIsCustomSplitBuilderOpen(true)}
+            notificationPermission={notificationPermission}
+            onRequestNotifications={handleRequestScheduleAlerts}
+            onNotify={(msg) => {
+              setAlertNotice(msg);
+              setTimeout(() => setAlertNotice(null), 4000);
+            }}
+          />
+        )}
+
         {/* TAB 2: WEEKLY PROGRESSION & OVERLOAD ADVISOR                   */}
         {/* ============================================================== */}
         {activeTab === 'weekly' && (

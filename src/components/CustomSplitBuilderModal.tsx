@@ -283,29 +283,73 @@ export const CustomSplitBuilderModal: React.FC<CustomSplitBuilderModalProps> = (
                     {/* Quick Config Row: Sets, Reps, Superset */}
                     <div className="grid grid-cols-3 gap-1.5 text-[11px] font-mono pt-1 border-t border-stone-800/60">
                       <div>
-                        <span className="text-[9px] text-stone-500 block">SETS</span>
-                        <input
-                          type="number"
-                          aria-label={`Sets for ${slot.exercise.name}`}
-                          value={slot.targetSets}
-                          min={1}
-                          max={10}
-                          onChange={(e) => handleUpdateSlot(sIdx, { targetSets: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })}
-                          className="w-full bg-stone-950 border border-stone-800 rounded px-1.5 py-0.5 text-amber-400 font-bold text-center"
-                        />
+                        <span className="text-[9px] text-stone-500 block mb-0.5">SETS</span>
+                        <div className="flex items-center gap-0.5 bg-stone-950 border border-stone-800 rounded p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSlot(sIdx, { targetSets: Math.max(1, slot.targetSets - 1) })}
+                            className="w-6 h-6 rounded bg-stone-900 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center shrink-0"
+                            title="Decrease sets"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            aria-label={`Sets for ${slot.exercise.name}`}
+                            value={slot.targetSets}
+                            min={1}
+                            max={10}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10);
+                              handleUpdateSlot(sIdx, { targetSets: Number.isNaN(n) ? 1 : Math.min(10, Math.max(1, n)) });
+                            }}
+                            className="w-full min-w-0 bg-transparent text-amber-400 font-bold text-center focus:outline-none tabular-nums"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSlot(sIdx, { targetSets: Math.min(10, slot.targetSets + 1) })}
+                            className="w-6 h-6 rounded bg-stone-900 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center shrink-0"
+                            title="Increase sets"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
 
                       <div>
-                        <span className="text-[9px] text-stone-500 block">REPS</span>
-                        <input
-                          type="number"
-                          aria-label={`Reps for ${slot.exercise.name}`}
-                          value={slot.targetReps}
-                          min={1}
-                          max={50}
-                          onChange={(e) => handleUpdateSlot(sIdx, { targetReps: Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)) })}
-                          className="w-full bg-stone-950 border border-stone-800 rounded px-1.5 py-0.5 text-stone-200 font-bold text-center"
-                        />
+                        <span className="text-[9px] text-stone-500 block mb-0.5">REPS</span>
+                        <div className="flex items-center gap-0.5 bg-stone-950 border border-stone-800 rounded p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSlot(sIdx, { targetReps: Math.max(1, slot.targetReps - 1) })}
+                            className="w-6 h-6 rounded bg-stone-900 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center shrink-0"
+                            title="Decrease reps"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            aria-label={`Reps for ${slot.exercise.name}`}
+                            value={slot.targetReps}
+                            min={1}
+                            max={50}
+                            onChange={(e) => {
+                              const n = parseInt(e.target.value, 10);
+                              handleUpdateSlot(sIdx, { targetReps: Number.isNaN(n) ? 1 : Math.min(50, Math.max(1, n)) });
+                            }}
+                            className="w-full min-w-0 bg-transparent text-stone-200 font-bold text-center focus:outline-none tabular-nums"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateSlot(sIdx, { targetReps: Math.min(50, slot.targetReps + 1) })}
+                            className="w-6 h-6 rounded bg-stone-900 hover:bg-stone-800 text-stone-300 font-bold flex items-center justify-center shrink-0"
+                            title="Increase reps"
+                          >
+                            +
+                          </button>
+                        </div>
                       </div>
 
                       <div>

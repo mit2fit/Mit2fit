@@ -1150,10 +1150,11 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'workout' | 'schedule' | 'weekly' | 'library' | 'history'>(() => {
+  const [activeTab, setActiveTab] = useState<'workout' | 'routines' | 'schedule' | 'weekly' | 'library' | 'history'>(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get('tab') === 'schedule') return 'schedule';
+      if (sp.get('tab') === 'routines') return 'routines';
     } catch {}
     return 'workout';
   });
@@ -1177,8 +1178,30 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   const [activeTemplateId, setActiveTemplateId] = useState<string>(recentSession?.activeTemplateId || initialRoutine.id);
   
   // Workout UI Layout & Drawer States (Streamlined Space Management)
-  const [isRoutinePickerExpanded, setIsRoutinePickerExpanded] = useState<boolean>(false);
   const [isToolsTrayExpanded, setIsToolsTrayExpanded] = useState<boolean>(false);
+  const [collapsedExercises, setCollapsedExercises] = useState<Record<string, boolean>>({});
+  const [autoCollapseCompleted, setAutoCollapseCompleted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mit2fit_auto_collapse_done') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const toggleAutoCollapseCompleted = () => {
+    setAutoCollapseCompleted(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('mit2fit_auto_collapse_done', String(next));
+      } catch {}
+      return next;
+    });
+  };
+  const toggleExerciseCollapsed = (instanceId: string) => {
+    setCollapsedExercises(prev => ({
+      ...prev,
+      [instanceId]: !prev[instanceId],
+    }));
+  };
   const [isReadinessNotesExpanded, setIsReadinessNotesExpanded] = useState<boolean>(false);
   const [activeExerciseMenuId, setActiveExerciseMenuId] = useState<string | null>(null);
   
@@ -2115,6 +2138,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     setActiveTemplateId(routine.id);
     setSessionTitle(routine.name);
     setActiveExercises(buildRoutineExercises(routine, history));
+    setCollapsedExercises({});
     resetWorkoutTimer();
     setHasStartedWorkout(false);
     setRestInterval(null);
@@ -2451,133 +2475,131 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
   // 1-Tap apply previous set's weight & reps to this specific set
   const applyPreviousSetToCurrent = (exIdx: number, sIdx: number, prevSet: { weight: number; reps: number }) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      next[exIdx].sets[sIdx] = {
-        ...next[exIdx].sets[sIdx],
-        weight: prevSet.weight,
-        reps: prevSet.reps
-      };
-      return next;
-    });
+    setActiveExercises(prev => prev.map((ex, i) =>
+      i !== exIdx
+        ? ex
+        : {
+            ...ex,
+            sets: ex.sets.map((s, idx) =>
+              idx === sIdx ? { ...s, weight: prevSet.weight, reps: prevSet.reps } : s
+            ),
+          }
+    ));
     setAlertNotice(`Set ${sIdx + 1} set to ${prevSet.weight} ${unit} × ${prevSet.reps} reps`);
     setTimeout(() => setAlertNotice(null), 2000);
   };
 
   // ==============================================================
-  // REACTIVE TARGET SETTERS (Changes automatically apply to sets)
+  // REACTIVE TARGET SETTERS (StrictMode-safe immutable updates)
   // ==============================================================
   const updateTargetSets = (exIdx: number, delta: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const ex = next[exIdx];
-      const newTarget = Math.max(1, Math.min(8, ex.targetSets + delta));
-      if (newTarget === ex.targetSets) return prev;
+    const targetEx = activeExercises[exIdx];
+    if (!targetEx) return;
 
-      const currentSets = [...ex.sets];
-      if (newTarget > currentSets.length) {
-        const toAdd = newTarget - currentSets.length;
-        for (let i = 0; i < toAdd; i++) {
-          currentSets.push({
-            id: `s-${Date.now()}-${currentSets.length + 1}`,
-            setNumber: currentSets.length + 1,
-            weight: ex.targetWeight,
-            reps: ex.targetReps,
-            completed: false,
-            type: 'Working'
-          });
+    const currentLen = targetEx.sets.length;
+    const desiredCount = Math.max(1, Math.min(10, currentLen + delta));
+    if (desiredCount === currentLen) return;
+
+    if (desiredCount < currentLen) {
+      const uncompletedCount = targetEx.sets.filter(s => !s.completed).length;
+      if (uncompletedCount === 0) {
+        setAlertNotice('All sets are already completed — uncheck or delete a set row to reduce sets.');
+        setTimeout(() => setAlertNotice(null), 3000);
+        return;
+      }
+    }
+
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const baseLen = ex.sets.length;
+      const nextCount = Math.max(1, Math.min(10, baseLen + delta));
+      if (nextCount === baseLen) return ex;
+
+      let updatedSets: WorkoutSet[];
+      if (nextCount > baseLen) {
+        const toAdd = nextCount - baseLen;
+        const lastSet = ex.sets[ex.sets.length - 1];
+        const added: WorkoutSet[] = Array.from({ length: toAdd }).map((_, idx) => ({
+          id: `s-${Date.now()}-${baseLen + idx + 1}-${Math.random().toString(36).slice(2, 6)}`,
+          setNumber: baseLen + idx + 1,
+          weight: lastSet ? lastSet.weight : ex.targetWeight,
+          reps: lastSet ? lastSet.reps : ex.targetReps,
+          completed: false,
+          type: 'Working',
+        }));
+        updatedSets = [...ex.sets, ...added];
+      } else {
+        let toTrim = baseLen - nextCount;
+        const kept = [...ex.sets];
+        for (let idx = kept.length - 1; idx >= 0 && toTrim > 0 && kept.length > 1; idx--) {
+          if (!kept[idx].completed) {
+            kept.splice(idx, 1);
+            toTrim--;
+          }
         }
-      } else if (newTarget < currentSets.length) {
-        const uncompletedIndices: number[] = [];
-        currentSets.forEach((s, idx) => {
-          if (!s.completed) uncompletedIndices.push(idx);
-        });
-        const trimCount = currentSets.length - newTarget;
-        for (let i = 0; i < trimCount && uncompletedIndices.length > 0; i++) {
-          const removeIdx = uncompletedIndices.pop()!;
-          currentSets.splice(removeIdx, 1);
-        }
-        currentSets.forEach((s, idx) => {
-          s.setNumber = idx + 1;
-        });
+        updatedSets = kept.map((s, idx) => ({ ...s, setNumber: idx + 1 }));
       }
 
-      next[exIdx] = {
+      return {
         ...ex,
-        targetSets: newTarget,
-        sets: currentSets
+        targetSets: updatedSets.length,
+        sets: updatedSets,
       };
-      return next;
-    });
+    }));
   };
 
   const updateTargetReps = (exIdx: number, delta: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const ex = next[exIdx];
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
       const newTarget = Math.max(1, ex.targetReps + delta);
-
-      const updatedSets = ex.sets.map(s => {
-        if (!s.completed) {
-          return { ...s, reps: newTarget };
-        }
-        return s;
-      });
-
-      next[exIdx] = {
+      return {
         ...ex,
         targetReps: newTarget,
-        sets: updatedSets
+        sets: ex.sets.map(s => (s.completed ? s : { ...s, reps: newTarget })),
       };
-      return next;
-    });
+    }));
   };
 
   const updateTargetWeight = (exIdx: number, delta: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const ex = next[exIdx];
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
       const newWeight = Math.max(0, ex.targetWeight + delta);
-
-      const updatedSets = ex.sets.map(s => {
-        if (!s.completed) {
-          return { ...s, weight: newWeight };
-        }
-        return s;
-      });
-
-      next[exIdx] = {
+      return {
         ...ex,
         targetWeight: newWeight,
-        sets: updatedSets
+        sets: ex.sets.map(s => (s.completed ? s : { ...s, weight: newWeight })),
       };
-      return next;
-    });
+    }));
   };
 
   const updateIndividualSetWeight = (exIdx: number, setIdx: number, delta: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const targetSet = next[exIdx].sets[setIdx];
-      const newWeight = Math.max(0, targetSet.weight + delta);
-      next[exIdx].sets[setIdx] = { ...targetSet, weight: newWeight };
-      return next;
-    });
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      return {
+        ...ex,
+        sets: ex.sets.map((s, idx) =>
+          idx === setIdx ? { ...s, weight: Math.max(0, s.weight + delta) } : s
+        ),
+      };
+    }));
   };
 
   const updateIndividualSetReps = (exIdx: number, setIdx: number, delta: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const targetSet = next[exIdx].sets[setIdx];
-      const newReps = Math.max(0, targetSet.reps + delta);
-      next[exIdx].sets[setIdx] = { ...targetSet, reps: newReps };
-      return next;
-    });
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      return {
+        ...ex,
+        sets: ex.sets.map((s, idx) =>
+          idx === setIdx ? { ...s, reps: Math.max(0, s.reps + delta) } : s
+        ),
+      };
+    }));
   };
 
   const toggleSetCompleted = (exIdx: number, setIdx: number) => {
     const exercise = activeExercises[exIdx];
-    const targetSet = exercise.sets[setIdx];
+    const targetSet = exercise?.sets[setIdx];
+    if (!exercise || !targetSet) return;
     const completed = !targetSet.completed;
 
     if (!hasStartedWorkout) {
@@ -2585,11 +2607,27 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       startWorkoutTimer();
     }
 
+    const updatedSets = exercise.sets.map(set =>
+      set.id === targetSet.id ? { ...set, completed } : set
+    );
+    const willBeAllDone = completed && updatedSets.length > 0 && updatedSets.every(s => s.completed);
+
     setActiveExercises(current => current.map(entry =>
       entry.instanceId === exercise.instanceId
         ? { ...entry, sets: entry.sets.map(set => set.id === targetSet.id ? { ...set, completed } : set) }
         : entry
     ));
+
+    if (willBeAllDone && autoCollapseCompleted) {
+      setCollapsedExercises(prev => ({
+        ...prev,
+        [exercise.instanceId]: true,
+      }));
+    } else if (!completed) {
+      setCollapsedExercises(prev => (
+        prev[exercise.instanceId] ? { ...prev, [exercise.instanceId]: false } : prev
+      ));
+    }
 
     if (!completed) return;
 
@@ -2615,54 +2653,88 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     }
   };
 
+  // UX #3: 1-tap Log Remaining sets for the current exercise
+  const checkAllRemainingSetsForExercise = (exIdx: number) => {
+    const exercise = activeExercises[exIdx];
+    if (!exercise || exercise.sets.every(s => s.completed)) return;
+
+    if (!hasStartedWorkout) {
+      setHasStartedWorkout(true);
+      startWorkoutTimer();
+    }
+
+    setActiveExercises(current => current.map((entry, idx) =>
+      idx === exIdx
+        ? { ...entry, sets: entry.sets.map(s => ({ ...s, completed: true })) }
+        : entry
+    ));
+
+    if (autoCollapseCompleted) {
+      setCollapsedExercises(prev => ({
+        ...prev,
+        [exercise.instanceId]: true,
+      }));
+    }
+
+    setAlertNotice(`Logged all remaining sets for ${exercise.exercise.name}!`);
+    setTimeout(() => setAlertNotice(null), 2500);
+  };
+
   const cloneSet = (exIdx: number, setIdx: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const prevSet = next[exIdx].sets[setIdx];
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
+      const prevSet = ex.sets[setIdx];
+      if (!prevSet) return ex;
       const newSet: WorkoutSet = {
         id: `set-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        setNumber: next[exIdx].sets.length + 1,
+        setNumber: ex.sets.length + 1,
         weight: prevSet.weight,
         reps: prevSet.reps,
         completed: false,
         type: prevSet.type
       };
-      next[exIdx].sets.push(newSet);
-      next[exIdx].targetSets = next[exIdx].sets.length;
-      return next;
-    });
+      const updatedSets = [...ex.sets, newSet];
+      return {
+        ...ex,
+        sets: updatedSets,
+        targetSets: updatedSets.length,
+      };
+    }));
   };
 
   const removeSet = (exIdx: number, setIdx: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      if (next[exIdx].sets.length <= 1) return prev;
-      next[exIdx].sets = next[exIdx].sets.filter((_, i) => i !== setIdx).map((s, idx) => ({
-        ...s,
-        setNumber: idx + 1
-      }));
-      next[exIdx].targetSets = next[exIdx].sets.length;
-      return next;
-    });
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx || ex.sets.length <= 1) return ex;
+      const updatedSets = ex.sets
+        .filter((_, idx) => idx !== setIdx)
+        .map((s, idx) => ({ ...s, setNumber: idx + 1 }));
+      return {
+        ...ex,
+        sets: updatedSets,
+        targetSets: updatedSets.length,
+      };
+    }));
   };
 
   const addSet = (exIdx: number) => {
-    setActiveExercises(prev => {
-      const next = [...prev];
-      const ex = next[exIdx];
+    setActiveExercises(prev => prev.map((ex, i) => {
+      if (i !== exIdx) return ex;
       const lastSet = ex.sets[ex.sets.length - 1];
       const newSet: WorkoutSet = {
-        id: `set-${Date.now()}`,
+        id: `set-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         setNumber: ex.sets.length + 1,
         weight: lastSet ? lastSet.weight : ex.targetWeight,
         reps: lastSet ? lastSet.reps : ex.targetReps,
         completed: false,
         type: 'Working'
       };
-      ex.sets.push(newSet);
-      ex.targetSets = ex.sets.length;
-      return next;
-    });
+      const updatedSets = [...ex.sets, newSet];
+      return {
+        ...ex,
+        sets: updatedSets,
+        targetSets: updatedSets.length,
+      };
+    }));
   };
 
   const removeExercise = (instanceId: string) => {
@@ -2708,8 +2780,11 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         setNumber: idx + 1
       }));
 
-      next[exIdx].sets = combined;
-      next[exIdx].targetSets = combined.length;
+      next[exIdx] = {
+        ...ex,
+        sets: combined,
+        targetSets: combined.length
+      };
       return next;
     });
     setAlertNotice(`Warm-up progression ramp generated for ${activeExercises[exIdx].exercise.name}!`);
@@ -3263,7 +3338,6 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
     activateRoutine(routine);
     setActiveTab('workout');
-    setIsRoutinePickerExpanded(false);
     setAlertNotice(`Saved and activated "${routine.name}" (${routine.exerciseIds.length} movements)`);
     setTimeout(() => setAlertNotice(null), 4000);
     return true;
@@ -3558,8 +3632,9 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
               </div>
             )}
 
-            <div className="bg-stone-950 p-1 rounded-xl border border-stone-800 flex items-center text-xs overflow-x-auto no-scrollbar max-w-full">
+            <div className="hidden md:flex bg-stone-950 p-1 rounded-xl border border-stone-800 items-center text-xs overflow-x-auto no-scrollbar max-w-full">
               <button
+                type="button"
                 onClick={() => setActiveTab('workout')}
                 className={`px-3 py-1.5 rounded-lg font-semibold transition whitespace-nowrap shrink-0 ${
                   activeTab === 'workout' 
@@ -3567,9 +3642,22 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                     : 'text-stone-400 hover:text-white'
                 }`}
               >
-                Active Routine ({activeExercises.length})
+                Active Workout ({activeExercises.length})
               </button>
               <button
+                type="button"
+                onClick={() => setActiveTab('routines')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  activeTab === 'routines'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Routines</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('schedule')}
                 className={`px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   activeTab === 'schedule'
@@ -3854,7 +3942,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
       </div>
 
       {alertNotice && (
-        <div className="fixed bottom-5 right-5 z-[80] max-w-md bg-stone-950/95 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs">
+        <div className="fixed bottom-16 md:bottom-5 left-4 right-4 md:left-auto md:right-5 z-[80] max-w-md bg-stone-950/95 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="font-medium">{alertNotice}</span>
         </div>
@@ -3928,426 +4016,54 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         {/* ============================================================== */}
         {activeTab === 'workout' && (
           <div className={`space-y-5 ${hasStartedWorkout ? 'pb-28' : 'pb-12'}`}>
-            {/* ============================================================== */}
-            {/* 1. COLLAPSIBLE ROUTINE DISCOVERY TRAY                          */}
-            {/* ============================================================== */}
-            {!isRoutinePickerExpanded ? (
-              /* Sleek 1-Row Collapsed Discovery Bar (Zero-clutter during active session) */
-              <div className="bg-stone-900/60 border border-stone-800/80 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md backdrop-blur-sm transition-all">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
-                    <BookmarkCheck className="w-4 h-4 text-amber-500" />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] text-stone-400 font-semibold uppercase tracking-wider">Routine:</span>
-                      <span className="text-sm font-bold text-white tracking-tight">
-                        {activeParametricDef?.name || routines.find(r => r.id === activeTemplateId)?.name || sessionTitle}
-                      </span>
-                      {activeParametricDef && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                          {activeRoutineTier}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] text-stone-400 mt-0.5">
-                      <span>{activeExercises.length} Movements</span>
-                      <span>·</span>
-                      <span>{activeExercises.reduce((sum, e) => sum + e.sets.length, 0)} Prescribed Sets</span>
-                      <span>·</span>
-                      <span className="text-stone-500">{routines.length} saved templates</span>
-                    </div>
-                  </div>
+            {/* Slim Active Routine Context Strip (Routines browser moved to dedicated Routines tab) */}
+            <div className="bg-stone-900/60 border border-stone-800/80 rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md backdrop-blur-sm">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                  <BookmarkCheck className="w-4 h-4 text-amber-500" />
                 </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-center">
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomSplitBuilderOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-                    title="Build equipment-adaptive routine or custom split"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Custom Split</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsRoutinePickerExpanded(true)}
-                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-                    title="Expand routine browser to view splits and tiers"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Browse Splits & Tiers</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-stone-400" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenCreateRoutine}
-                    className="p-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-amber-300 border border-stone-700 transition"
-                    title="Create Brand New Routine"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleOpenSaveActiveAsRoutine}
-                    className="p-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-400 hover:text-amber-300 border border-stone-700 transition"
-                    title="Save Current Session as New Routine"
-                  >
-                    <FolderPlus className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Expanded Routine Browser Tray */
-              <div className="bg-stone-900/70 p-4 sm:p-5 rounded-2xl border border-stone-800 space-y-4 shadow-xl animate-in fade-in">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-800">
-                  <div className="flex items-center gap-2">
-                    <BookmarkCheck className="w-4 h-4 text-amber-500" />
-                    <span className="text-sm font-bold uppercase tracking-wider text-stone-200">
-                      Routines & Normalized Splits Directory
-                    </span>
-                    <span className="text-[10px] bg-stone-800 text-stone-400 px-2 py-0.5 rounded-full font-mono">
-                      {routines.length} saved
-                    </span>
-                  </div>
-
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => setIsCustomSplitBuilderOpen(true)}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-semibold transition shadow-sm"
-                      title="Open interactive custom routine & equipment filter builder"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Custom Split Builder</span>
-                    </button>
-                    <button
-                      onClick={handleOpenCreateRoutine}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 rounded-xl text-xs font-medium transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>New Routine</span>
-                    </button>
-                    <button
-                      onClick={handleOpenSaveActiveAsRoutine}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 rounded-xl text-xs font-medium transition"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Save Current</span>
-                    </button>
-                    <button
-                      onClick={handleRestoreDefaultRoutines}
-                      className="p-1.5 rounded-lg text-stone-500 hover:text-stone-300 hover:bg-stone-800 transition text-[11px]"
-                      title="Restore default MIT2FIT routines"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsRoutinePickerExpanded(false)}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-stone-700 rounded-xl text-xs font-bold transition ml-2"
-                    >
-                      <span>Collapse</span>
-                      <ChevronUp className="w-3.5 h-3.5 text-stone-400" />
-                    </button>
+                    <span className="text-[11px] text-stone-400 font-semibold uppercase tracking-wider">Active Routine:</span>
+                    <span className="text-sm font-bold text-white tracking-tight truncate">
+                      {activeParametricDef?.name || routines.find(r => r.id === activeTemplateId)?.name || sessionTitle}
+                    </span>
+                    {activeParametricDef && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                        {activeRoutineTier}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-stone-400 mt-0.5 tabular-nums">
+                    <span>{activeExercises.length} Movements</span>
+                    <span>·</span>
+                    <span>{activeExercises.reduce((sum, e) => sum + e.sets.length, 0)} Prescribed Sets</span>
                   </div>
                 </div>
-
-                {/* Split & Experience Level Filters */}
-                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Split:</span>
-                    {(["All", "Full Circuit", "Upper Body", "Lower Body", "Push", "Pull", "Core & Conditioning"] as const).map(split => {
-                      const isSelected = selectedRoutineSplitFilter === split;
-                      return (
-                        <button
-                          key={split}
-                          type="button"
-                          onClick={() => setSelectedRoutineSplitFilter(split)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-                            isSelected
-                              ? "bg-amber-500 text-stone-950 font-bold shadow-sm shadow-amber-500/20"
-                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
-                          }`}
-                        >
-                          {split}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Tier:</span>
-                    {(["All", "Beginner", "Intermediate", "Advanced"] as const).map(lvl => {
-                      const isSelected = selectedRoutineLevel === lvl;
-                      return (
-                        <button
-                          key={lvl}
-                          type="button"
-                          onClick={() => setSelectedRoutineLevel(lvl)}
-                          className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
-                            isSelected
-                              ? lvl === "Beginner"
-                                ? "bg-emerald-500 text-stone-950 shadow-sm"
-                                : lvl === "Intermediate"
-                                ? "bg-sky-500 text-stone-950 shadow-sm"
-                                : lvl === "Advanced"
-                                ? "bg-purple-500 text-white shadow-sm"
-                                : "bg-amber-500 text-stone-950 shadow-sm"
-                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
-                          }`}
-                        >
-                          <span>{lvl}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 6 Core Relational Cards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
-                  {ROUTINE_DEFINITIONS
-                    .filter(def => selectedRoutineSplitFilter === "All" || def.split === selectedRoutineSplitFilter)
-                    .map(def => {
-                      const cardTier: ExperienceLevel = 
-                        selectedRoutineLevel !== "All" 
-                          ? selectedRoutineLevel 
-                          : (routineTierMap[def.id] || "Intermediate");
-                      
-                      const lookup = ROUTINE_TIER_LOOKUP[def.id] || ROUTINE_TIER_LOOKUP["full-body"];
-                      const slotPrescriptions = lookup[cardTier] || lookup.Intermediate;
-                      const isActive = activeTemplateId === `${def.id}-${cardTier.toLowerCase()}` || 
-                        (activeTemplateId === def.id && activeRoutineTier === cardTier);
-
-                      return (
-                        <div
-                          key={def.id}
-                          className={`relative rounded-2xl border p-4 text-xs transition flex flex-col justify-between gap-3 shadow-lg ${
-                            isActive 
-                              ? "bg-amber-950/20 border-amber-500/50 shadow-amber-500/10" 
-                              : "bg-stone-950/80 border-stone-800/90 hover:border-stone-700/80"
-                          }`}
-                        >
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold text-stone-300">
-                                {def.split}
-                              </span>
-                              <div className="flex items-center gap-1 text-[11px] text-stone-400 font-mono">
-                                <span>~{def.estimatedDurationMin}m</span>
-                                <span>·</span>
-                                <span>{def.targetFrequency}</span>
-                              </div>
-                            </div>
-
-                            <div>
-                              <h4 className="text-sm font-bold text-white flex items-center justify-between">
-                                <span>{def.name}</span>
-                                {isActive && (
-                                  <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1 font-mono">
-                                    <Check className="w-3.5 h-3.5 stroke-[3]" /> ACTIVE
-                                  </span>
-                                )}
-                              </h4>
-                              <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-2 leading-relaxed">
-                                {def.description}
-                              </p>
-                            </div>
-
-                            {/* Inline Tier Selector */}
-                            <div className="flex items-center gap-1 bg-stone-900/90 p-1 rounded-xl border border-stone-800">
-                              {(["Beginner", "Intermediate", "Advanced"] as const).map(tier => {
-                                const isTierSelected = cardTier === tier;
-                                return (
-                                  <button
-                                    key={tier}
-                                    type="button"
-                                    onClick={() => {
-                                      setRoutineTierMap(prev => ({ ...prev, [def.id]: tier }));
-                                      if (activeParametricDef?.id === def.id) {
-                                        handleSelectParametricRoutine(def.id, tier);
-                                      }
-                                    }}
-                                    className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold transition text-center flex items-center justify-center gap-1 ${
-                                      isTierSelected
-                                        ? tier === "Beginner"
-                                          ? "bg-emerald-500 text-stone-950 shadow-sm"
-                                          : tier === "Advanced"
-                                          ? "bg-purple-500 text-white shadow-sm"
-                                          : "bg-sky-500 text-stone-950 shadow-sm"
-                                        : "text-stone-400 hover:text-white hover:bg-stone-800"
-                                    }`}
-                                  >
-                                    <span>{tier}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {/* Prescribed Movements Preview */}
-                            <div className="bg-stone-900/50 rounded-xl p-2.5 border border-stone-800/70 space-y-1">
-                              <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pb-1 border-b border-stone-800">
-                                <span className="uppercase font-semibold tracking-wider">
-                                  {cardTier} ({slotPrescriptions.length} Moves)
-                                </span>
-                                <span>Target Sets × Reps</span>
-                              </div>
-                              <div className="space-y-1 max-h-32 overflow-y-auto no-scrollbar pr-0.5">
-                                {slotPrescriptions.map((slot, sIdx) => {
-                                  const ex = EXERCISE_DATABASE.find(e => e.id === slot.exerciseId);
-                                  const isTimed = slot.exerciseId === "side-plank" || slot.exerciseId === "farmers-walk";
-                                  return (
-                                    <div
-                                      key={`${slot.slotNumber}-${slot.exerciseId}`}
-                                      className="flex items-center justify-between text-[11px] py-0.5 border-b border-stone-900/70 last:border-0"
-                                    >
-                                      <div className="flex items-center gap-1.5 truncate">
-                                        <span className="font-mono text-[10px] text-stone-500 w-3.5 shrink-0">
-                                          {sIdx + 1}.
-                                        </span>
-                                        <span className="font-medium text-stone-200 truncate">
-                                          {ex?.name || slot.exerciseId}
-                                        </span>
-                                        {slot.blockType === "superset" && (
-                                          <span className="px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/30 shrink-0 flex items-center gap-0.5">
-                                            <Zap className="w-2.5 h-2.5 text-cyan-400" />
-                                            {slot.supersetGroup}{slot.supersetOrder}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
-                                        <span className="text-stone-300 font-semibold">
-                                          {slot.targetSets}×{slot.targetReps}{isTimed ? "s" : ""}
-                                        </span>
-                                        {slot.targetWeight > 0 ? (
-                                          <span className="text-amber-400/90 font-medium">@{slot.targetWeight}{unit}</span>
-                                        ) : (
-                                          <span className="text-stone-500">BW</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-800/80">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const preset = buildParametricRoutine(def.id, cardTier);
-                                handleOpenEditRoutine(routines.find(routine => routine.id === preset.id) ?? preset);
-                              }}
-                              className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition flex items-center gap-1.5 text-xs"
-                              title="Customize this tier in Routine Builder"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Customize</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleSelectParametricRoutine(def.id, cardTier);
-                                setIsRoutinePickerExpanded(false);
-                              }}
-                              className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition ${
-                                isActive
-                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
-                                  : "bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-md shadow-amber-500/20"
-                              }`}
-                            >
-                              {isActive ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Active</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="w-3.5 h-3.5 fill-current" />
-                                  <span>Load {cardTier}</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-
-                {/* Custom User Routines */}
-                {routines.filter(r => r.isCustom).length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-stone-800/80 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
-                      <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Custom Saved Routines ({routines.filter(r => r.isCustom).length})</span>
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {routines
-                        .filter(r => r.isCustom)
-                        .map(tpl => {
-                          const isActive = activeTemplateId === tpl.id;
-                          return (
-                            <div
-                              key={tpl.id}
-                              className={`p-3.5 rounded-xl border text-xs transition flex flex-col justify-between gap-2.5 ${
-                                isActive 
-                                  ? "bg-amber-500/15 border-amber-500/50 text-amber-300" 
-                                  : "bg-stone-950/70 border-stone-800 text-stone-400"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <span className="font-bold text-white text-[13px]">{tpl.name}</span>
-                                  <div className="flex items-center gap-1.5 text-[10px] text-stone-400 mt-0.5">
-                                    <span className="text-amber-400 font-semibold">{tpl.split}</span>
-                                    <span>·</span>
-                                    <span>{tpl.exerciseIds.length} Moves</span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditRoutine(tpl)}
-                                    className="p-1 rounded bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300"
-                                    title="Edit routine"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteRoutine(tpl.id)}
-                                    className="p-1 rounded bg-stone-900 hover:bg-red-950/80 text-stone-500 hover:text-red-400"
-                                    title="Delete routine"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleLoadRoutine(tpl.id);
-                                  setIsRoutinePickerExpanded(false);
-                                }}
-                                className={`w-full py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
-                                  isActive 
-                                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" 
-                                    : "bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-800"
-                                }`}
-                              >
-                                {isActive ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Play className="w-3 h-3 fill-current" />}
-                                <span>{isActive ? "Active Routine" : "Load Routine"}</span>
-                              </button>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
-            )}
+
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('routines')}
+                  className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                  title="Open Routines tab to switch splits, tiers, or build custom routines"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Switch Routine</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenSaveActiveAsRoutine}
+                  className="px-2.5 py-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-amber-300 border border-stone-700 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Save Current Session as New Routine"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Save Routine</span>
+                </button>
+              </div>
+            </div>
+
 
             {/* ============================================================== */}
             {/* 2. UNIFIED WORKOUT COMMAND DECK                                */}
@@ -4666,22 +4382,135 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                 <Dumbbell className="w-12 h-12 text-stone-600 mx-auto mb-4" />
                 <h3 className="text-lg font-bold text-stone-300">Your routine is currently empty</h3>
                 <p className="text-sm text-stone-500 max-w-md mx-auto mt-1 mb-6">
-                  Select a pre-built split above or add an exercise from the library.
+                  Pick a split from the Routines tab or add exercises individually.
                 </p>
-                <button
-                  onClick={() => handleLoadTemplate('upper-day-a')}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-stone-950 font-bold rounded-xl text-sm hover:bg-amber-400 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  Load Upper Day A
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('routines')}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-stone-950 font-bold rounded-xl text-sm hover:bg-amber-400 transition"
+                  >
+                    <Layers className="w-4 h-4" />
+                    Browse Routines
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-stone-800 text-stone-200 font-bold rounded-xl text-sm hover:bg-stone-700 border border-stone-700 transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Exercise
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-5">
+                {/* Exercise Progress, Next-Up Jump & Collapsible Controls (UX #1) */}
+                {(() => {
+                  const completedExercisesCount = activeExercises.filter(
+                    (ex) => ex.sets.length > 0 && ex.sets.every((s) => s.completed)
+                  ).length;
+                  const nextIncompleteEx = activeExercises.find(
+                    (ex) => ex.sets.some((s) => !s.completed)
+                  );
+                  const anyCollapsed = activeExercises.some((ex) => Boolean(collapsedExercises[ex.instanceId]));
+
+                  return (
+                    <div className="bg-stone-900/50 border border-stone-800/80 rounded-2xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2 text-stone-300 font-mono tabular-nums">
+                        <span className="font-bold text-white">
+                          {completedExercisesCount}/{activeExercises.length}
+                        </span>
+                        <span className="font-sans text-stone-400">exercises done</span>
+                        {completedExercisesCount > 0 && nextIncompleteEx && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCollapsedExercises((prev) => ({
+                                ...prev,
+                                [nextIncompleteEx.instanceId]: false,
+                              }));
+                              setTimeout(() => {
+                                const el = document.getElementById(`exercise-card-${nextIncompleteEx.instanceId}`);
+                                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }, 50);
+                            }}
+                            className="ml-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-sans font-semibold transition flex items-center gap-1 whitespace-nowrap"
+                            title={`Jump to ${nextIncompleteEx.exercise.name}`}
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                            <span>Next: {nextIncompleteEx.exercise.name}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={toggleAutoCollapseCompleted}
+                          className={`px-2.5 py-1.5 rounded-lg border font-semibold transition whitespace-nowrap ${
+                            autoCollapseCompleted
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                              : 'bg-stone-900 border-stone-800 text-stone-400 hover:text-white'
+                          }`}
+                          title="Automatically collapse an exercise card once all its sets are checked off"
+                        >
+                          Auto-Collapse Done: {autoCollapseCompleted ? 'ON' : 'OFF'}
+                        </button>
+
+                        {completedExercisesCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextMap: Record<string, boolean> = { ...collapsedExercises };
+                              activeExercises.forEach((ex) => {
+                                if (ex.sets.length > 0 && ex.sets.every((s) => s.completed)) {
+                                  nextMap[ex.instanceId] = true;
+                                }
+                              });
+                              setCollapsedExercises(nextMap);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-300 font-semibold transition whitespace-nowrap"
+                          >
+                            Collapse Done
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (anyCollapsed) {
+                              setCollapsedExercises({});
+                            } else {
+                              const nextMap: Record<string, boolean> = {};
+                              activeExercises.forEach((ex) => {
+                                nextMap[ex.instanceId] = true;
+                              });
+                              setCollapsedExercises(nextMap);
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-300 font-semibold transition whitespace-nowrap"
+                        >
+                          {anyCollapsed ? 'Expand All' : 'Collapse All'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {activeExercises.map((activeEx, exIdx) => {
                   const progressionAdvice = evaluateProgression(activeEx);
                   const completedWorkingCount = activeEx.sets.filter(s => s.completed && s.type === 'Working').length;
+                  const completedAnyCount = activeEx.sets.filter(s => s.completed).length;
                   const targetHitCount = activeEx.sets.filter(s => s.completed && s.type === 'Working' && s.reps >= activeEx.targetReps).length;
+                  const isAllSetsDone = activeEx.sets.length > 0 && completedAnyCount === activeEx.sets.length;
+                  const isCollapsed = Boolean(collapsedExercises[activeEx.instanceId]);
+                  const exerciseCompletedVolume = activeEx.sets
+                    .filter(s => s.completed)
+                    .reduce((sum, s) => sum + (s.weight * s.reps), 0);
+                  const bestCompletedSet = activeEx.sets
+                    .filter(s => s.completed)
+                    .sort((a, b) => (b.weight * b.reps) - (a.weight * a.reps))[0];
                   const repsUnit = activeEx.exercise.defaultTarget?.repsUnit || 'reps';
                   const isTimedHold = 
                     activeEx.exercise.loadType === 'bodyweight_timed' || 
@@ -4722,22 +4551,46 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   return (
                     <div 
                       key={activeEx.instanceId}
-                      className={`bg-stone-900/60 border rounded-2xl shadow-xl transition-all ${
-                        activeEx.supersetTag 
+                      id={`exercise-card-${activeEx.instanceId}`}
+                      className={`bg-stone-900/60 border rounded-2xl shadow-xl transition-all scroll-mt-24 ${
+                        isAllSetsDone
+                          ? 'border-emerald-500/45 shadow-emerald-950/15'
+                          : activeEx.supersetTag 
                           ? 'border-cyan-500/50 shadow-cyan-950/10' 
                           : 'border-stone-800/90'
                       }`}
                     >
                       {/* Exercise Header: Number, Name, Unboxed Metadata, and Clean Action Cluster */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-stone-800/80 bg-stone-900/90 px-4 py-3 sm:px-5 sm:py-4">
+                      <div className={`flex flex-wrap items-center justify-between gap-2 bg-stone-900/90 px-4 py-3 sm:px-5 sm:py-4 ${isCollapsed ? 'rounded-2xl' : 'rounded-t-2xl border-b border-stone-800/80'}`}>
                         <div className="min-w-0 flex-1 basis-40 space-y-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-stone-500 bg-stone-950 px-2 py-0.5 rounded border border-stone-800">
+                            <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded border inline-flex items-center gap-1 tabular-nums ${
+                              isAllSetsDone
+                                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                                : 'bg-stone-950 text-stone-400 border-stone-800'
+                            }`}>
+                              {isAllSetsDone && <Check className="w-3 h-3 stroke-[3]" />}
                               #{String(exIdx + 1).padStart(2, '0')}
                             </span>
-                            <h3 className="text-lg font-bold text-white tracking-tight">
-                              {activeEx.exercise.name}
-                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => toggleExerciseCollapsed(activeEx.instanceId)}
+                              className="text-left text-base sm:text-lg font-bold text-white tracking-tight hover:text-amber-300 transition flex items-center gap-1.5"
+                              title={isCollapsed ? 'Expand exercise sets' : 'Collapse exercise card'}
+                            >
+                              <span>{activeEx.exercise.name}</span>
+                              {isCollapsed ? (
+                                <ChevronDown className="w-4 h-4 text-stone-400 shrink-0" />
+                              ) : (
+                                <ChevronUp className="w-4 h-4 text-stone-500 shrink-0" />
+                              )}
+                            </button>
+
+                            {isAllSetsDone && (
+                              <span className="text-[11px] font-bold text-emerald-400 font-mono">
+                                · Done ({completedAnyCount}/{activeEx.sets.length})
+                              </span>
+                            )}
 
                             {activeEx.supersetTag && (
                               <span className="text-[11px] font-bold text-cyan-300 px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-500/40 flex items-center gap-1 font-mono">
@@ -4921,12 +4774,40 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                         </div>
                       </div>
 
+                      {isCollapsed ? (
+                        <div className="px-4 sm:px-5 py-2.5 bg-stone-950/40 flex flex-wrap items-center justify-between gap-2 text-xs rounded-b-2xl">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-stone-300 font-mono tabular-nums">
+                            <span className={isAllSetsDone ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                              {completedAnyCount}/{activeEx.sets.length} sets logged
+                            </span>
+                            {exerciseCompletedVolume > 0 && (
+                              <span className="text-stone-400">
+                                Vol: <strong className="text-stone-200">{exerciseCompletedVolume.toLocaleString()} {unit}</strong>
+                              </span>
+                            )}
+                            {bestCompletedSet && (
+                              <span className="text-stone-400">
+                                Top set: <strong className="text-stone-200">{bestCompletedSet.weight} {unit} × {bestCompletedSet.reps}</strong>
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleExerciseCollapsed(activeEx.instanceId)}
+                            className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold transition flex items-center gap-1"
+                          >
+                            <span>Expand Sets</span>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                      <>
                       <details className="group/setup border-b border-stone-800/80 bg-stone-950/40">
                         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 text-xs hover:bg-stone-800/40 focus-visible:outline-amber-400 sm:px-5 [&::-webkit-details-marker]:hidden">
                           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span className="font-semibold text-stone-200">Setup & progression</span>
-                            <span className="font-mono text-[11px] text-stone-400">
-                              {activeEx.targetSets} {activeEx.targetSets === 1 ? 'set' : 'sets'} · {activeEx.targetReps} {repsUnit} · {targetLoad}
+                            <span className="font-mono text-[11px] text-stone-400 tabular-nums">
+                              {activeEx.sets.length} {activeEx.sets.length === 1 ? 'set' : 'sets'} · {activeEx.targetReps} {repsUnit} · {targetLoad}
                             </span>
                           </span>
                           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-stone-400 transition-transform group-open/setup:rotate-180" />
@@ -4947,19 +4828,21 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                             <div className="flex items-center gap-1 bg-stone-900 px-2 py-1 rounded-xl border border-stone-800">
                               <span className="text-stone-400 font-medium">Sets:</span>
                               <button
+                                type="button"
                                 onClick={() => updateTargetSets(exIdx, -1)}
                                 className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                                title="Decrease target sets"
+                                title="Decrease sets"
                               >
                                 -
                               </button>
-                              <span className="font-mono font-bold text-amber-400 px-1">
-                                {activeEx.targetSets}
+                              <span className="font-mono font-bold text-amber-400 px-1 tabular-nums">
+                                {activeEx.sets.length}
                               </span>
                               <button
+                                type="button"
                                 onClick={() => updateTargetSets(exIdx, 1)}
                                 className="w-5 h-5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 flex items-center justify-center font-bold"
-                                title="Increase target sets"
+                                title="Increase sets"
                               >
                                 +
                               </button>
@@ -5097,27 +4980,39 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
                       {/* Interactive Sets Table */}
                       <div className="px-3 py-3 sm:p-5">
-                        {/* Target Progress Bar */}
-                        <div className="mb-2.5 flex items-center justify-between gap-2 text-xs">
+                        {/* Target Progress Bar + 1-Tap Log Remaining (UX #3) */}
+                        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span className="text-stone-400">Progress:</span>
-                            <span className="font-bold text-white font-mono">
-                              {completedWorkingCount} of {activeEx.targetSets} sets completed
+                            <span className="font-bold text-white font-mono tabular-nums">
+                              {completedAnyCount} of {activeEx.sets.length} sets completed
                             </span>
-                            {targetHitCount >= activeEx.targetSets && (
+                            {targetHitCount >= activeEx.targetSets && activeEx.targetSets > 0 && (
                               <span className="text-emerald-400 font-semibold flex items-center gap-1 text-[11px]">
                                 <Check className="w-3.5 h-3.5" /> Target Achieved!
                               </span>
                             )}
                           </div>
-                          <div className="flex shrink-0 items-center gap-1" aria-hidden="true">
-                            {Array.from({ length: activeEx.targetSets }).map((_, i) => (
+                          <div className="flex items-center gap-2 ml-auto">
+                            {!isAllSetsDone && (
+                              <button
+                                type="button"
+                                onClick={() => checkAllRemainingSetsForExercise(exIdx)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-semibold text-[11px] flex items-center gap-1 transition whitespace-nowrap"
+                                title="Mark all remaining sets for this exercise as completed"
+                              >
+                                <Check className="w-3 h-3 stroke-[3]" />
+                                <span>Log Remaining</span>
+                              </button>
+                            )}
+                            <div className="flex shrink-0 items-center gap-1" aria-hidden="true">
+                            {Array.from({ length: activeEx.sets.length }).map((_, i) => (
                               <div 
                                 key={i}
                                 className={`w-3 h-3 rounded-full border flex items-center justify-center transition-all ${
                                   i < targetHitCount
                                     ? 'bg-emerald-500 border-emerald-400 text-stone-950'
-                                    : i < completedWorkingCount
+                                    : i < completedAnyCount
                                     ? 'bg-amber-500 border-amber-400 text-stone-950'
                                     : 'border-stone-700 bg-stone-800'
                                 }`}
@@ -5125,6 +5020,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                 {i < targetHitCount && <Check className="w-2 h-2 stroke-[3]" />}
                               </div>
                             ))}
+                            </div>
                           </div>
                         </div>
 
@@ -5171,14 +5067,19 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                     <select
                                       aria-label={`Set ${set.setNumber} type`}
                                       value={set.type}
-                                      onChange={(e) => {
-                                        const val = e.target.value as WorkoutSet['type'];
-                                        setActiveExercises(prev => {
-                                          const next = [...prev];
-                                          next[exIdx].sets[sIdx].type = val;
-                                          return next;
-                                        });
-                                      }}
+                                        onChange={(e) => {
+                                          const val = e.target.value as WorkoutSet['type'];
+                                          setActiveExercises(prev => prev.map((ex, i) =>
+                                            i !== exIdx
+                                              ? ex
+                                              : {
+                                                  ...ex,
+                                                  sets: ex.sets.map((s, idx) =>
+                                                    idx === sIdx ? { ...s, type: val } : s
+                                                  ),
+                                                }
+                                          ));
+                                        }}
                                       className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-[11px] min-h-8 rounded px-1 py-1 focus:outline-none focus:border-amber-500 font-medium"
                                     >
                                       <option value="Working">Working</option>
@@ -5209,11 +5110,16 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                       placeholder={prevSet ? String(prevSet.weight) : String(activeEx.targetWeight || 135)}
                                       onChange={(e) => {
                                         const val = parseFloat(e.target.value) || 0;
-                                        setActiveExercises(prev => {
-                                          const next = [...prev];
-                                          next[exIdx].sets[sIdx].weight = val;
-                                          return next;
-                                        });
+                                        setActiveExercises(prev => prev.map((ex, i) =>
+                                          i !== exIdx
+                                            ? ex
+                                            : {
+                                                ...ex,
+                                                sets: ex.sets.map((s, idx) =>
+                                                  idx === sIdx ? { ...s, weight: val } : s
+                                                ),
+                                              }
+                                        ));
                                       }}
                                       className="h-8 min-w-0 flex-1 appearance-none rounded border border-stone-700 bg-stone-900 text-center font-mono text-xs font-bold text-white tabular-nums placeholder-stone-500 focus:border-amber-500 focus:outline-none md:max-w-20"
                                     />
@@ -5285,12 +5191,17 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                       value={set.reps === 0 ? '' : set.reps}
                                       placeholder={prevSet ? String(prevSet.reps) : String(activeEx.targetReps || 10)}
                                       onChange={(e) => {
-                                        const val = parseInt(e.target.value) || 0;
-                                        setActiveExercises(prev => {
-                                          const next = [...prev];
-                                          next[exIdx].sets[sIdx].reps = val;
-                                          return next;
-                                        });
+                                        const val = parseInt(e.target.value, 10) || 0;
+                                        setActiveExercises(prev => prev.map((ex, i) =>
+                                          i !== exIdx
+                                            ? ex
+                                            : {
+                                                ...ex,
+                                                sets: ex.sets.map((s, idx) =>
+                                                  idx === sIdx ? { ...s, reps: val } : s
+                                                ),
+                                              }
+                                        ));
                                       }}
                                       className={`h-8 min-w-0 flex-1 appearance-none rounded border bg-stone-900 text-center font-mono text-xs font-bold tabular-nums placeholder-stone-500 focus:border-amber-500 focus:outline-none md:max-w-16 ${
                                         set.reps >= activeEx.targetReps ? 'text-emerald-400 border-emerald-500/50' : 'text-white border-stone-700'
@@ -5324,11 +5235,16 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                       value={set.rpe ?? ''}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? undefined : parseFloat(e.target.value);
-                                        setActiveExercises(prev => {
-                                          const next = [...prev];
-                                          next[exIdx].sets[sIdx].rpe = val;
-                                          return next;
-                                        });
+                                        setActiveExercises(prev => prev.map((ex, i) =>
+                                          i !== exIdx
+                                            ? ex
+                                            : {
+                                                ...ex,
+                                                sets: ex.sets.map((s, idx) =>
+                                                  idx === sIdx ? { ...s, rpe: val } : s
+                                                ),
+                                              }
+                                        ));
                                       }}
                                       className={`w-full bg-stone-900 border text-[10px] font-mono font-bold rounded px-1 py-1 focus:outline-none transition ${
                                         set.rpe === 10
@@ -5402,6 +5318,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
                                   {/* High-tactile completion checkbox: 44px min hit zone */}
                                   <button
+                                    type="button"
                                     onClick={() => toggleSetCompleted(exIdx, sIdx)}
                                     className={`h-11 w-11 shrink-0 rounded-xl flex items-center justify-center transition font-bold ${
                                       set.completed 
@@ -5431,21 +5348,36 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
 
                         {/* Add Set Button & Exercise Volume Subtotal */}
                         <div className="mt-3.5 flex items-center justify-between pt-2 border-t border-stone-800/60">
-                          <button
-                            onClick={() => addSet(exIdx)}
-                            className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add Set</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => addSet(exIdx)}
+                              className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Set</span>
+                            </button>
+                            {!isTimedHold && activeEx.sets.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => cloneSet(exIdx, activeEx.sets.length - 1)}
+                                className="sm:hidden inline-flex items-center gap-1 text-xs text-stone-300 hover:text-white font-medium px-2.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800 transition"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Repeat Last</span>
+                              </button>
+                            )}
+                          </div>
 
-                          <div className="text-xs text-stone-500 font-mono">
+                          <div className="text-xs text-stone-500 font-mono tabular-nums">
                             Subtotal: <span className="text-stone-300 font-bold">
                               {activeEx.sets.filter(s => s.completed).reduce((s, x) => s + (x.weight * x.reps), 0).toLocaleString()} {unit}
                             </span>
                           </div>
                         </div>
                       </div>
+                      </>
+                      )}
 
                       {/* Superset Visual Bridge */}
                       {exIdx < activeExercises.length - 1 && 
@@ -5464,11 +5396,34 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                 })}
               </div>
             )}
-{/* Docked Quick Action Bar during active workout */}
+            {/* Non-fixed Mobile Finish Workout CTA at bottom of exercise list (UX #4) */}
+            {hasStartedWorkout && activeExercises.length > 0 && (
+              <div className="md:hidden pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="px-3.5 py-3 rounded-2xl bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-800 text-xs font-bold flex items-center gap-1.5 transition shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Exercise</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFinishWorkout}
+                  disabled={totalCompletedSets === 0}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-stone-950 font-extrabold rounded-2xl text-sm transition shadow-lg shadow-emerald-500/25"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Finish Workout ({totalCompletedSets}/{totalTargetSets})</span>
+                </button>
+              </div>
+            )}
+
+            {/* Desktop Docked Quick Action Bar during active workout (hidden on < md) */}
             {hasStartedWorkout && (
               <aside 
                 aria-label="Active Workout Controls"
-                className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-xl bg-stone-900/95 border border-emerald-500/40 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 animate-in slide-in-from-bottom-3"
+                className="hidden md:flex fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-xl bg-stone-900/95 border border-emerald-500/40 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md items-center justify-between gap-3 animate-in slide-in-from-bottom-3"
               >
                 <div className="flex items-center gap-2 text-xs">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -5505,6 +5460,367 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                 </div>
               </aside>
             )}
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 2: ROUTINES & SPLITS DIRECTORY (Dedicated Tab)             */}
+        {/* ============================================================== */}
+        {activeTab === 'routines' && (
+          <div className="space-y-6 pb-12">
+            <div className="bg-stone-900/70 p-4 sm:p-6 rounded-2xl border border-stone-800 space-y-5 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <BookmarkCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-white uppercase tracking-wider">
+                        Routines & Normalized Splits
+                      </h2>
+                      <span className="text-[10px] bg-stone-800 text-stone-300 px-2 py-0.5 rounded-full font-mono">
+                        {routines.length} saved
+                      </span>
+                    </div>
+                    <p className="text-xs text-stone-400">
+                      Load a preset split, adjust experience tier, or architect your own custom routine
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomSplitBuilderOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-semibold transition shadow-sm"
+                    title="Open interactive custom routine & equipment filter builder"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Custom Split Builder</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenCreateRoutine}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-medium transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Routine</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenSaveActiveAsRoutine}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-medium transition"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Save Current</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestoreDefaultRoutines}
+                    className="p-2 rounded-xl bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800 border border-stone-800 transition text-xs"
+                    title="Restore default MIT2FIT routines"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+                {/* Split & Experience Level Filters */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Split:</span>
+                    {(["All", "Full Circuit", "Upper Body", "Lower Body", "Push", "Pull", "Core & Conditioning"] as const).map(split => {
+                      const isSelected = selectedRoutineSplitFilter === split;
+                      return (
+                        <button
+                          key={split}
+                          type="button"
+                          onClick={() => setSelectedRoutineSplitFilter(split)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
+                            isSelected
+                              ? "bg-amber-500 text-stone-950 font-bold shadow-sm shadow-amber-500/20"
+                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
+                          }`}
+                        >
+                          {split}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                    <span className="text-[10px] uppercase font-mono text-stone-500 font-bold shrink-0">Tier:</span>
+                    {(["All", "Beginner", "Intermediate", "Advanced"] as const).map(lvl => {
+                      const isSelected = selectedRoutineLevel === lvl;
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setSelectedRoutineLevel(lvl)}
+                          className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ${
+                            isSelected
+                              ? lvl === "Beginner"
+                                ? "bg-emerald-500 text-stone-950 shadow-sm"
+                                : lvl === "Intermediate"
+                                ? "bg-sky-500 text-stone-950 shadow-sm"
+                                : lvl === "Advanced"
+                                ? "bg-purple-500 text-white shadow-sm"
+                                : "bg-amber-500 text-stone-950 shadow-sm"
+                              : "bg-stone-950/80 text-stone-400 hover:text-white hover:bg-stone-800 border border-stone-800"
+                          }`}
+                        >
+                          <span>{lvl}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 6 Core Relational Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+                  {ROUTINE_DEFINITIONS
+                    .filter(def => selectedRoutineSplitFilter === "All" || def.split === selectedRoutineSplitFilter)
+                    .map(def => {
+                      const cardTier: ExperienceLevel = 
+                        selectedRoutineLevel !== "All" 
+                          ? selectedRoutineLevel 
+                          : (routineTierMap[def.id] || "Intermediate");
+                      
+                      const lookup = ROUTINE_TIER_LOOKUP[def.id] || ROUTINE_TIER_LOOKUP["full-body"];
+                      const slotPrescriptions = lookup[cardTier] || lookup.Intermediate;
+                      const isActive = activeTemplateId === `${def.id}-${cardTier.toLowerCase()}` || 
+                        (activeTemplateId === def.id && activeRoutineTier === cardTier);
+
+                      return (
+                        <div
+                          key={def.id}
+                          className={`relative rounded-2xl border p-4 text-xs transition flex flex-col justify-between gap-3 shadow-lg ${
+                            isActive 
+                              ? "bg-amber-950/20 border-amber-500/50 shadow-amber-500/10" 
+                              : "bg-stone-950/80 border-stone-800/90 hover:border-stone-700/80"
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold text-stone-300">
+                                {def.split}
+                              </span>
+                              <div className="flex items-center gap-1 text-[11px] text-stone-400 font-mono">
+                                <span>~{def.estimatedDurationMin}m</span>
+                                <span>·</span>
+                                <span>{def.targetFrequency}</span>
+                              </div>
+                            </div>
+
+                            <div>
+                              <h4 className="text-sm font-bold text-white flex items-center justify-between">
+                                <span>{def.name}</span>
+                                {isActive && (
+                                  <span className="text-[10px] font-bold text-amber-400 flex items-center gap-1 font-mono">
+                                    <Check className="w-3.5 h-3.5 stroke-[3]" /> ACTIVE
+                                  </span>
+                                )}
+                              </h4>
+                              <p className="text-[11px] text-stone-400 mt-0.5 line-clamp-2 leading-relaxed">
+                                {def.description}
+                              </p>
+                            </div>
+
+                            {/* Inline Tier Selector */}
+                            <div className="flex items-center gap-1 bg-stone-900/90 p-1 rounded-xl border border-stone-800">
+                              {(["Beginner", "Intermediate", "Advanced"] as const).map(tier => {
+                                const isTierSelected = cardTier === tier;
+                                return (
+                                  <button
+                                    key={tier}
+                                    type="button"
+                                    onClick={() => {
+                                      setRoutineTierMap(prev => ({ ...prev, [def.id]: tier }));
+                                      if (activeParametricDef?.id === def.id) {
+                                        handleSelectParametricRoutine(def.id, tier);
+                                      }
+                                    }}
+                                    className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold transition text-center flex items-center justify-center gap-1 ${
+                                      isTierSelected
+                                        ? tier === "Beginner"
+                                          ? "bg-emerald-500 text-stone-950 shadow-sm"
+                                          : tier === "Advanced"
+                                          ? "bg-purple-500 text-white shadow-sm"
+                                          : "bg-sky-500 text-stone-950 shadow-sm"
+                                        : "text-stone-400 hover:text-white hover:bg-stone-800"
+                                    }`}
+                                  >
+                                    <span>{tier}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Prescribed Movements Preview */}
+                            <div className="bg-stone-900/50 rounded-xl p-2.5 border border-stone-800/70 space-y-1">
+                              <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pb-1 border-b border-stone-800">
+                                <span className="uppercase font-semibold tracking-wider">
+                                  {cardTier} ({slotPrescriptions.length} Moves)
+                                </span>
+                                <span>Target Sets × Reps</span>
+                              </div>
+                              <div className="space-y-1 max-h-32 overflow-y-auto no-scrollbar pr-0.5">
+                                {slotPrescriptions.map((slot, sIdx) => {
+                                  const ex = EXERCISE_DATABASE.find(e => e.id === slot.exerciseId);
+                                  const isTimed = slot.exerciseId === "side-plank" || slot.exerciseId === "farmers-walk";
+                                  return (
+                                    <div
+                                      key={`${slot.slotNumber}-${slot.exerciseId}`}
+                                      className="flex items-center justify-between text-[11px] py-0.5 border-b border-stone-900/70 last:border-0"
+                                    >
+                                      <div className="flex items-center gap-1.5 truncate">
+                                        <span className="font-mono text-[10px] text-stone-500 w-3.5 shrink-0">
+                                          {sIdx + 1}.
+                                        </span>
+                                        <span className="font-medium text-stone-200 truncate">
+                                          {ex?.name || slot.exerciseId}
+                                        </span>
+                                        {slot.blockType === "superset" && (
+                                          <span className="px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-300 font-mono text-[9px] font-bold border border-cyan-500/30 shrink-0 flex items-center gap-0.5">
+                                            <Zap className="w-2.5 h-2.5 text-cyan-400" />
+                                            {slot.supersetGroup}{slot.supersetOrder}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                                        <span className="text-stone-300 font-semibold">
+                                          {slot.targetSets}×{slot.targetReps}{isTimed ? "s" : ""}
+                                        </span>
+                                        {slot.targetWeight > 0 ? (
+                                          <span className="text-amber-400/90 font-medium">@{slot.targetWeight}{unit}</span>
+                                        ) : (
+                                          <span className="text-stone-500">BW</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-800/80">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const preset = buildParametricRoutine(def.id, cardTier);
+                                handleOpenEditRoutine(routines.find(routine => routine.id === preset.id) ?? preset);
+                              }}
+                              className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300 border border-stone-800 transition flex items-center gap-1.5 text-xs"
+                              title="Customize this tier in Routine Builder"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Customize</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectParametricRoutine(def.id, cardTier);
+                                setActiveTab('workout');
+                              }}
+                              className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition ${
+                                isActive
+                                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                                  : "bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-md shadow-amber-500/20"
+                              }`}
+                            >
+                              {isActive ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  <span>Active</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>Load {cardTier}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Custom User Routines */}
+                {routines.filter(r => r.isCustom).length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-stone-800/80 space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                      <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Custom Saved Routines ({routines.filter(r => r.isCustom).length})</span>
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {routines
+                        .filter(r => r.isCustom)
+                        .map(tpl => {
+                          const isActive = activeTemplateId === tpl.id;
+                          return (
+                            <div
+                              key={tpl.id}
+                              className={`p-3.5 rounded-xl border text-xs transition flex flex-col justify-between gap-2.5 ${
+                                isActive 
+                                  ? "bg-amber-500/15 border-amber-500/50 text-amber-300" 
+                                  : "bg-stone-950/70 border-stone-800 text-stone-400"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <span className="font-bold text-white text-[13px]">{tpl.name}</span>
+                                  <div className="flex items-center gap-1.5 text-[10px] text-stone-400 mt-0.5">
+                                    <span className="text-amber-400 font-semibold">{tpl.split}</span>
+                                    <span>·</span>
+                                    <span>{tpl.exerciseIds.length} Moves</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditRoutine(tpl)}
+                                    className="p-1 rounded bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-amber-300"
+                                    title="Edit routine"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRoutine(tpl.id)}
+                                    className="p-1 rounded bg-stone-900 hover:bg-red-950/80 text-stone-500 hover:text-red-400"
+                                    title="Delete routine"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleLoadRoutine(tpl.id);
+                                  setActiveTab('workout');
+                                }}
+                                className={`w-full py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                  isActive 
+                                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" 
+                                    : "bg-stone-900 hover:bg-stone-800 text-stone-200 border border-stone-800"
+                                }`}
+                              >
+                                {isActive ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <Play className="w-3 h-3 fill-current" />}
+                                <span>{isActive ? "Active Routine" : "Load Routine"}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+            </div>
           </div>
         )}
 
@@ -9530,23 +9846,25 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = [...routineModal.exerciseConfigs];
-                                  updated[cfgIdx].targetSets = Math.max(1, updated[cfgIdx].targetSets - 1);
+                                  const updated = routineModal.exerciseConfigs.map((item, idx) =>
+                                    idx === cfgIdx ? { ...item, targetSets: Math.max(1, item.targetSets - 1) } : item
+                                  );
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
                                 }}
-                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                                className="w-5 h-5 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
                               >
                                 -
                               </button>
-                              <span className="font-mono font-bold text-amber-400 px-1">{cfg.targetSets}</span>
+                              <span className="font-mono font-bold text-amber-400 px-1 tabular-nums">{cfg.targetSets}</span>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = [...routineModal.exerciseConfigs];
-                                  updated[cfgIdx].targetSets = Math.min(8, updated[cfgIdx].targetSets + 1);
+                                  const updated = routineModal.exerciseConfigs.map((item, idx) =>
+                                    idx === cfgIdx ? { ...item, targetSets: Math.min(10, item.targetSets + 1) } : item
+                                  );
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
                                 }}
-                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                                className="w-5 h-5 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
                               >
                                 +
                               </button>
@@ -9558,23 +9876,25 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = [...routineModal.exerciseConfigs];
-                                  updated[cfgIdx].targetReps = Math.max(1, updated[cfgIdx].targetReps - 1);
+                                  const updated = routineModal.exerciseConfigs.map((item, idx) =>
+                                    idx === cfgIdx ? { ...item, targetReps: Math.max(1, item.targetReps - 1) } : item
+                                  );
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
                                 }}
-                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                                className="w-5 h-5 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
                               >
                                 -
                               </button>
-                              <span className="font-mono font-bold text-amber-400 px-1">{cfg.targetReps}</span>
+                              <span className="font-mono font-bold text-amber-400 px-1 tabular-nums">{cfg.targetReps}</span>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const updated = [...routineModal.exerciseConfigs];
-                                  updated[cfgIdx].targetReps = updated[cfgIdx].targetReps + 1;
+                                  const updated = routineModal.exerciseConfigs.map((item, idx) =>
+                                    idx === cfgIdx ? { ...item, targetReps: Math.min(50, item.targetReps + 1) } : item
+                                  );
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
                                 }}
-                                className="w-4 h-4 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
+                                className="w-5 h-5 rounded bg-stone-800 text-stone-300 font-bold flex items-center justify-center hover:bg-stone-700"
                               >
                                 +
                               </button>
@@ -9589,8 +9909,9 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                                 value={cfg.targetWeight}
                                 onChange={(e) => {
                                   const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                  const updated = [...routineModal.exerciseConfigs];
-                                  updated[cfgIdx].targetWeight = val;
+                                  const updated = routineModal.exerciseConfigs.map((item, idx) =>
+                                    idx === cfgIdx ? { ...item, targetWeight: val } : item
+                                  );
                                   setRoutineModal({ ...routineModal, exerciseConfigs: updated });
                                 }}
                                 className="w-12 bg-stone-950 border border-stone-700 text-center font-mono font-bold text-amber-400 rounded py-0.5 text-xs focus:outline-none"
@@ -10131,6 +10452,73 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         onCancel={() => setPendingBackupImport(null)}
         entityNoun="workout sessions"
       />
+
+      {/* Sticky Thumb-Zone Mobile Bottom Tab Bar (< md) */}
+      <nav
+        aria-label="Workout tracker navigation"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-stone-950/95 backdrop-blur-md border-t border-stone-800 grid grid-cols-6 items-center h-14 px-1 print:hidden"
+      >
+        <button
+          type="button"
+          onClick={() => setActiveTab('workout')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'workout' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <Activity className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Workout</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('routines')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'routines' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <Layers className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Routines</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('schedule')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'schedule' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <Calendar className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Schedule</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('weekly')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'weekly' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Progress</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('library')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'library' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <BookOpen className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">Guide</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className={`flex flex-col items-center justify-center h-full px-1 transition ${
+            activeTab === 'history' ? 'text-amber-400 font-bold' : 'text-stone-400 hover:text-stone-200'
+          }`}
+        >
+          <History className="w-4 h-4 shrink-0" />
+          <span className="text-[10px] leading-tight mt-0.5 whitespace-nowrap">History</span>
+        </button>
+      </nav>
 
       </div>
 

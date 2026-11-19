@@ -7,6 +7,7 @@ export interface BackupSyncPreview {
   incomingSessions: number;
   newSessionsToAdd: number;
   duplicateSessions: number;
+  primaryLabel?: string;
   extraLabel?: string;
   extraSummary?: string;
 }
@@ -69,7 +70,9 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
         {/* Summary Metrics Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
           <div className="bg-stone-950 border border-stone-800 rounded-xl p-3">
-            <div className="text-stone-400">In Backup File</div>
+            <div className="text-stone-400">
+              {preview.primaryLabel ? `${preview.primaryLabel} in File` : 'In Backup File'}
+            </div>
             <div className="text-lg font-bold text-white font-mono tabular-nums mt-0.5">
               {preview.incomingSessions}
             </div>
@@ -91,9 +94,9 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
         </div>
 
         {preview.extraLabel && preview.extraSummary && (
-          <div className="bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs">
-            <span className="text-stone-400">{preview.extraLabel}</span>
-            <span className="font-mono text-amber-300 font-semibold">{preview.extraSummary}</span>
+          <div className="bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs gap-2">
+            <span className="text-stone-400 shrink-0">{preview.extraLabel}</span>
+            <span className="font-mono text-amber-300 font-semibold text-right">{preview.extraSummary}</span>
           </div>
         )}
 
@@ -101,7 +104,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
           <p className="flex items-start gap-2 text-stone-300">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <strong className="text-white">Append &amp; Merge</strong> keeps every session already saved on this device, skips duplicates automatically, and adds missing {entityNoun} from the file.
+              <strong className="text-white">Append &amp; Merge</strong> keeps every item already saved on this device, skips duplicates automatically, and adds missing {entityNoun} from the file.
             </span>
           </p>
           <p className="text-stone-500 pl-6">

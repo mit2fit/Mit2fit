@@ -122,9 +122,13 @@ import {
   toLocalDateKey,
 } from '../utils/workoutScheduler';
 import {
+  decodeRoutineBackupInput,
+  encodeRoutineBackupCode,
+  extractRoutinesFromParsed,
   mergeRoutineLibraries,
   mergeScheduledWorkouts,
   mergeWeeklyBlueprints,
+  mergeWithDefaultRoutines,
   mergeWorkoutHistories,
 } from '../utils/backupMerge';
 
@@ -1320,7 +1324,11 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
   const [isDataPortalOpen, setIsDataPortalOpen] = useState(false);
   const [alertNotice, setAlertNotice] = useState<string | null>(null);
   const [isCustomSplitBuilderOpen, setIsCustomSplitBuilderOpen] = useState(false);
+  const [isRoutineBackupModalOpen, setIsRoutineBackupModalOpen] = useState(false);
+  const [routineBackupCodeInput, setRoutineBackupCodeInput] = useState('');
+  const [routineBackupCodeError, setRoutineBackupCodeError] = useState<string | null>(null);
   const [shareCardWorkout, setShareCardWorkout] = useState<CompletedWorkout | null>(null);
+  const customRoutines = useMemo(() => routines.filter(r => r.isCustom), [routines]);
   const [pendingBackupImport, setPendingBackupImport] = useState<{
     history?: CompletedWorkout[];
     routines?: RoutineTemplate[];
@@ -3040,14 +3048,16 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     const nowIso = new Date().toISOString();
     const backupPayload = {
       appName: 'Mit2Fit',
-      version: 4,
+      version: 5,
       exportedAt: nowIso,
       totalWorkouts: history.length,
       totalRoutines: routines.length,
+      totalCustomRoutines: customRoutines.length,
       totalScheduledWorkouts: scheduledWorkouts.length,
       unit,
       history,
       routines,
+      customRoutines,
       scheduledWorkouts,
       weeklyBlueprint
     };
@@ -3065,11 +3075,96 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     } catch {}
     setLastBackupDate(nowIso);
 
-    setAlertNotice('Backup JSON exported! Keep this file in iCloud, Google Drive, or your Files app.');
+    setAlertNotice(
+      customRoutines.length > 0
+        ? `Backup exported (${history.length} workouts + ${customRoutines.length} custom routine${customRoutines.length === 1 ? '' : 's'})! Save it to Files, iCloud, or Drive.`
+        : 'Backup JSON exported! Keep this file in iCloud, Google Drive, or your Files app.'
+    );
     setTimeout(() => setAlertNotice(null), 5000);
   };
 
-  // Import JSON Backup (Supports both legacy array format and comprehensive backup with Append vs Replace choice)
+  // Dedicated Custom Routines JSON Export (ideal before reinstalling Home Screen app)
+  const handleExportCustomRoutines = () => {
+    if (customRoutines.length === 0) {
+      setAlertNotice('No custom routines saved yet. Create one first with Custom Split Builder or Save Current.');
+      setTimeout(() => setAlertNotice(null), 3500);
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const payload = {
+      appName: 'Mit2Fit',
+      type: 'custom-routines',
+      version: 1,
+      exportedAt: nowIso,
+      totalCustomRoutines: customRoutines.length,
+      customRoutines,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `mit2fit-custom-routines-${nowIso.split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    try {
+      localStorage.setItem('mit2fit_last_backup_date', nowIso);
+    } catch {}
+    setLastBackupDate(nowIso);
+    setAlertNotice(`Downloaded backup for ${customRoutines.length} custom routine${customRoutines.length === 1 ? '' : 's'}!`);
+    setTimeout(() => setAlertNotice(null), 4500);
+  };
+
+  // Copy portable Custom Routines Backup Code (easy to keep in Apple Notes / Messages when reinstalling Home Screen)
+  const handleCopyCustomRoutinesCode = async () => {
+    if (customRoutines.length === 0) {
+      setAlertNotice('Create a custom routine first before copying a backup code.');
+      setTimeout(() => setAlertNotice(null), 3500);
+      return;
+    }
+    try {
+      const code = encodeRoutineBackupCode(customRoutines);
+      await navigator.clipboard.writeText(code);
+      setAlertNotice(`Copied backup code for ${customRoutines.length} custom routine${customRoutines.length === 1 ? '' : 's'}! Save it in Notes before reinstalling.`);
+      setTimeout(() => setAlertNotice(null), 5000);
+    } catch {
+      setAlertNotice('Could not access clipboard automatically — download the JSON backup file instead.');
+      setTimeout(() => setAlertNotice(null), 4000);
+    }
+  };
+
+  // Restore Custom Routines from pasted Backup Code or JSON snippet
+  const handleRestoreCustomRoutinesFromCode = () => {
+    setRoutineBackupCodeError(null);
+    if (!routineBackupCodeInput.trim()) {
+      setRoutineBackupCodeError('Paste a MIT2FIT-ROUTINES code or JSON backup first.');
+      return;
+    }
+    try {
+      const incoming = decodeRoutineBackupInput(routineBackupCodeInput);
+      if (incoming.length === 0) {
+        setRoutineBackupCodeError('No valid custom routines were found in the pasted backup.');
+        return;
+      }
+      const res = mergeRoutineLibraries(routines, incoming);
+      if (!saveRoutines(res.merged)) {
+        showRoutineSaveError();
+        return;
+      }
+      setRoutineBackupCodeInput('');
+      setIsRoutineBackupModalOpen(false);
+      setAlertNotice(
+        res.addedCount > 0
+          ? `Restored +${res.addedCount} custom routine${res.addedCount === 1 ? '' : 's'} (${res.duplicateCount} already saved).`
+          : `All ${incoming.length} custom routines from that backup are already saved.`
+      );
+      setTimeout(() => setAlertNotice(null), 4500);
+    } catch {
+      setRoutineBackupCodeError('Invalid backup code or JSON format. Check that you copied the full text.');
+    }
+  };
+
+  // Import JSON Backup (Supports legacy array, full tracker, dashboard, or custom-routines-only files)
   const handleImportData = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3085,10 +3180,21 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         let exportedAt: string | undefined;
 
         if (Array.isArray(parsed)) {
-          incomingHistory = parsed;
+          const maybeRoutines = extractRoutinesFromParsed(parsed);
+          if (maybeRoutines.length > 0) {
+            incomingRoutines = maybeRoutines;
+          } else {
+            incomingHistory = parsed;
+          }
         } else if (parsed && typeof parsed === 'object') {
-          if (Array.isArray(parsed.history)) incomingHistory = parsed.history;
-          if (Array.isArray(parsed.routines) && parsed.routines.length > 0) incomingRoutines = parsed.routines;
+          if (Array.isArray(parsed.history)) {
+            const first = parsed.history[0];
+            if (!first || typeof first.title === 'string') {
+              incomingHistory = parsed.history;
+            }
+          }
+          const extractedRoutines = extractRoutinesFromParsed(parsed);
+          if (extractedRoutines.length > 0) incomingRoutines = extractedRoutines;
           if (Array.isArray(parsed.scheduledWorkouts)) incomingSchedule = parsed.scheduledWorkouts;
           if (parsed.weeklyBlueprint && typeof parsed.weeklyBlueprint === 'object') {
             incomingBlueprint = parsed.weeklyBlueprint;
@@ -3116,31 +3222,53 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
           : { addedCount: 0, duplicateCount: 0 };
         const routDiff = incomingRoutines
           ? mergeRoutineLibraries(routines, incomingRoutines)
-          : { addedCount: 0 };
+          : { addedCount: 0, duplicateCount: 0 };
         const schedDiff = incomingSchedule
           ? mergeScheduledWorkouts(scheduledWorkouts, incomingSchedule)
           : { addedCount: 0, updatedCount: 0 };
 
+        const incomingCustomCount = incomingRoutines
+          ? incomingRoutines.filter(r => r.isCustom).length || incomingRoutines.length
+          : 0;
+        const isRoutinesOnlyFile =
+          (!incomingHistory || incomingHistory.length === 0) &&
+          (!incomingSchedule || incomingSchedule.length === 0) &&
+          Boolean(incomingRoutines && incomingRoutines.length > 0);
+
         const extraParts: string[] = [];
-        if (routDiff.addedCount > 0) extraParts.push(`+${routDiff.addedCount} routines`);
+        if (!isRoutinesOnlyFile && incomingCustomCount > 0) {
+          extraParts.push(`${incomingCustomCount} custom routines (+${routDiff.addedCount} new)`);
+        } else if (!isRoutinesOnlyFile && routDiff.addedCount > 0) {
+          extraParts.push(`+${routDiff.addedCount} routines`);
+        }
         if (schedDiff.addedCount > 0 || schedDiff.updatedCount > 0) {
           extraParts.push(`+${schedDiff.addedCount + schedDiff.updatedCount} calendar dates`);
         }
 
+        setIsRoutineBackupModalOpen(false);
         setPendingBackupImport({
           history: incomingHistory,
           routines: incomingRoutines,
           scheduledWorkouts: incomingSchedule,
           weeklyBlueprint: incomingBlueprint,
-          preview: {
-            fileName: file.name,
-            exportedAt,
-            incomingSessions: incomingHistory?.length || 0,
-            newSessionsToAdd: histDiff.addedCount,
-            duplicateSessions: histDiff.duplicateCount,
-            extraLabel: extraParts.length > 0 ? 'Routines & Calendar Sync' : undefined,
-            extraSummary: extraParts.length > 0 ? extraParts.join(' · ') : undefined,
-          },
+          preview: isRoutinesOnlyFile
+            ? {
+                fileName: file.name,
+                exportedAt,
+                primaryLabel: 'Custom Routines',
+                incomingSessions: incomingCustomCount,
+                newSessionsToAdd: routDiff.addedCount,
+                duplicateSessions: routDiff.duplicateCount,
+              }
+            : {
+                fileName: file.name,
+                exportedAt,
+                incomingSessions: incomingHistory?.length || 0,
+                newSessionsToAdd: histDiff.addedCount,
+                duplicateSessions: histDiff.duplicateCount,
+                extraLabel: extraParts.length > 0 ? 'Custom Routines & Calendar' : undefined,
+                extraSummary: extraParts.length > 0 ? extraParts.join(' · ') : undefined,
+              },
         });
       } catch (err) {
         setAlertNotice('Invalid backup file format. Please select a valid JSON export.');
@@ -3194,7 +3322,8 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
     let countRoutines = 0;
 
     if (pendingBackupImport.routines && pendingBackupImport.routines.length > 0) {
-      if (!saveRoutines(pendingBackupImport.routines)) {
+      const restored = mergeWithDefaultRoutines(getDefaultRoutines(), pendingBackupImport.routines);
+      if (!saveRoutines(restored)) {
         showRoutineSaveError();
         return;
       }
@@ -5517,6 +5646,18 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      setRoutineBackupCodeError(null);
+                      setIsRoutineBackupModalOpen(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-stone-800 hover:bg-stone-700 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-medium transition"
+                    title="Back up or restore your custom routines before reinstalling the Home Screen app"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Backup / Restore ({customRoutines.length})</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleRestoreDefaultRoutines}
                     className="p-2 rounded-xl bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800 border border-stone-800 transition text-xs"
                     title="Restore default MIT2FIT routines"
@@ -5749,17 +5890,49 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                     })}
                 </div>
 
-                {/* Custom User Routines */}
-                {routines.filter(r => r.isCustom).length > 0 && (
+                {/* Custom User Routines + Portable Backup & Restore */}
+                {customRoutines.length > 0 ? (
                   <div className="mt-4 pt-4 border-t border-stone-800/80 space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
-                      <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Custom Saved Routines ({routines.filter(r => r.isCustom).length})</span>
-                    </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                        <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Custom Saved Routines ({customRoutines.length})</span>
+                      </h4>
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={handleExportCustomRoutines}
+                          className="px-2.5 py-1.5 rounded-lg bg-stone-950 hover:bg-stone-800 text-amber-300 border border-amber-500/30 font-semibold flex items-center gap-1.5 transition"
+                          title="Download a JSON backup of your custom routines"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Routines</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyCustomRoutinesCode}
+                          className="px-2.5 py-1.5 rounded-lg bg-stone-950 hover:bg-stone-800 text-stone-200 border border-stone-800 font-semibold flex items-center gap-1.5 transition"
+                          title="Copy portable backup code to save in Notes before reinstalling Home Screen"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Copy Backup Code</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRoutineBackupCodeError(null);
+                            setIsRoutineBackupModalOpen(true);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-stone-950 hover:bg-stone-800 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1.5 transition"
+                          title="Restore routines from a JSON file or backup code"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Restore</span>
+                        </button>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {routines
-                        .filter(r => r.isCustom)
-                        .map(tpl => {
+                      {customRoutines.map(tpl => {
                           const isActive = activeTemplateId === tpl.id;
                           return (
                             <div
@@ -5817,6 +5990,29 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                           );
                         })}
                     </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 pt-4 border-t border-stone-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-950/60 border border-stone-800 rounded-xl p-3.5 text-xs">
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-stone-200 flex items-center gap-1.5">
+                        <FolderPlus className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Reinstalled Home Screen or switching devices?</span>
+                      </div>
+                      <p className="text-stone-400">
+                        Restore previously saved custom routines from a backup JSON file or pasted backup code.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRoutineBackupCodeError(null);
+                        setIsRoutineBackupModalOpen(true);
+                      }}
+                      className="px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1.5 transition shrink-0 self-end sm:self-center"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Restore Custom Routines</span>
+                    </button>
                   </div>
                 )}
 
@@ -7384,17 +7580,11 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-semibold transition"
+                  title="Append & merge workouts or custom routines from another device"
                 >
                   <Upload className="w-3.5 h-3.5 text-emerald-400" />
                   Sync / Restore JSON
                 </button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleImportData}
-                  accept=".json"
-                  className="hidden"
-                />
               </div>
             </div>
 
@@ -8009,9 +8199,9 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   </strong>
                 </div>
               </div>
-              <div className="pt-1 text-[11px] text-stone-500 border-t border-stone-800/80 flex items-center justify-between">
-                <span>Storage Key: <strong className="font-mono text-stone-400">mit2fit_exercise_logs_v4</strong></span>
+              <div className="pt-1 text-[11px] text-stone-500 border-t border-stone-800/80 flex flex-wrap items-center justify-between gap-2">
                 <span>Saved Sessions: <strong className="font-mono text-amber-400">{history.length}</strong></span>
+                <span>Custom Routines: <strong className="font-mono text-emerald-400">{customRoutines.length}</strong></span>
               </div>
             </div>
 
@@ -8065,21 +8255,36 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
                   className="flex items-center justify-center gap-2 p-3 bg-stone-950 hover:bg-stone-800 border border-stone-800 rounded-xl transition text-stone-200"
                 >
                   <Download className="w-4 h-4 text-amber-400" />
-                  <span>Backup File (JSON)</span>
+                  <span>Backup All (JSON)</span>
                 </button>
               </div>
             </div>
 
-            {/* Restore from File & Danger Zone */}
-            <div className="pt-3 border-t border-stone-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-stone-500">Need to move logs to another device?</span>
+            {/* Restore from File & Custom Routines Safeguard */}
+            <div className="pt-3 border-t border-stone-800 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-stone-500">Reinstalling Home Screen or syncing devices?</span>
                 <button
+                  type="button"
+                  onClick={() => {
+                    setIsDataPortalOpen(false);
+                    setRoutineBackupCodeError(null);
+                    setIsRoutineBackupModalOpen(true);
+                  }}
+                  className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 underline shrink-0"
+                >
+                  Backup / Restore Custom Routines
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-stone-500">Syncing full workouts &amp; schedule file?</span>
+                <button
+                  type="button"
                   onClick={() => {
                     fileInputRef.current?.click();
                     setIsDataPortalOpen(false);
                   }}
-                  className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 underline"
+                  className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 underline shrink-0"
                 >
                   Merge / Restore JSON File
                 </button>
@@ -10443,6 +10648,126 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         onSaveRoutine={handleSaveCustomRoutine}
       />
 
+      {/* Always-mounted Hidden File Input for JSON Backups */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleImportData}
+        accept=".json"
+        className="hidden"
+      />
+
+      {/* Custom Routine Portable Backup & Home-Screen Reinstall Restore Modal */}
+      {isRoutineBackupModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="custom-routine-backup-title"
+            className="bg-stone-900 border border-stone-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-stone-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="custom-routine-backup-title" className="text-base font-bold text-white">
+                    Custom Routines Backup &amp; Restore
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Keep your custom routines safe when reinstalling to your Home Screen
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRoutineBackupModalOpen(false)}
+                aria-label="Close routine backup dialog"
+                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1: Back up local custom routines */}
+            <div className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white uppercase tracking-wider text-[11px]">
+                  1. Back Up Custom Routines
+                </span>
+                <span className="font-mono text-amber-400 font-bold tabular-nums">
+                  {customRoutines.length} saved
+                </span>
+              </div>
+              <p className="text-stone-400 leading-relaxed">
+                Before deleting or reinstalling the Home Screen app, save your custom routines as a JSON file or copy a portable code to Apple Notes / Messages.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={customRoutines.length === 0}
+                  onClick={handleExportCustomRoutines}
+                  className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-bold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download File (.json)</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={customRoutines.length === 0}
+                  onClick={handleCopyCustomRoutinesCode}
+                  className="py-2.5 px-3 rounded-xl bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-stone-100 border border-stone-700 font-semibold flex items-center justify-center gap-1.5 transition"
+                >
+                  <Copy className="w-4 h-4 text-cyan-400" />
+                  <span>Copy Backup Code</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Step 2: Restore after reinstalling */}
+            <div className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white uppercase tracking-wider text-[11px]">
+                  2. Restore on Fresh Home Screen Install
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-cyan-400 hover:text-cyan-300 font-semibold underline flex items-center gap-1"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload .json File</span>
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                value={routineBackupCodeInput}
+                onChange={(e) => {
+                  setRoutineBackupCodeInput(e.target.value);
+                  if (routineBackupCodeError) setRoutineBackupCodeError(null);
+                }}
+                placeholder="Paste your MIT2FIT-ROUTINES:... backup code or JSON text here..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl p-2.5 text-xs font-mono text-stone-200 placeholder-stone-500 focus:outline-none focus:border-emerald-500"
+              />
+              {routineBackupCodeError && (
+                <p role="alert" className="text-xs text-red-400 font-medium">
+                  {routineBackupCodeError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleRestoreCustomRoutinesFromCode}
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-bold flex items-center justify-center gap-1.5 transition"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Restore &amp; Merge Custom Routines</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Device Backup Append / Replace Confirmation Modal */}
       <BackupSyncModal
         isOpen={Boolean(pendingBackupImport)}
@@ -10450,7 +10775,7 @@ export default function ExerciseTracker({ nativeApp = false }: { nativeApp?: boo
         onMerge={confirmBackupMerge}
         onReplace={confirmBackupReplace}
         onCancel={() => setPendingBackupImport(null)}
-        entityNoun="workout sessions"
+        entityNoun={pendingBackupImport?.preview.primaryLabel === 'Custom Routines' ? 'custom routines' : 'workout sessions & custom routines'}
       />
 
       {/* Sticky Thumb-Zone Mobile Bottom Tab Bar (< md) */}

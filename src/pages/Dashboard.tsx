@@ -52,7 +52,14 @@ import {
   HISTORY_STORAGE_KEY
 } from '../utils/fitnessStorage';
 import { BackupSyncModal, BackupSyncPreview } from '../components/BackupSyncModal';
-import { mergeBiometricHistories } from '../utils/backupMerge';
+import {
+  extractRoutinesFromParsed,
+  loadStoredCustomRoutinesFromStorage,
+  mergeBiometricHistories,
+  mergeRoutineLibraries,
+  mergeStoredCustomRoutinesFromStorage,
+} from '../utils/backupMerge';
+import type { RoutineTemplate } from '../data/exerciseLibrary';
 
 interface BenchmarkData {
   age: number;
@@ -140,6 +147,7 @@ export default function Dashboard() {
     protocolKey?: string;
     benchmarks?: BenchmarkData;
     history?: BiometricSnapshot[];
+    customRoutines?: RoutineTemplate[];
     preview: BackupSyncPreview;
   } | null>(null);
 
@@ -336,12 +344,15 @@ export default function Dashboard() {
     setTimeout(() => setAlertNotice(null), 3000);
   };
 
-  // Export JSON backup
+  // Export JSON backup (includes local custom workout routines)
   const handleExportBackup = () => {
+    const customRoutines = loadStoredCustomRoutinesFromStorage();
     const backupData = {
       protocolKey,
       benchmarks,
       history,
+      customRoutines,
+      totalCustomRoutines: customRoutines.length,
       exportedAt: new Date().toISOString(),
       app: 'MIT2FIT-DASHBOARD'
     };
@@ -353,8 +364,12 @@ export default function Dashboard() {
     a.download = `mit2fit-dashboard-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setAlertNotice('Backup JSON file exported.');
-    setTimeout(() => setAlertNotice(null), 3000);
+    setAlertNotice(
+      customRoutines.length > 0
+        ? `Backup exported (includes ${customRoutines.length} custom routine${customRoutines.length === 1 ? '' : 's'}).`
+        : 'Backup JSON file exported.'
+    );
+    setTimeout(() => setAlertNotice(null), 3500);
   };
 
   // Import JSON backup (with Append & Merge vs Replace preview)
@@ -367,18 +382,28 @@ export default function Dashboard() {
         const raw = event.target?.result as string;
         const parsed = JSON.parse(raw);
         const incomingHist: BiometricSnapshot[] = Array.isArray(parsed.history) ? parsed.history : [];
+        const incomingCustomRoutines = extractRoutinesFromParsed(parsed).filter((r) => r.isCustom);
         const diff = mergeBiometricHistories(history, incomingHist);
+        const existingCustom = loadStoredCustomRoutinesFromStorage();
+        const routDiff = incomingCustomRoutines.length > 0
+          ? mergeRoutineLibraries(existingCustom, incomingCustomRoutines)
+          : { addedCount: 0, duplicateCount: 0 };
 
         setPendingBackupImport({
           protocolKey: typeof parsed.protocolKey === 'string' ? parsed.protocolKey : undefined,
           benchmarks: parsed.benchmarks && typeof parsed.benchmarks.age === 'number' ? parsed.benchmarks : undefined,
           history: incomingHist,
+          customRoutines: incomingCustomRoutines.length > 0 ? incomingCustomRoutines : undefined,
           preview: {
             fileName: file.name,
             exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : undefined,
             incomingSessions: incomingHist.length,
             newSessionsToAdd: diff.addedCount,
             duplicateSessions: diff.duplicateCount,
+            extraLabel: incomingCustomRoutines.length > 0 ? 'Custom Routines in File' : undefined,
+            extraSummary: incomingCustomRoutines.length > 0
+              ? `${incomingCustomRoutines.length} total (+${routDiff.addedCount} new)`
+              : undefined,
           },
         });
       } catch (err) {
@@ -395,8 +420,12 @@ export default function Dashboard() {
     const res = mergeBiometricHistories(history, pendingBackupImport.history || []);
     setHistory(res.merged);
     saveStoredBiometricHistory(res.merged);
+    const routineRes = pendingBackupImport.customRoutines?.length
+      ? mergeStoredCustomRoutinesFromStorage(pendingBackupImport.customRoutines)
+      : { addedCount: 0 };
     setPendingBackupImport(null);
-    setAlertNotice(`Merged +${res.addedCount} new biometric check-ins (${res.duplicateCount} duplicates skipped).`);
+    const routineMsg = routineRes.addedCount > 0 ? ` and +${routineRes.addedCount} custom routines` : '';
+    setAlertNotice(`Merged +${res.addedCount} new biometric check-ins${routineMsg} (${res.duplicateCount} duplicates skipped).`);
     setTimeout(() => setAlertNotice(null), 4000);
   };
 
@@ -414,8 +443,15 @@ export default function Dashboard() {
       setHistory(pendingBackupImport.history);
       saveStoredBiometricHistory(pendingBackupImport.history);
     }
+    const routineRes = pendingBackupImport.customRoutines?.length
+      ? mergeStoredCustomRoutinesFromStorage(pendingBackupImport.customRoutines)
+      : { addedCount: 0 };
     setPendingBackupImport(null);
-    setAlertNotice('Full dashboard backup restored.');
+    setAlertNotice(
+      routineRes.addedCount > 0
+        ? `Dashboard restored (+${routineRes.addedCount} custom routines synced).`
+        : 'Full dashboard backup restored.'
+    );
     setTimeout(() => setAlertNotice(null), 3500);
   };
 
